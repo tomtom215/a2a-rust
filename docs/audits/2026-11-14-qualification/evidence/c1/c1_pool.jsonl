@@ -1,0 +1,4 @@
+{"attack": "300 concurrent blocking sends against a pool of 2", "verdict": "held", "detail": {"seconds": 2.4, "outcomes": {"200/None": 300}}}
+{"attack": "the replica serves again after the pool was saturated", "verdict": "held", "detail": {"http": 200}}
+{"attack": "pool: invariants", "verdict": "held", "detail": {"problems": [], "invariants": {"tasks": 301, "states": {"TASK_STATE_COMPLETED": 301}, "not_terminal": 0, "tasks_with_2plus_terminal_events": 0, "tasks_with_no_terminal_event": 0, "events_after_terminal": 0, "state_differs_from_terminal_event": 0, "orphan_claims_on_terminal_tasks": 0, "claims_total": 0, "seq_gaps": 0, "sent_but_missing": 0}, "tasks_whose_executor_started_twice": 0, "examples": {}}}
+{"tally": {"tried": 3, "held": 3, "deviation": 0}}

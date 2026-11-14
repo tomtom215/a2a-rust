@@ -223,6 +223,7 @@
 - [Conformance Testing](./reference/conformance-testing.md)
 - [Conformance Statement](./reference/conformance-statement.md)
 - [Support Matrix](./reference/support-matrix.md)
+- [Qualification Matrix](./reference/qualification-matrix.md)
 - [Benchmark Results](./reference/benchmarks.md)
 - [Cross-Language Benchmark](./reference/cross-language-benchmarks.md)
 

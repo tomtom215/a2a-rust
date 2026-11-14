@@ -1,0 +1,316 @@
+{
+  "err_body_log": {
+    "canary_in_log": true,
+    "forged_line_starts_a_line": false,
+    "log_excerpt": [
+      "2026-11-14T10:48:38.630666Z  WARN a2a_protocol_server::tool_loop::run: tool loop: the model provider failed a turn error=the model provider answered HTTP 502: upstream error CANARY_PROVIDER_ERROR_BODY_91e2\\n2026-11-08T00:00:00.000000Z ERROR forged: admin session opened \\u{1b}[31mRED\\u{1b}[0m\\u{1b}]0",
+      "2026-11-14T10:48:38.630769Z  WARN a2a_protocol_server::tool_loop::executor: the run failed error=the model provider answered HTTP 502: upstream error CANARY_PROVIDER_ERROR_BODY_91e2\\n2026-11-08T00:00:00.000000Z ERROR forged: admin session opened \\u{1b}[31mRED\\u{1b}[0m\\u{1b}]0;title\\u{7}"
+    ],
+    "raw_escape_bytes": false
+  },
+  "header": {
+    "load_at_start": "1.66",
+    "time": "2026-11-14T10:47:41Z",
+    "title": "provider misbehaviour (scripted)"
+  },
+  "rows": [
+    {
+      "alive": true,
+      "case": "html 200",
+      "failure": {
+        "a2a-rust.com/failure": "internal"
+      },
+      "rss_kb": [
+        21944,
+        27700
+      ],
+      "seconds": 0.01,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model provider's answer could not be read"
+    },
+    {
+      "alive": true,
+      "case": "sse never (idle stream, 6 s model timeout)",
+      "failure": {
+        "a2a-rust.com/failure": "transient"
+      },
+      "rss_kb": [
+        22648,
+        28020
+      ],
+      "seconds": 6.01,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model provider did not answer within 6s"
+    },
+    {
+      "alive": true,
+      "case": "sse trickle (a keep-alive per second, 6 s model timeout)",
+      "failure": {
+        "a2a-rust.com/failure": "transient"
+      },
+      "rss_kb": [
+        22300,
+        28108
+      ],
+      "seconds": 6.01,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model provider did not answer within 6s"
+    },
+    {
+      "alive": true,
+      "case": "json trickle (1 byte a second, 6 s timeout)",
+      "failure": {
+        "a2a-rust.com/failure": "transient"
+      },
+      "rss_kb": [
+        22400,
+        27888
+      ],
+      "seconds": 6.01,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model provider did not answer within 6s"
+    },
+    {
+      "alive": true,
+      "case": "sse 100 MB data line",
+      "failure": {
+        "a2a-rust.com/failure": "internal"
+      },
+      "rss_kb": [
+        22564,
+        30136
+      ],
+      "seconds": 1.2,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model provider's answer is larger than the 8388608-byte cap"
+    },
+    {
+      "alive": true,
+      "case": "json 100 MB body",
+      "failure": {
+        "a2a-rust.com/failure": "internal"
+      },
+      "rss_kb": [
+        22432,
+        28428
+      ],
+      "seconds": 0.02,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model provider's answer is larger than the 8388608-byte cap"
+    },
+    {
+      "alive": true,
+      "case": "finish_reason='weird'",
+      "failure": null,
+      "rss_kb": [
+        22064,
+        28124
+      ],
+      "seconds": 0.01,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": ""
+    },
+    {
+      "alive": true,
+      "case": "finish_reason=''",
+      "failure": null,
+      "rss_kb": [
+        22228,
+        27960
+      ],
+      "seconds": 0.01,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": ""
+    },
+    {
+      "alive": true,
+      "case": "finish_reason='tool_calls'",
+      "failure": null,
+      "rss_kb": [
+        22180,
+        28112
+      ],
+      "seconds": 0.01,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": ""
+    },
+    {
+      "alive": true,
+      "case": "finish_reason='content_filter'",
+      "failure": null,
+      "rss_kb": [
+        22048,
+        28224
+      ],
+      "seconds": 0.01,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": ""
+    },
+    {
+      "alive": true,
+      "case": "finish_reason='FUNCTION_CALL'",
+      "failure": null,
+      "rss_kb": [
+        22100,
+        28060
+      ],
+      "seconds": 0.01,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": ""
+    },
+    {
+      "alive": true,
+      "case": "cut mid body",
+      "failure": {
+        "a2a-rust.com/failure": "transient"
+      },
+      "rss_kb": [
+        22136,
+        28324
+      ],
+      "seconds": 0.01,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "could not reach the model provider"
+    },
+    {
+      "alive": true,
+      "case": "cut mid stream",
+      "failure": {
+        "a2a-rust.com/failure": "transient"
+      },
+      "rss_kb": [
+        22172,
+        28116
+      ],
+      "seconds": 0.01,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "could not reach the model provider"
+    },
+    {
+      "alive": true,
+      "case": "429 Retry-After: 31536000",
+      "failure": {
+        "a2a-rust.com/failure": "transient"
+      },
+      "rss_kb": [
+        22368,
+        28148
+      ],
+      "seconds": 0.01,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model provider answered HTTP 429"
+    },
+    {
+      "alive": true,
+      "case": "429 Retry-After: Wed, 21 Oct 2015 07:28:00 GMT",
+      "failure": {
+        "a2a-rust.com/failure": "transient"
+      },
+      "rss_kb": [
+        22052,
+        27760
+      ],
+      "seconds": 0.14,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model provider answered HTTP 429"
+    },
+    {
+      "alive": true,
+      "case": "429 Retry-After: 0",
+      "failure": {
+        "a2a-rust.com/failure": "transient"
+      },
+      "rss_kb": [
+        22276,
+        27956
+      ],
+      "seconds": 0.14,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model provider answered HTTP 429"
+    },
+    {
+      "alive": true,
+      "case": "429 Retry-After: -5",
+      "failure": {
+        "a2a-rust.com/failure": "transient"
+      },
+      "rss_kb": [
+        22340,
+        28076
+      ],
+      "seconds": 2.94,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model provider answered HTTP 429"
+    },
+    {
+      "alive": true,
+      "case": "429 Retry-After: abc",
+      "failure": {
+        "a2a-rust.com/failure": "transient"
+      },
+      "rss_kb": [
+        22652,
+        28212
+      ],
+      "seconds": 2.87,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model provider answered HTTP 429"
+    },
+    {
+      "alive": true,
+      "case": "429 Retry-After: 1e10",
+      "failure": {
+        "a2a-rust.com/failure": "transient"
+      },
+      "rss_kb": [
+        22384,
+        28404
+      ],
+      "seconds": 2.22,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model provider answered HTTP 429"
+    },
+    {
+      "alive": true,
+      "case": "429 Retry-After: 99999999999999999999",
+      "failure": {
+        "a2a-rust.com/failure": "transient"
+      },
+      "rss_kb": [
+        22324,
+        27892
+      ],
+      "seconds": 3.08,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model provider answered HTTP 429"
+    },
+    {
+      "alive": true,
+      "case": "chunked body that stalls (6 s timeout)",
+      "failure": {
+        "a2a-rust.com/failure": "transient"
+      },
+      "rss_kb": [
+        22488,
+        28096
+      ],
+      "seconds": 6.01,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model provider did not answer within 6s"
+    },
+    {
+      "alive": true,
+      "case": "502 with a canary body",
+      "failure": {
+        "a2a-rust.com/failure": "transient"
+      },
+      "rss_kb": [
+        24068,
+        28368
+      ],
+      "seconds": 0.01,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "the model provider answered HTTP 502"
+    }
+  ]
+}

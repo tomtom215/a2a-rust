@@ -105,3 +105,6 @@ pub mod page_reference_conformance_statement {}
 
 #[doc = include_str!("../../book/src/reference/support-matrix.md")]
 pub mod page_reference_support_matrix {}
+
+#[doc = include_str!("../../book/src/reference/qualification-matrix.md")]
+pub mod page_reference_qualification_matrix {}

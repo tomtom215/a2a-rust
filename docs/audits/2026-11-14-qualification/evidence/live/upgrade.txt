@@ -1,0 +1,7 @@
+triggers: task_events.a2a_legacy_write_check, task_events.a2a_legacy_write_record, tasks.a2a_legacy_write_check, tasks.a2a_legacy_write_record
+PASS  S1 old replica's turn cannot write a task the new replica runs  old answered error -32603 postgres error: error returned from database: task 5cbd2b5a-d45b-4ce3-b625-e09cbbb5e780 is; stored state TASK_STATE_WORKING, artifacts []
+PASS  S2 a cancel sent to the old replica stops the new replica's executor  old answered TASK_STATE_CANCELED; executor stopped after 1.01 s
+PASS  S3 the new replica refuses a continuation while the old replica runs the task  after 5.00 s: task 8ef432a5-d4f7-466f-8195-4d54e178d782 is already being processed; wait for i
+PASS  S4 a task the old replica parked continues on the new replica, keeping its artifacts  in 0.01 s; state TASK_STATE_COMPLETED, artifacts ['old-early', 'old-late']
+legacy claims left: 0
+4 of 4 passed

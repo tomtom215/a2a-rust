@@ -227,6 +227,7 @@
   <url><loc>https://a2a-rust.com/reference/conformance-testing.html</loc><lastmod>2026-11-14</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://a2a-rust.com/reference/conformance-statement.html</loc><lastmod>2026-11-14</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://a2a-rust.com/reference/support-matrix.html</loc><lastmod>2026-11-14</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://a2a-rust.com/reference/qualification-matrix.html</loc><lastmod>2026-11-14</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://a2a-rust.com/reference/benchmarks.html</loc><lastmod>2026-11-14</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://a2a-rust.com/reference/cross-language-benchmarks.html</loc><lastmod>2026-11-14</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
 
