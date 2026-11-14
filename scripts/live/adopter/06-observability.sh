@@ -30,7 +30,10 @@ done
 echo "--- start the agents"
 env -i PATH="$PATH" OTEL_SERVICE_NAME=deploy-agent OTEL_RESOURCE_ATTRIBUTES=service.instance.id=local-1 OTEL_EXPORTER_OTLP_ENDPOINT=$OTEL AGENT_URL=http://127.0.0.1:8080 "$BIN/deploy-agent" >"$OUT/deploy-agent.log" 2>&1 & p1=$!
 env -i PATH="$PATH" OTEL_SERVICE_NAME=hello-agent OTEL_RESOURCE_ATTRIBUTES=service.instance.id=local-1 OTEL_EXPORTER_OTLP_ENDPOINT=$OTEL "$BIN/hello-agent" >"$OUT/hello-agent.log" 2>&1 & p2=$!
-trap 'kill $p1 $p2 2>/dev/null' EXIT
+# Each response is saved to a file, then read: data, not code, so nothing
+# downloaded is ever piped into an interpreter (OpenSSF Scorecard, Pinned-Dependencies).
+J=$(mktemp)
+trap 'kill $p1 $p2 2>/dev/null; rm -f "$J"' EXIT
 for _ in $(seq 1 100); do curl -s -o /dev/null http://127.0.0.1:8080/health && curl -s -o /dev/null http://127.0.0.1:3000/.well-known/agent-card.json && break; sleep 0.2; done
 head -2 "$OUT/deploy-agent.log" | cut -c1-260; head -2 "$OUT/hello-agent.log" | cut -c1-260
 
@@ -52,15 +55,15 @@ unset OTEL_EXPORTER_OTLP_ENDPOINT OTEL_SERVICE_NAME OTEL_RESOURCE_ATTRIBUTES
 sleep 20   # one more export interval
 
 echo "--- Prometheus: which jobs and instances exported (count by (job, instance))"
-curl -sG http://localhost:9090/api/v1/query --data-urlencode 'query=count by (job, instance) ({__name__=~".+"})' | python3 -I -c 'import json,sys; d=json.load(sys.stdin); [print(" ", r["metric"].get("job"), r["metric"].get("instance"), r["value"][1]) for r in d["data"]["result"]]'
+curl -sG http://localhost:9090/api/v1/query --data-urlencode 'query=count by (job, instance) ({__name__=~".+"})' -o "$J" && python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); [print(" ", r["metric"].get("job"), r["metric"].get("instance"), r["value"][1]) for r in d["data"]["result"]]' "$J"
 echo "--- a recording rule and an alert listing"
-curl -sG http://localhost:9090/api/v1/query --data-urlencode 'query=a2a:rpc_server_calls:rate5m' | python3 -I -c 'import json,sys; d=json.load(sys.stdin); print("  a2a:rpc_server_calls:rate5m series:", len(d["data"]["result"]))'
-curl -s http://localhost:9090/api/v1/rules | python3 -I -c 'import json,sys; d=json.load(sys.stdin); g=d["data"]["groups"]; print("  rule groups:", len(g), "rules:", sum(len(x["rules"]) for x in g), "alerts firing:", sum(1 for x in g for r in x["rules"] if r.get("type")=="alerting" and r.get("state")=="firing"))'
+curl -sG http://localhost:9090/api/v1/query --data-urlencode 'query=a2a:rpc_server_calls:rate5m' -o "$J" && python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); print("  a2a:rpc_server_calls:rate5m series:", len(d["data"]["result"]))' "$J"
+curl -s http://localhost:9090/api/v1/rules -o "$J" && python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); g=d["data"]["groups"]; print("  rule groups:", len(g), "rules:", sum(len(x["rules"]) for x in g), "alerts firing:", sum(1 for x in g for r in x["rules"] if r.get("type")=="alerting" and r.get("state")=="firing"))' "$J"
 echo "--- Tempo: traces by service"
 for svc in deploy-agent hello-agent a2a-cli; do
-  printf '  %s: ' $svc; curl -sG http://localhost:3200/api/search --data-urlencode "tags=service.name=$svc" --data-urlencode limit=5 | python3 -I -c 'import json,sys; d=json.load(sys.stdin); print(len(d.get("traces", [])), "trace(s) returned (limit 5)")'
+  printf '  %s: ' $svc; curl -sG http://localhost:3200/api/search --data-urlencode "tags=service.name=$svc" --data-urlencode limit=5 -o "$J" && python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); print(len(d.get("traces", [])), "trace(s) returned (limit 5)")' "$J"
 done
 echo "--- Loki: log streams by service"
-curl -sG http://localhost:3100/loki/api/v1/label/service_name/values | python3 -I -c 'import json,sys; print(" ", json.load(sys.stdin).get("data"))'
+curl -sG http://localhost:3100/loki/api/v1/label/service_name/values -o "$J" && python3 -I -c 'import json,sys; print(" ", json.load(open(sys.argv[1])).get("data"))' "$J"
 echo "--- the repository's own panel checker, through Grafana"
 python3 "$REPO/deploy/observability/scripts/check_dashboards.py" --grafana http://localhost:3001 --prometheus http://localhost:9090 "$REPO/deploy/observability/grafana/dashboards" --lookback 10 2>&1 | tail -60
