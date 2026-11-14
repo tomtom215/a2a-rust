@@ -28,6 +28,7 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 - **Read the upgrade guide first:** `book/src/reference/upgrading/0.15-to-0.16.md` gives every API break with its migration. The Breaking Changes and Behaviour Changes sections below are the full record, and Added and Fixed are the archive of everything else.
 - **Data:** the task stores add one table (`a2a_task_claims`; schema version 8 to 9 on SQLite, 7 to 9 on PostgreSQL). On PostgreSQL a fleet can be replaced one replica at a time: the database keeps 0.15 and 0.16 replicas off each other's turns, measured against a real 0.15.0 replica. SQLite task and audit files were carried from 0.15 to 0.16 and back in a rehearsal; a rollback on PostgreSQL was not rehearsed. The procedure and its rollback are in `book/src/deployment/operations.md`, and what is supported, at which schema and sealed-format versions, in `book/src/reference/support-matrix.md`.
+- **If you run `deploy/observability`:** it now runs Tempo 3.1.1, which refuses Tempo 2's `compactor` block; take the new `tempo/tempo.yaml` and `docker-compose.yml` together. A Tempo 2.9 data volume opened by 3.1.1 was not tested: start Tempo on a fresh volume, or keep 2.9.0 until you have tried it.
 
 ### Highlights
 
@@ -77,6 +78,11 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
   losing the audit store; restoring a backup; and upgrading from 0.15 with its rollback. The support matrix states what 0.16
   supports and how far each part is qualified (products, protocol bindings, Rust versions, features, databases and schema
   versions, sealed formats, upgrades, the support window), each with the file it is read from.
+- **Book: a Qualification Matrix** (`reference/qualification-matrix.md`; evidence in `docs/audits/2026-11-14-qualification/`): what
+  this release was run against before it shipped. Replicas killed, frozen past their claim and started thirty at once; the database's
+  connections terminated, its link paused, cut and partitioned, the database restarted and a row locked; a replica killed at either
+  side of its push outbox's reservation; a scripted provider that misbehaves in 24 ways and a real `llama-server` that is down, killed
+  mid-generation and restarted; and a v0.15.0 replica beside a 0.16 one. Every row held but one not run, with the reason.
 
 - **`OpenAiChatModel::with_stream_connection_reuse()`** (adversarial review of 2026-11-13, N16). A streamed turn asked for its connection to
   be closed (`Connection: close`) on every endpoint, for a llama-server behaviour: it closes the connection after a streamed answer (measured
@@ -1071,6 +1077,13 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **The observability stack and the `deploy-agent` image move to newer bases** (`deploy/observability`, `examples/deploy-agent`).
+  The stack runs OpenTelemetry Collector 0.164.0, Prometheus 3.16.0 (and CI's promtool with it), Tempo 3.1.1 and Grafana 13.3.0.
+  Tempo 3 compacts and applies retention in its backend worker, so `tempo.yaml`'s `compactor` block is now
+  `backend_worker.compaction`, and its image has no shell, so the one-shot that hands the data volumes to uid 10001 runs from the
+  Prometheus image. While idle, Tempo 3's worker logs `no jobs found` at error level every few seconds. `deploy-agent` builds on
+  `rust:1.98-bookworm` (was 1.94; CI's 1.94 job still proves the MSRV) and runs on the current `debian:bookworm-slim`.
+
 - **A SQLite store over `sqlite::memory:` says it is process-local** (server). The SQLite task, tenant task, halt, audit,
   push-config, tenant push-config stores and the SQLite push outbox answered `is_process_local() == false` whatever their URL;
   over `sqlite::memory:` they answer `true` now (read from the database name sqlx gives an in-memory URL; a named database opened
@@ -1760,6 +1773,11 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **`genai-agent` reads `A2A_JWT_HS256_SECRET` as a key in base64** (example; RFC 8725 section 3.5 forbids a password as the key of HS256). It was a string used as its own bytes, so a passphrase was the key. The value is now random bytes in standard base64, at least 32 once decoded: make one with `openssl rand -base64 32`. A typed passphrase is refused at startup because it is not base64, and so is a base64 value that decodes to fewer than 32 bytes, the book's old 32-character sample among them. `scripts/adversarial/probe_auth.py --secret` takes the same base64 key. The SDK is unchanged: `JwtValidator::with_hs256_secret` checks the length only, as before, and now says so in its rustdoc and on the authentication page; the book's samples no longer show a guessable string. `examples/genai-agent/src/tests.rs` covers the decoding and both refusals, and five hand mutants of `hs256_key` fail them. The example run under `probe_auth.py` passes 27 of 27 cases, and with the variable read as text again its valid-token controls are rejected.
 
 ### Fixed
+
+- **A model provider no longer chooses how many metric series a turn makes** (server, `tool-loop`; live campaign W2-LIVE-9). The
+  provider's own name for the model that answered (`gen_ai.response.model`) labelled five turn instruments as given, so a provider
+  or gateway answering 200 names made 200 series on each. A meter now records the first 16 names it sees and any later one, or one
+  over 128 bytes, as `_OTHER`; the span keeps the name as given. Live, the same 200 replies make 17 series per instrument.
 
 - **A blocking send on a single-worker runtime could hang until the executor timeout** (server; found 2026-11-13 by the live
   end-to-end test of an approved, audited tool call, `tests/tool_loop_audit_live.rs`; present since 2026-10-03 and in 0.15.0). On a
@@ -3203,8 +3221,7 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 - **Tool-loop and model-provider edges found by running real models** (live-model campaign, wave 2, 2026-11-08; each reproduced by the agent, not all
   re-run since): a provider's error body (at most 512 bytes, which can echo the prompt) reaches the `invoke_agent` span as span events and the
-  operator's log, where `book/src/deployment/observability/` says spans carry no content (W2-LIVE-8); `gen_ai.response.model`, a string the provider
-  chooses, labels five metrics, so 200 names made 1,000 series (W2-LIVE-9); a trusted project skill whose name is a Cyrillic look-alike of an
+  operator's log, where `book/src/deployment/observability/` says spans carry no content (W2-LIVE-8); a trusted project skill whose name is a Cyrillic look-alike of an
   operator's skill is a second skill (W2-LIVE-11); `finish_reason: content_filter` with partial text completes the task unmarked, as only `length` is
   marked (W2-LIVE-12); a tool call cut at `max_tokens` surfaces as the provider's HTTP 500 and fails the task `internal` (llama-server's own parse error,
   W2-LIVE-13); a steering message sent during the answering turn is receipted `inbox` and never read (by design; the `unread` metric says so,
