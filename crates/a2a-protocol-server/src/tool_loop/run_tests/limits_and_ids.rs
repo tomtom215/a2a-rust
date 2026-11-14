@@ -84,6 +84,30 @@ async fn a_generated_id_does_not_take_a_provider_id() {
     assert_eq!(ids, vec!["call-0-1", "call-0-1-1"]);
 }
 
+/// N08: when the provider already used the first suffixed name too, the
+/// generated id counts on to the next one (`-2`), as the rule says.
+#[tokio::test]
+async fn a_generated_id_counts_past_every_taken_suffix() {
+    let (transfer, used) = TestTool::new("transfer", |args| Ok(format!("sent {args}")));
+    let (model, seen) = Scripted::new(vec![
+        calls(vec![
+            call("call-0-1", "transfer", r#"{"to":"a"}"#),
+            call("", "transfer", r#"{"to":"b"}"#),
+            call("call-0-1-1", "transfer", r#"{"to":"c"}"#),
+        ]),
+        text("done"),
+    ]);
+    let answer = ToolLoop::new(model, tools(vec![transfer]))
+        .run("go", &tokio_util::sync::CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(answer.text, "done");
+    assert_eq!(used.load(Ordering::SeqCst), 3);
+    let told = results(&seen.lock().unwrap().clone(), 1);
+    let ids: Vec<&str> = told.iter().map(|(id, _)| id.as_str()).collect();
+    assert_eq!(ids, vec!["call-0-1", "call-0-1-2", "call-0-1-1"]);
+}
+
 /// N09: a tool's result past the limit is cut, and the model is told so.
 #[tokio::test]
 async fn a_large_result_is_cut_and_the_model_is_told() {
