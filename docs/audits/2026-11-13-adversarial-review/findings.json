@@ -205,7 +205,7 @@
   "finding": "Named deployment profiles validated at startup, with escape hatches reporting the guarantees they disable (PDF section 3)",
   "status": "PARTIAL",
   "note": "Stores, authentication and (through MultiTenant) the tenant resolver are validated; audit privacy, URL/egress policy and proxy trust are not validated by any profile; the step journal, key custody and retention are reported as not verifiable at startup rather than checked.",
-  "commit": "",
+  "commit": "a76a5957",
   "evidence": "Profile::LocalDevelopment (refused beside Production or DurableProduction) and Profile::DurableProduction (refuses no authenticator, no task store, and a task, push-config, push-outbox, halt, lease or audit store that keeps its state in this process); tenant-isolated multi-replica is DurableProduction + Production + MultiTenant. RequestHandler::profile_report() lists what build() checked, each escape hatch given and what it gives up (also logged at WARN), and what no startup check can establish. TaskStore and PushOutbox gain is_process_local (wrappers forward); SQLite stores over sqlite::memory: answer true. 28 hand mutants of the new decisions and answers, each applied with the source hash checked on restore: 27 killed at first; the survivor (an in-memory push-config store beside a card that declares push) got its test and is killed. Three of the first run's mutants did not compile (a guard that left a match non-exhaustive) and were rewritten so they did.",
   "tests": "builder/durable_tests.rs; profile_shared_tests.rs; sqlite_pool tests"
  }
