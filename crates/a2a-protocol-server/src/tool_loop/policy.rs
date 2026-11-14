@@ -194,6 +194,12 @@ pub trait ToolPolicy: Send + Sync + 'static {
     /// and `reason` is its result as the model sees it.
     ///
     /// The default lets it run.
+    // Equivalent mutant: the body is a future of `Ok(())`, and cargo-mutants'
+    // replacement is `Box::pin(async move { Ok(()) })`, the same future; both
+    // arguments are discarded first, so `move` captures nothing. No test can
+    // distinguish the two (ADR 0006). On PR #210 it timed out (a 300 s test
+    // run against the incremental gate's 300 s cap) rather than surviving.
+    #[mutants::skip]
     fn approved<'a>(
         &'a self,
         request: &'a PolicyRequest<'a>,

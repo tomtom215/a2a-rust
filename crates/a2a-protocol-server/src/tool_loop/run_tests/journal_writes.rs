@@ -120,3 +120,38 @@ async fn a_stale_writer_cannot_overwrite_newer_progress() {
         Err(crate::tool_loop::JournalError::Conflict)
     );
 }
+
+/// An entry is stamped with the time it is written, the time retention sweeps
+/// by: a run written now is not swept with entries older than a minute.
+#[tokio::test]
+async fn an_entry_is_stamped_with_the_time_it_is_written() {
+    let now = || {
+        i64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+        )
+        .unwrap()
+    };
+    let j = journal();
+    let before = now();
+    let (model, _) = Scripted::new(vec![text("done")]);
+    run_keyed(&looped(model, vec![], &j), KEY, Side::default())
+        .await
+        .unwrap();
+    let after = now();
+    let kept = j
+        .load(KEY)
+        .await
+        .unwrap()
+        .expect("the finished run is kept");
+    assert!(
+        (before..=after).contains(&kept.updated_at_ms),
+        "stamped {} outside [{before}, {after}]",
+        kept.updated_at_ms
+    );
+    let a_minute_ago = before - 60_000;
+    assert_eq!(j.sweep(a_minute_ago, a_minute_ago).await.unwrap(), 0);
+    assert!(j.load(KEY).await.unwrap().is_some());
+}
