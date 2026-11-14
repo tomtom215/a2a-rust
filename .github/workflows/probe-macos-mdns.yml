@@ -58,8 +58,13 @@ jobs:
             done
             echo "RESULT $label: $fail of $n runs failed" | tee -a "$GITHUB_STEP_SUMMARY"
           }
-          run A-0.21.6-parallel 25
-          run B-0.21.6-serial 25 --test-threads 1
-          sed -i '' 's/version = "=0.21.6"/version = "=0.21.7"/' crates/a2a-protocol-discovery/Cargo.toml
-          cargo update -p mdns-sd --precise 0.21.7
-          run C-0.21.7-parallel 25
+          # Round 2: the one failure (70dc337) ran inside a full-workspace
+          # nextest run; alone, 0 of 150 runs failed. Saturate the CPU and
+          # compare the tests as written with their windows widened to 15 s.
+          ncpu=$(sysctl -n hw.ncpu); echo "cpus: $ncpu"
+          for _ in $(seq 1 $((ncpu * 3))); do (yes > /dev/null &) ; done
+          run D-stress-as-written 30
+          sed -i '' 's/Duration::from_secs(3)/Duration::from_secs(15)/; s/Duration::from_secs(5)/Duration::from_secs(15)/g' crates/a2a-protocol-discovery/tests/mdns_round_trip.rs
+          grep -n 'from_secs' crates/a2a-protocol-discovery/tests/mdns_round_trip.rs
+          run E-stress-15s 30
+          pkill yes || true
