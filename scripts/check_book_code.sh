@@ -60,7 +60,7 @@ BOOK = pathlib.Path("book/src")
 LIB = pathlib.Path("book-tests/src/lib.rs")
 
 # Pages deliberately not compiled, each with the reason. Anything else missing
-# from `book-tests/src/lib.rs` is an omission, not a decision.
+# from `book-tests/src/lib.rs` and the files it declares is an omission, not a decision.
 NOT_REGISTERED = {
     "SUMMARY.md": "mdBook's table of contents — a list of links, not a page",
 }
@@ -114,8 +114,16 @@ unregistered = []
 if not LIB.exists():
     unregistered.append(f"{LIB} is missing; nothing compiles the book's Rust")
 else:
+    # lib.rs and the files it declares with `mod name;` (a file it does not
+    # declare is not compiled, so its pages would count without being run).
+    lib = LIB.read_text(encoding="utf-8")
+    sources = [lib] + [
+        (LIB.parent / f"{m}.rs").read_text(encoding="utf-8")
+        for m in re.findall(r"^(?:pub )?mod (\w+);", lib, re.M)
+        if (LIB.parent / f"{m}.rs").exists()
+    ]
     registered = set(re.findall(r'include_str!\("\.\./\.\./book/src/([^"]+)"\)',
-                                LIB.read_text(encoding="utf-8")))
+                                "\n".join(sources)))
     for page in sorted(str(q.relative_to(BOOK)) for q in BOOK.rglob("*.md")):
         if page in registered or page in NOT_REGISTERED:
             continue

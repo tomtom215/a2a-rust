@@ -145,3 +145,161 @@ async fn a_lost_claim_leaves_the_ending_to_the_new_owner() {
     assert_eq!(f.pushed().await, vec![]);
     assert_eq!(f.logged().await, vec![]);
 }
+
+/// A push-config store that cannot be read while `down` is set.
+struct Unreadable(
+    crate::push::InMemoryPushConfigStore,
+    std::sync::atomic::AtomicBool,
+);
+
+impl crate::push::PushConfigStore for Unreadable {
+    fn set<'a>(
+        &'a self,
+        c: a2a_protocol_types::push::TaskPushNotificationConfig,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = a2a_protocol_types::error::A2aResult<
+                        a2a_protocol_types::push::TaskPushNotificationConfig,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        self.0.set(c)
+    }
+    fn get<'a>(
+        &'a self,
+        t: &'a str,
+        i: &'a str,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = a2a_protocol_types::error::A2aResult<
+                        Option<a2a_protocol_types::push::TaskPushNotificationConfig>,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        self.0.get(t, i)
+    }
+    fn list<'a>(
+        &'a self,
+        t: &'a str,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = a2a_protocol_types::error::A2aResult<
+                        Vec<a2a_protocol_types::push::TaskPushNotificationConfig>,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        if self.1.load(std::sync::atomic::Ordering::SeqCst) {
+            return Box::pin(async { Err(a2a_protocol_types::error::A2aError::internal("down")) });
+        }
+        self.0.list(t)
+    }
+    fn delete<'a>(
+        &'a self,
+        t: &'a str,
+        i: &'a str,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>,
+    > {
+        self.0.delete(t, i)
+    }
+}
+
+/// An ending whose webhook deliveries the outbox could not durably take
+/// (adversarial review N06, 2026-11-13): the configs could not be read past
+/// their retries. It is not logged, which is what the reaper looks for, and
+/// the turn says its ending is owed, so its claim is kept for the reaper.
+/// Until then the ending was logged and the claim released as if delivered.
+#[tokio::test]
+async fn an_ending_not_durably_queued_is_left_out_of_the_log_and_owed() {
+    let configs = std::sync::Arc::new(Unreadable(
+        crate::push::InMemoryPushConfigStore::new(),
+        std::sync::atomic::AtomicBool::new(true),
+    ));
+    let f = super::tests::Fixture::with_outbox(TaskState::Canceled, configs).await;
+    let id = TaskId::new("t");
+    let mut run = f.processor(&id);
+    let ((), owed) = crate::handler::event_processing::owing_ending(run.close_out()).await;
+    assert!(
+        owed,
+        "the ending was not durably queued and nothing said so"
+    );
+    assert_eq!(
+        f.logged().await,
+        vec![],
+        "an ending logged with its webhooks not told"
+    );
+}
+
+/// The same ending with the configs readable: queued, logged, nothing owed.
+#[tokio::test]
+async fn an_ending_durably_queued_is_logged_and_nothing_is_owed() {
+    let configs = std::sync::Arc::new(Unreadable(
+        crate::push::InMemoryPushConfigStore::new(),
+        std::sync::atomic::AtomicBool::new(false),
+    ));
+    let f = super::tests::Fixture::with_outbox(TaskState::Canceled, configs).await;
+    let id = TaskId::new("t");
+    let mut run = f.processor(&id);
+    let ((), owed) = crate::handler::event_processing::owing_ending(run.close_out()).await;
+    assert!(!owed);
+    assert_eq!(f.logged().await, vec![(1, Some(TaskState::Canceled))]);
+}
+
+/// An ending the log refused is owed too, whoever appended it.
+#[tokio::test]
+async fn an_ending_the_log_refuses_is_owed() {
+    let ((), owed) = crate::handler::event_processing::owing_ending(async {
+        crate::handler::event_processing::note_ending_owed();
+    })
+    .await;
+    assert!(owed);
+    let ((), owed) = crate::handler::event_processing::owing_ending(async {}).await;
+    assert!(!owed);
+    // Outside a turn, noting is harmless.
+    crate::handler::event_processing::note_ending_owed();
+}
+
+impl super::tests::Fixture {
+    /// [`new`](Self::new), with a push outbox and the push configs read from
+    /// `configs`; a config read's retries end after 100 ms.
+    pub(super) async fn with_outbox(
+        stored: TaskState,
+        configs: std::sync::Arc<dyn crate::push::PushConfigStore>,
+    ) -> Self {
+        let mut f = Self::new(stored).await;
+        configs
+            .set(
+                a2a_protocol_types::push::TaskPushNotificationConfig::new(
+                    "t",
+                    "https://example.com/hook",
+                )
+                .with_id("cfg"),
+            )
+            .await
+            .expect("config");
+        f.limits.store_write_retry = std::time::Duration::from_millis(100);
+        f.lanes = crate::handler::PushLanes::with_reservations(
+            configs,
+            Some(std::sync::Arc::clone(&f.pushes) as std::sync::Arc<dyn crate::push::PushSender>),
+            f.limits.clone(),
+            std::sync::Arc::new(crate::metrics::NoopMetrics),
+            tokio_util::task::TaskTracker::new(),
+            Some((
+                std::sync::Arc::new(crate::push::outbox::InMemoryPushOutbox::new())
+                    as std::sync::Arc<dyn crate::push::outbox::PushOutbox>,
+                tokio_util::sync::CancellationToken::new(),
+            )),
+            None,
+        );
+        f
+    }
+}

@@ -1,0 +1,2 @@
+{"attack": "many60: harness exception", "verdict": "DEVIATION", "detail": "RuntimeError: psql: psql: error: connection to server at \"127.0.0.1\", port 5432 failed: FATAL:  sorry, too many clients already"}
+{"tally": {"tried": 1, "held": 0, "deviation": 1}}

@@ -14,7 +14,12 @@
 # A mutant that makes a test *hang* is worth less than one that makes a test
 # fail. cargo-mutants reports the first as TIMEOUT, and `mutants.yml` scores
 # `caught / (caught + missed)` — a timeout is in neither term, so it is a
-# mutant the score does not describe rather than one it counts against.
+# mutant the score does not describe rather than one it counts against. The
+# incremental gate on pull requests fails on a timeout as on a survivor
+# (adversarial review N15, 2026-11-13): there, every survivor of two runs had
+# first shown as a timeout in a shard that passed. The per-test kill below is
+# what turns a mutant that hangs one test into a failed test, so a timeout
+# left over is a mutant no test caught.
 #
 # Measured 2026-08-14 on `replace EventQueueManager::destroy with ()`
 # (`crates/a2a-protocol-server/src/streaming/event_queue/manager.rs:385`), which

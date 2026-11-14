@@ -267,9 +267,20 @@ This triggers the release workflow (`.github/workflows/release.yml`) which:
 
 1. **Validates** that all 4 crate versions and `tools/a2a-cli`'s match the tag and CHANGELOG entry
    exists, and that the tag publishes what its notes describe (below)
-2. **Runs CI** (fmt, clippy, test, doc, MSRV check) and **security audit** (cargo-deny)
+2. **Runs CI** (fmt, clippy, test, doc, MSRV check) and **security audit** (cargo-deny).
+   This is a reduced copy of `ci.yml`, so it also **requires `ci.yml` to have
+   passed for the tagged commit** (job `ci-evidence`, `scripts/ci_evidence.py`):
+   the newest completed `push` or `workflow_dispatch` run of `ci.yml` for that
+   exact SHA must have concluded `success` with no job failed, cancelled or
+   timed out. A `pull_request` run does not count (it tested a merge with
+   `main`). Skipped jobs are listed. Tag only after `main`'s CI is green on the
+   commit; a red or unfinished run fails the release before anything is built
 3. **Packages** all crates with SLSA build provenance attestation and a
-   CycloneDX SBOM attestation per crate
+   CycloneDX SBOM attestation per crate, after writing and verifying the
+   **release evidence manifest** (`scripts/release_evidence.py generate
+   --run-gates`, then `verify --head`): it fails if a static gate it runs does
+   not exit 0. The manifest (`release-evidence.json`) and the CI evidence
+   (`ci-evidence.json`) are attached to the GitHub release
 4. **Runs the A2A conformance suite (ACTS)** on the tagged commit over every
    binding (`acts.yml`), fails on any failed or errored test, and attests the
    summary onto each `.crate` (predicate type
@@ -296,6 +307,8 @@ mentioned (`docs/adopter-audit-2026-09-22.md`, N7). Four checks in
 | `Breaking releases keep the STABILITY.md cadence` | a `### Breaking Changes` section in a patch release, or in a second release in the same calendar month as another breaking one, unless that release's section declares `**Cadence exception:** <reason>` (STABILITY.md §3) |
 | `The release notes open with a Highlights block` | from 0.16.0, a `## [X.Y.Z]` section with no `### Highlights` block, an empty one, or one over 15 non-blank lines: what a reader must know before upgrading, at a glance (audit G/C-01; `python3 scripts/check_release_tree.py self-test` proves the rule) |
 | `Packaged crates were built from the tagged commit` (package job) | a `.crate` whose `.cargo_vcs_info.json` names another commit, or a dirty tree |
+| `ci.yml concluded success for this commit` (ci-evidence job) | a tagged commit whose newest `push` or `workflow_dispatch` run of `ci.yml` is missing, unfinished, not `success`, or has a job that failed, was cancelled or timed out (adversarial review N13, 2026-11-13) |
+| `Release evidence manifest for the tagged commit` (package job) | a static gate run by `scripts/release_evidence.py` that does not exit 0, or a manifest that does not describe the tagged tree |
 
 What that asks of the process: **write the release notes last.** Anything that
 changes packaged source after the `## [X.Y.Z]` section was last edited — a

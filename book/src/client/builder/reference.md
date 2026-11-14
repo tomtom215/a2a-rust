@@ -8,7 +8,7 @@ Every `ClientBuilder` method, its default, and what it changes. The pages in thi
 | Method | Default | Description |
 |--------|---------|-------------|
 | `new(url)` | — | Base URL of the agent (required) |
-| `from_card(&AgentCard)` | — | Build from an agent card, using the first interface the card lists that this client supports (spec §8.3.2; until 0.15 it preferred JSON-RPC). Only interfaces whose `protocolVersion` has major 1 count (`1.0` and `v1.0` count; an empty version does not), so a v0.3 endpoint listed first is skipped; a card with none is refused with what it offers. If the chosen interface cannot be built (gRPC under sync `build()`, an unknown binding, a bad URL), `build()` moves to the next one. The client also checks the card's optional capabilities before each call that needs one (spec §3.3.4); see `without_capability_checks` |
+| `from_card(&AgentCard)` | — | Build from an agent card, using the first interface the card lists that this client supports (spec §8.3.2; until 0.15 it preferred JSON-RPC). Only interfaces whose `protocolVersion` is `1.0` count, whatever the patch (`1.0`, `v1.0`, `1.0.1` and `1` count; `1.1`, `0.3` and an empty version do not: every request says `A2A-Version: 1.0`, and a server processes it with exactly that `Major.Minor`, spec §3.6.2), so a v0.3 or v1.1 endpoint listed first is skipped; a card with none is refused with what it offers. If the chosen interface cannot be built (gRPC under sync `build()`, an unknown binding, a bad URL), `build()` moves to the next one. The client also checks the card's optional capabilities before each call that needs one (spec §3.3.4); see `without_capability_checks` |
 | `from_card_preferring(&AgentCard, &[String])` | — | Same, with your own binding order. The first preference the card offers wins; matching is case-insensitive |
 | `with_protocol_binding(str)` | `"JSONRPC"` | Force transport: `"JSONRPC"`, `"HTTP+JSON"` (or `"REST"`), or `"GRPC"`, in any case. On a builder made from a card, moves the endpoint and tenant to that binding's interface too, and turns off `build()`'s fallback to other interfaces |
 | `with_custom_transport(impl Transport)` | None | Use a custom transport (e.g., `GrpcTransport`) |
@@ -23,7 +23,9 @@ Every `ClientBuilder` method, its default, and what it changes. The pages in thi
 | `with_accepted_output_modes(Vec<String>)` | `["text/plain", "application/json"]` | MIME types the client handles |
 | `with_history_length(u32)` | None | Messages to include in responses |
 | `with_return_immediately(bool)` | false | Don't wait for task completion |
-| `with_tenant(str)` | None (auto from `AgentCard`) | Default tenant for multi-tenancy |
+| `with_tenant(str)` | None (auto from `AgentCard`) | Default tenant for multi-tenancy. On a builder from a card it replaces the selected interface's tenant: an escape hatch from spec §8.3.2 rule 4, as is a tenant named on a request (`TaskQueryParams::with_tenant` and the like); each sends a URL, binding and tenant the card does not advertise |
+| `with_strict_interface_tenant()` | off | Holds every request to spec §8.3.2 rule 4: a request naming a tenant other than the selected interface's fails before it is sent (`ClientError::Config`), and `build()` refuses a card builder whose tenant `with_tenant` replaced |
+| `with_card_signature_keys(Jwks)` | none (`from_signed_card` sets its keys) | `get_extended_agent_card` verifies the extended card against these keys before adopting anything from it (feature `signing`) |
 | `with_interceptor(impl CallInterceptor)` | Empty chain | Add request/response hook |
 | `with_extensions(uris)` | None | Extensions to ask the agent for, sent as `A2A-Extensions` on every request |
 | `with_max_response_size(usize)` | 32 MiB | Largest buffered (non-streaming) response body |

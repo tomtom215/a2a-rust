@@ -1,0 +1,1 @@
+rc-2026-11-14: terminated 3 backends; 4 s later state TASK_STATE_WORKING, ticks 0..12 stored, missing []; GetTask ok

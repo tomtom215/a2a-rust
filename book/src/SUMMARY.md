@@ -163,6 +163,7 @@
     - [The stack on Kubernetes](./deployment/observability/kubernetes.md)
     - [Debugging telemetry](./deployment/observability/debugging.md)
     - [Langfuse](./deployment/langfuse.md)
+- [Operations Runbooks](./deployment/operations.md)
 - [Troubleshooting](./deployment/troubleshooting.md)
 - [Running More Than One Replica](./deployment/horizontal-scaling.md)
     - [Sharing the store](./deployment/horizontal-scaling/shared-stores.md)
@@ -220,6 +221,9 @@
     - [Fixed defects](./reference/pitfalls/fixed.md)
 - [Architecture Decision Records](./reference/adrs.md)
 - [Conformance Testing](./reference/conformance-testing.md)
+- [Conformance Statement](./reference/conformance-statement.md)
+- [Support Matrix](./reference/support-matrix.md)
+- [Qualification Matrix](./reference/qualification-matrix.md)
 - [Benchmark Results](./reference/benchmarks.md)
 - [Cross-Language Benchmark](./reference/cross-language-benchmarks.md)
 

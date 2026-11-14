@@ -212,7 +212,7 @@ python3 ../scripts/check_stack.py
 ```
 
 CI runs exactly these (`.github/workflows/observability.yml`, with promtool
-3.15.1 and amtool 0.34.2 from their release tarballs, pinned by SHA-256 in
+3.16.0 and amtool 0.34.2 from their release tarballs, pinned by SHA-256 in
 `scripts/install_tools.sh`), and `scripts/prove_workflow_gates_fail.py` proves
 in ci.yml that the test step fails on an empty tests directory, an unmet
 expectation and a broken rule. Until 0.16.0 no workflow ran promtool at all. The tests feed each alert the

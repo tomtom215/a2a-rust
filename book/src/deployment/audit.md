@@ -26,10 +26,11 @@ which articles it does and does not help with is in the
 | `task.steered` | a message is accepted into a running task's inbox (ADR 0036) | task and context, the message id, a digest of the message, `delivery` (`inbox` or `handed-off`), the caller, the trace. Not written for a refused message or a replayed retry |
 | `call.started` | a call is admitted, only in [required](#required-mode) mode | method, the call's id, trace |
 | `call.unresolved` | [`reconcile_unresolved`](#required-mode) finds a call that was admitted and never ended | the call's id and the `call.started` it closes. The outcome is unknown, not failed |
-| `tool.action` | a tool call is put to an `AuditedPolicy`, before it runs | the tool, the tool call's id, the verdict, a digest of the arguments, the caller, the task. Never the arguments |
+| `tool.action` | a tool call is put to an `AuditedPolicy`, before it runs; again, as `approved`, immediately before a call a person approved runs | the tool, the tool call's id, the decision (`allow`, `deny`, `approval_required` or `approved`, with `approvedBy` naming the approver), a digest of the arguments, the caller, the task. Never the arguments |
 | `approval` | the approval gate admits a decision | task, the approver, a digest of the action, `requestId`, `decision`, who asked (`requestedBy`); under a quorum, also `required`, `approvedBy`, `reachedExecutor` |
 | `halt` | an operator halts or resumes | the operator, `action`, `scope` (`all` or `tenant`) and, for a halt, `reason` and the ids of the tasks stopped |
 | `subject.erased` | `erase_subject` destroys a person's key | the operator and the records' random handles (`sids`) |
+| `subject.erasure_refused` | a legal hold was placed by another replica after an erasure's `subject.erased` record and before its keys were deleted; nothing was erased | the operator, the same `sids`, and the `seq` of the `subject.erased` record (`erasedSeq`) |
 | `task.deleted`, `erasure`, `hold.placed`, `hold.released` | see [Erasure of tasks](#erasure-of-tasks-is-on-record-too) and [Retention and legal holds](#retention-and-legal-holds) | the task and its context for `task.deleted`; the operator for the others, with the scope and counts of an `erasure` and the reason of a `hold.placed`. Never content |
 
 Content is recorded as a SHA-256 digest of its canonical JSON, never as
@@ -185,6 +186,12 @@ auditors can get it without trusting the machine that wrote the records.
 Whoever holds the private key can rewrite a chain and sign the result, so the
 key is what the records' integrity rests on. Keep it in a secret store, not
 beside the database.
+
+To rotate it, sign a last checkpoint under the old key, restart with the new
+signer under a new `kid`, and give the log the old public key with
+`with_retired_key`: each checkpoint names the `kid` it was signed under, so
+without it `verify` reports the earlier checkpoints as unverifiable. The steps
+are in [Operations Runbooks](./operations.md#rotate-keys).
 
 ## Verifying
 
@@ -346,6 +353,14 @@ What erasure does not do, stated in full in ADR 0015's amendment:
 - **Work with an HMAC key you dropped.** Keep each old HMAC key in the ring
   (`with_hmac_key`) for as long as people's keys made under it may exist.
 
+Across replicas sharing a SQLite or PostgreSQL store, an erasure and a
+hold, and a key's cleanup and an append, are ordered by the store: an
+erasure deletes no key once a hold is placed, and a record is never stored
+under a key another replica's cleanup has deleted. A store of your own gets
+this only if it overrides `append_next_naming`,
+`delete_subject_key_unless_named` and `delete_subject_keys_unless_held`
+(ADR 0015, amendment 2026-11-13).
+
 It also costs: an append took 17.6 µs plain and 47.2 µs protected on the
 in-memory store, 296 µs and 521 µs on a SQLite file (ADR 0015 gives the
 method). Retention drops the keys of people no remaining record names.
@@ -446,7 +461,8 @@ avoid rereading a long chain.
 
 For an action that must not run unrecorded, install an `AuditedPolicy` on the
 [tool loop](../building-agents/tool-loop/running.md): it writes a `tool.action` record *before*
-each call and does not run a call it cannot record. The signed checkpoints that
+each call and does not run a call it cannot record. That holds for a call a person approved too: its `approved` record is written
+immediately before it runs, and an approved call whose record the store refuses is not run. The signed checkpoints that
 make a rewritten chain detectable are only as good as where they are kept:
 copy them off the machine that signs them.
 

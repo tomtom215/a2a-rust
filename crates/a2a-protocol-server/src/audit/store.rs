@@ -307,6 +307,138 @@ pub trait AuditStore: Send + Sync + 'static {
         let _ = (chain, lookup);
         Box::pin(async { no_subject_keys() })
     }
+
+    // ── One lifecycle for a key and the records that use it ─────────────
+    //
+    // A key is made before the append that first uses it (no store read may
+    // happen inside an append: adversarial review A2), so between the two
+    // another replica's cleanup could see a key no record names and delete
+    // it, and the append then stored a record no key opens (adversarial
+    // review N03, 2026-11-13). And an erasure that read "no hold" could
+    // delete keys after another replica placed one (S8). The three methods
+    // below are the fences. Their defaults are built from the methods above
+    // and are **not** atomic across processes: a store shared between
+    // replicas overrides them with a check and a write that nothing of the
+    // other two can come between, as the SQLite and PostgreSQL stores do.
+
+    /// [`append_next`](Self::append_next) for a record sealed under the keys
+    /// whose handles are `sids`: stores it only if every one of those keys is
+    /// still in the store, checked atomically with the store's write, so that
+    /// [`delete_subject_key_unless_named`](Self::delete_subject_key_unless_named)
+    /// either sees this record or deleted the key before it, which this then
+    /// sees. The same contract as `append_next` otherwise.
+    ///
+    /// # Errors
+    ///
+    /// When the store cannot be read or written, or `seal` fails.
+    fn append_next_naming<'a>(
+        &'a self,
+        chain: &'a str,
+        sids: &'a [String],
+        seal: &'a Sealer<'a>,
+    ) -> BoxFuture<'a, A2aResult<NamedAppend>> {
+        Box::pin(async move {
+            for sid in sids {
+                if self.subject_key_by_sid(chain, sid).await?.is_none() {
+                    return Ok(NamedAppend::KeyGone);
+                }
+            }
+            Ok(self
+                .append_next(chain, seal)
+                .await?
+                .map_or(NamedAppend::Lost, |r| NamedAppend::Stored(Box::new(r))))
+        })
+    }
+
+    /// Deletes the key of `chain` whose lookup is `lookup` and handle `sid`,
+    /// unless a record with `seq` above `scanned_through` references `sid`
+    /// ([`sid_marker`]); `true` when it was deleted. For dropping keys no
+    /// record names: the caller has read the chain through
+    /// `scanned_through`, found no record naming `sid`, and this checks the
+    /// records stored since, atomically with the deletion (see
+    /// [`append_next_naming`](Self::append_next_naming)).
+    ///
+    /// # Errors
+    ///
+    /// When the store fails, or keeps no subject keys.
+    fn delete_subject_key_unless_named<'a>(
+        &'a self,
+        chain: &'a str,
+        lookup: &'a str,
+        sid: &'a str,
+        scanned_through: u64,
+    ) -> BoxFuture<'a, A2aResult<bool>> {
+        Box::pin(async move {
+            let marker = sid_marker(sid);
+            let mut after = scanned_through;
+            loop {
+                let page = self.read(chain, after, 1_000).await?;
+                let Some(last) = page.last() else { break };
+                after = last.seq;
+                for r in &page {
+                    if serde_json::to_string(r).is_ok_and(|text| text.contains(&marker)) {
+                        return Ok(false);
+                    }
+                }
+            }
+            Ok(self.delete_subject_key(chain, lookup).await?.is_some())
+        })
+    }
+
+    /// Deletes every key of `chain` whose lookup is in `lookups`, unless a
+    /// legal hold is placed on `chain`: `None` when one is, with nothing
+    /// deleted; otherwise the `sid` of each key deleted. All or nothing, and
+    /// the hold is read atomically with the deletion, as
+    /// [`delete_through_unless_held`](Self::delete_through_unless_held)
+    /// reads it.
+    ///
+    /// # Errors
+    ///
+    /// When the store fails, or keeps no subject keys.
+    fn delete_subject_keys_unless_held<'a>(
+        &'a self,
+        chain: &'a str,
+        lookups: &'a [String],
+    ) -> BoxFuture<'a, A2aResult<Option<Vec<String>>>> {
+        Box::pin(async move {
+            if self.holds().await?.iter().any(|hold| hold.chain == chain) {
+                return Ok(None);
+            }
+            let mut sids = Vec::new();
+            for lookup in lookups {
+                if let Some(sid) = self.delete_subject_key(chain, lookup).await? {
+                    sids.push(sid);
+                }
+            }
+            Ok(Some(sids))
+        })
+    }
+}
+
+/// The prefix of a sealed value in a record: the same string as
+/// `AuditPrivacy`'s `SEALED_PREFIX` (the `encryption` feature), here so that a
+/// store can find the values of a handle without that feature.
+pub const SEALED_VALUE_PREFIX: &str = "a2a-sealed:v1:";
+
+/// The text a sealed value referencing `sid` holds: what
+/// [`AuditStore::delete_subject_key_unless_named`] looks for in a record.
+#[must_use]
+pub fn sid_marker(sid: &str) -> String {
+    format!("{SEALED_VALUE_PREFIX}{sid}:")
+}
+
+/// What [`AuditStore::append_next_naming`] did.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum NamedAppend {
+    /// The record is stored.
+    Stored(Box<AuditRecord>),
+    /// Another writer took the position first; nothing was stored.
+    Lost,
+    /// A subject key the record is sealed under is no longer in the store;
+    /// nothing was stored. The caller resolves the record's people again (a
+    /// new key is made) and seals it afresh.
+    KeyGone,
 }
 
 /// Parses a record's `time` into Unix milliseconds for retention.

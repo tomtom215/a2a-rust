@@ -11,6 +11,9 @@ pub struct Counting;
 pub static ALLOCS: AtomicU64 = AtomicU64::new(0);
 pub static BYTES: AtomicU64 = AtomicU64::new(0);
 
+// SAFETY: every call is forwarded unchanged to `System`, which upholds
+// `GlobalAlloc`'s contract; the counters are atomic arithmetic that never
+// allocates, so the allocator does not re-enter itself.
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, l: Layout) -> *mut u8 {
         ALLOCS.fetch_add(1, Relaxed);

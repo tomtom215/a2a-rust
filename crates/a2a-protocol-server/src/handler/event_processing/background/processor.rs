@@ -141,47 +141,6 @@ impl<'a> Processor<'a> {
         self.announce(status, None).await;
     }
 
-    /// Tells the task's webhooks how it ended, unless this processor already
-    /// did, and records the ending in its log at the next position.
-    async fn announce(&mut self, status: TaskStatus, reserved: Option<super::Reservation>) {
-        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
-            self.task_id.clone(),
-            self.last_task.context_id.clone(),
-            status,
-        ));
-        // Recorded in the outbox before it is logged, when there is one (see
-        // `PushLanes::record_now`): a stop in between leaves the log without
-        // the ending, which the reaper completes, not a log with it and
-        // webhooks that were never told.
-        let recorded = match reserved {
-            // Reserved before the status was saved: armed now that it is stored.
-            Some(reservation) if !self.pushed_terminal => {
-                reservation.arm_now().await;
-                true
-            }
-            Some(reservation) => {
-                reservation.release_now().await;
-                true
-            }
-            None => !self.pushed_terminal && self.deps.push.record_now(self.task_id, &event).await,
-        };
-        super::super::append_ending(
-            self.deps.task_store,
-            self.task_id,
-            &event,
-            self.deps.metrics,
-            self.deps.limits.store_write_retry,
-        )
-        .await;
-        if !self.pushed_terminal {
-            if !recorded {
-                self.deps.push.push(self.task_id, &event);
-            }
-            self.pushed_terminal = true;
-        }
-        self.ended = true;
-    }
-
     /// The executor panicked: a task it left running is marked `Failed`,
     /// unless it is already finished — here, or by another writer.
     pub(super) async fn executor_panicked(&mut self) {
@@ -386,10 +345,17 @@ impl<'a> Processor<'a> {
             self.answer(seq, verdict.clone());
         }
         // Recorded in the outbox before it is logged: see `announce`.
-        let recorded =
-            !self.pushed_terminal && self.deps.push.record_now(self.task_id, &verdict).await;
+        let (recorded, durable) = if self.pushed_terminal {
+            (false, true)
+        } else {
+            self.record_ending(&verdict).await
+        };
         if terminal {
-            self.record(seq, verdict.clone()).await;
+            if durable {
+                self.record(seq, verdict.clone()).await;
+            } else {
+                super::super::note_ending_owed();
+            }
             self.ended = true;
         }
         if !self.pushed_terminal {
@@ -471,6 +437,7 @@ impl<'a> Processor<'a> {
     }
 }
 
+mod endings;
 mod reconcile;
 
 #[cfg(test)]

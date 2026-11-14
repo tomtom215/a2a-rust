@@ -73,18 +73,25 @@ impl CountingAllocator {
     }
 }
 
+// SAFETY: every allocation and deallocation is forwarded unchanged to
+// `System`, which upholds `GlobalAlloc`'s contract; the counters are atomic
+// arithmetic that never allocates, so the allocator does not re-enter itself.
+// `realloc` is the trait's default, which goes through `alloc` and `dealloc`
+// below, so every block `dealloc` sees came from `System`.
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         self.alloc_count.fetch_add(1, Ordering::Relaxed);
         self.alloc_bytes
             .fetch_add(layout.size() as u64, Ordering::Relaxed);
-        // SAFETY: delegating to System allocator
+        // SAFETY: the caller's contract for `alloc` (a non-zero-size `layout`)
+        // is passed on to `System` unchanged.
         unsafe { self.inner.alloc(layout) }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         self.dealloc_count.fetch_add(1, Ordering::Relaxed);
-        // SAFETY: delegating to System allocator
+        // SAFETY: `ptr` was returned by `System` (through `alloc` above) with
+        // this same `layout`, as the caller's contract for `dealloc` requires.
         unsafe { self.inner.dealloc(ptr, layout) }
     }
 }

@@ -388,7 +388,9 @@ async fn a_real_models_call_waits_for_an_approval_of_that_exact_call() {
         .load(&req.request_id)
         .await
         .unwrap()
-        .expect("a parked run");
+        .expect("a parked run")
+        .checkpoint()
+        .expect("a JSON checkpoint");
     let pending = held.pending_approval.expect("a pending call");
     let arguments: Value = serde_json::from_str(&pending.call.arguments).unwrap();
     println!("the model chose: transfer_money {arguments}");

@@ -49,25 +49,36 @@ while time.time() - t0 < 10 and not logged("n1", "cancelled"): time.sleep(0.05)
 check("P1b and a cancel on the other replica still stops it", logged("n1", "cancelled"),
       f"stopped {time.time() - t0:.2f} s after the cancel; state {stored(t)[0]}")
 
-# P2: N1's link down 20 s, past the time to live: N2 takes the task over.
+# P2: N1's link down 20 s, past the claim's 15 s time to live. The contract since
+# the renewal watchdog and the abandoned-task reaper (CHANGELOG: "A replica that
+# cannot renew a turn's claim stops the turn", "Tasks a dead replica left running
+# are ended"): N1 stops its own turn once its claim is unproven for 12 s, N2's
+# reaper ends the task `failed`, class `transient`, a continuation is refused as
+# terminal, and N1 writes nothing more, before or after its link comes back.
+# (Until 2026-11-14 this case expected N2 to run the continuation on the task.)
+def failure_class(task):
+    return common.psql("SELECT data->'status'->'message'->'metadata'->>'a2a-rust.com/failure' "
+                       f"FROM tasks WHERE id = '{task['id']}'", DB).strip()
 t, _ = send(N1, "tick", now=True); time.sleep(2)
-link("pg_a", False); cut = time.time()
-time.sleep(16)
-done, err = send(N2, "finish", t); took_over = time.time() - cut
-parts_at_takeover = stored(t)[1]
 stops = open(logs["n1"]).read().count("cancelled")
-time.sleep(max(0, 20 - (time.time() - cut))); link("pg_a", True); back = time.time()
-stopped = None
-while time.time() - back < 10 and stopped is None:
-    if open(logs["n1"]).read().count("cancelled") > stops: stopped = time.time() - back
-    time.sleep(0.05)
-time.sleep(max(0, 5 - (time.time() - back)))
+link("pg_a", False); cut = time.time()
+stopped = failed = None
+while time.time() - cut < 25 and (stopped is None or failed is None):
+    if stopped is None and open(logs["n1"]).read().count("cancelled") > stops: stopped = time.time() - cut
+    if failed is None and stored(t)[0] == "TASK_STATE_FAILED": failed = time.time() - cut
+    time.sleep(0.1)
+parts_at_failure = stored(t)[1]
+_, err = send(N2, "finish", t)
+time.sleep(max(0, 20 - (time.time() - cut))); link("pg_a", True); time.sleep(5)
 final = stored(t)
-check("P2 a 20 s partition: the other replica takes the task over after the time to live, and the cut-off replica writes nothing more",
-      err is None and final[0] == "TASK_STATE_COMPLETED" and final[1] == parts_at_takeover and stopped is not None,
-      f"N2 ran the continuation {took_over:.1f} s after the cut ({err or done['status']['state']}); "
-      f"tick parts {parts_at_takeover} at takeover, {final[1]} 5 s after N1's link came back; final state {final[0]}; "
-      f"N1's executor stopped {f'{stopped:.1f} s' if stopped is not None else 'not within 10 s'} after its link came back")
+check("P2 a 20 s partition: the cut-off replica stops its turn, the task is ended failed (transient), a continuation is refused, and the cut-off replica writes nothing more",
+      stopped is not None and stopped <= 15 and failed is not None and failed <= 15 + 15
+      and failure_class(t) == "transient" and err is not None and err.get("code") == -32004
+      and final[0] == "TASK_STATE_FAILED" and final[1] == parts_at_failure,
+      f"N1's executor stopped {f'{stopped:.1f} s' if stopped is not None else 'not within 25 s'} after the cut "
+      f"(watchdog 12 s); the task was failed {f'{failed:.1f} s' if failed is not None else 'not within 25 s'} after it, "
+      f"class {failure_class(t)!r}; N2's continuation: {err and (err.get('code'), err.get('message', '')[:70])!r}; "
+      f"tick parts {parts_at_failure} when failed, {final[1]} 5 s after N1's link came back; final state {final[0]}")
 
 # P3: the database restarts mid-turn.
 t, _ = send(N1, "tick", now=True); time.sleep(2)

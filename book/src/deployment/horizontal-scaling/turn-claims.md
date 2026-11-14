@@ -167,8 +167,14 @@ survivor of a dead peer still ends the peer's orphans.
 Verified in process, with a claim store whose renewals can be made to fail
 (`tests/claim_lapse.rs`: a cut ends the turn transient, a 0.9 s blip stops
 nothing), and against PostgreSQL for the pool (`postgres_renews_while_the_task_pool_is_exhausted`).
-The live partition run above has not been repeated through toxiproxy since the
-change, so the timings in this page are the 2026-10-28 ones, not these.
+Repeated live through toxiproxy on 2026-11-14, two replicas on PostgreSQL 17 at
+the default timing (`scripts/live/partition_live.py`, P2; the
+[Qualification Matrix](../../reference/qualification-matrix.md)): with the running
+replica's link cut for 20 s, its watchdog stopped the turn 13.1 s after the cut,
+the other replica's reaper ended the task `failed`, class `transient`, at 16.0 s,
+a continuation sent to it was refused as terminal, and the cut-off replica wrote
+nothing more, before or after its link came back. The 5 s cut and the database
+restart behaved as in the 2026-10-28 run above.
 
 ### A finished task whose owner died before it finished the ending
 

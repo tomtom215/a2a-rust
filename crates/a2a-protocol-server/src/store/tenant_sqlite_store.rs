@@ -268,6 +268,10 @@ fn to_a2a_error(e: &sqlx::Error) -> A2aError {
 
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for TenantAwareSqliteTaskStore {
+    fn is_process_local(&self) -> bool {
+        crate::sqlite_pool::is_in_memory(&self.pool)
+    }
+
     fn isolates_tenants(&self) -> bool {
         true
     }

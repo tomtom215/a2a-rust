@@ -174,9 +174,9 @@
   "severity": "Product gap",
   "finding": "Durable step journal (resume points, pinned versions, pending approvals, action receipts)",
   "status": "PARTIAL",
-  "note": "A run begun again under the same key resumes, with pins, receipts, fencing and fail-closed writes, on memory, SQLite and PostgreSQL. Not done: expiry of a journal row whose run never ends, anything that begins an orphaned task again, compensation, and any two-replica test.",
+  "note": "A run begun again under the same key resumes, with pins, receipts, fencing and fail-closed writes, on memory, SQLite and PostgreSQL. Since 21d03e00 (2026-11-13 review N04, N07) an entry is retained, fenced, owned and erasable, and StepJournal::sweep expires finished and abandoned runs on the deployment's schedule. Not done: anything that begins an orphaned task again, compensation, and any two-replica test.",
   "commit": "f757caa3",
-  "evidence": "Control first: with no journal the same death repeats the tool (without_a_journal_the_same_death_repeats_the_call). ToolLoop::with_journal(Arc<dyn StepJournal>) writes a checkpoint (conversation, trace, calls answered, a receipt per call) after each model reply, before each call and after each; a run begun again under the same key resumes and asks the model only for what comes next. Pins: model name, digests of the preamble, tool set and modes, with_pin labels; a resume under other pins is PinMismatch. A receipt is Started before a call runs; on resume it is re-run only when with_idempotency_secret was set, else Indeterminate. A write that cannot be made stops the run before the call; a write is accepted only as the stored revision's successor. Real model (Qwen3-1.7B, llama.cpp 4fffab6): a run killed inside a call over a SQLite file resumed, the model was asked once and the tool's second call carried the first's idempotency key. NOT done: external effects still need the backend's idempotency (a repeat is rare and visible, not impossible); a journal row is removed only when its run ends, so an abandoned run keeps its row (no expiry); nothing here begins an orphaned task again (a search of the server for such a mechanism found none); compensation; fencing was tested against one store in one process, not by two replicas; PostgreSQL ran the contract test only.",
+  "evidence": "Control first: with no journal the same death repeats the tool (without_a_journal_the_same_death_repeats_the_call). ToolLoop::with_journal(Arc<dyn StepJournal>) writes a checkpoint (conversation, trace, calls answered, a receipt per call) after each model reply, before each call and after each; a run begun again under the same key resumes and asks the model only for what comes next. Pins: model name, digests of the preamble, tool set and modes, with_pin labels; a resume under other pins is PinMismatch. A receipt is Started before a call runs; on resume it is re-run only when with_idempotency_secret was set, else Indeterminate. A write that cannot be made stops the run before the call; a write is accepted only as the stored revision's successor. Real model (Qwen3-1.7B, llama.cpp 4fffab6): a run killed inside a call over a SQLite file resumed, the model was asked once and the tool's second call carried the first's idempotency key. NOT done: external effects still need the backend's idempotency (a repeat is rare and visible, not impossible); nothing here begins an orphaned task again (a search of the server for such a mechanism found none); compensation; fencing was tested against one store in one process, not by two replicas; PostgreSQL ran the contract test only.",
   "tests": "run_tests/journal.rs (8), journal_writes.rs (2), journal/tests.rs (5, the store contract; the PostgreSQL one needs A2A_TEST_POSTGRES_URL and includes a race of two writers for one revision), journal_approval.rs (7), journal_binding.rs (3); tests/tool_loop_approval_journal.rs (3, real handler); tests/tool_loop_journal_live.rs (3, real model, ignored); 26 hand mutants, all killed"
  },
  {
@@ -224,9 +224,9 @@
   "severity": "Governance",
   "finding": "Release evidence manifest tying the source tree to tests, waivers, supported profiles and measured limits",
   "status": "PARTIAL",
-  "note": "scripts/release_evidence.py generates and verifies a manifest by hand; it is not a gate in release.yml, runs no test suite and signs nothing.",
+  "note": "Wired into release.yml at 3f6be5f7 (2026-11-13 review N13): the package job writes it with the static gates run and verifies it against the tagged commit, and it is attached to the release. It runs no test suite (the ci-evidence job requires ci.yml's run of the commit instead) and is not signed separately (the release's artifacts are attested, the manifest is attached beside them).",
   "commit": "0da4c753",
-  "evidence": "generate --commit REV [--run-gates] records the commit and tree, crate versions, MSRV and toolchain, the SHA-256 of each claim-bearing input read from the commit's tree, every advisory waiver with its reason, the deployment profiles and Cargo features, the register's counts, the measured limits (a machine-readable block in docs/readiness-bar.md, each number checked against the prose table), the unreleased breaking changes and each static gate's exit status (not_run unless --run-gates). verify re-reads the inputs and fails on any mismatch, and with --head unless the manifest is for HEAD. --self-test passes 15 checks; generate then verify --head exits 0; a manifest with one input hash changed exits 1. NOT done: wiring into release.yml (it needs the gate inventory and reachability checks to learn it first); a signature; test results (CI's run of the commit holds them).",
+  "evidence": "generate --commit REV [--run-gates] records the commit and tree, crate versions, MSRV and toolchain, the SHA-256 of each claim-bearing input read from the commit's tree, every advisory waiver with its reason, the deployment profiles and Cargo features, the register's counts, the measured limits (a machine-readable block in docs/readiness-bar.md, each number checked against the prose table), the unreleased breaking changes and each static gate's exit status (not_run unless --run-gates). verify re-reads the inputs and fails on any mismatch, and with --head unless the manifest is for HEAD. --self-test passes 15 checks; generate then verify --head exits 0; a manifest with one input hash changed exits 1. Since 3f6be5f7 a release step; prove_workflow_gates_fail.py proves the step fails when a gate it runs exits 1. NOT done: a signature of the manifest itself.",
   "tests": "scripts/release_evidence.py --self-test (15 checks)"
  },
  {
@@ -243,11 +243,11 @@
   "id": "S8",
   "severity": "Low",
   "finding": "erase_subject against a legal hold, across replicas (A1 residual)",
-  "status": "OPEN",
-  "note": "",
-  "commit": "",
-  "evidence": "The per-store atomic hold check covers purge; erase_subject's interaction with a hold placed on another replica is not made atomic.",
-  "tests": ""
+  "status": "FIXED",
+  "note": "Fenced in each shipped store (SQLite one statement, PostgreSQL under the chain's advisory lock, memory in one lock order); a third-party AuditStore keeping the trait default is not atomic across processes, as documented.",
+  "commit": "aa26b2b0",
+  "evidence": "Fixed with N03 of the 2026-11-13 review. erase_subject deletes all of an erasure's keys or none under a hold (AuditStore::delete_subject_keys_unless_held); a hold placed after the subject.erased record is answered with a subject.erasure_refused record and an error. Reproduced first with two logs over one store, one paused between reading the holds and deleting the keys: on the old code the keys went under the hold on memory, SQLite and PostgreSQL; all pass now.",
+  "tests": "audit/privacy/tests/key_lifecycle.rs; audit store fence contract (stores.rs)"
  },
  {
   "id": "G1",

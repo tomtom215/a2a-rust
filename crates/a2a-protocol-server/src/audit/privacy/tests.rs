@@ -9,6 +9,7 @@
 
 mod cost;
 mod erasure;
+mod key_lifecycle;
 mod stores;
 
 use std::sync::Arc;

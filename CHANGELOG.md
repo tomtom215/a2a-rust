@@ -24,6 +24,12 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 13.2.4), 2026-10-28.
 
 
+### Upgrading
+
+- **Read the upgrade guide first:** `book/src/reference/upgrading/0.15-to-0.16.md` gives every API break with its migration. The Breaking Changes and Behaviour Changes sections below are the full record, and Added and Fixed are the archive of everything else.
+- **Data:** the task stores add one table (`a2a_task_claims`; schema version 8 to 9 on SQLite, 7 to 9 on PostgreSQL). On PostgreSQL a fleet can be replaced one replica at a time: the database keeps 0.15 and 0.16 replicas off each other's turns, measured against a real 0.15.0 replica. SQLite task and audit files were carried from 0.15 to 0.16 and back in a rehearsal; a rollback on PostgreSQL was not rehearsed. The procedure and its rollback are in `book/src/deployment/operations.md`, and what is supported, at which schema and sealed-format versions, in `book/src/reference/support-matrix.md`.
+- **If you run `deploy/observability`:** it now runs Tempo 3.1.1, which refuses Tempo 2's `compactor` block; take the new `tempo/tempo.yaml` and `docker-compose.yml` together. A Tempo 2.9 data volume opened by 3.1.1 was not tested: start Tempo on a fresh volume, or keep 2.9.0 until you have tried it.
+
 ### Highlights
 
 - **Action required if you build against the SDK (each breaking item has its migration in `book/src/reference/upgrading/0.15-to-0.16.md`):** `RequestContext.context_id` is a `ContextId`; forty wire structs (`Task`, `Message`, `Part`, `AgentCard`, the update events, the method parameters and responses, the security schemes and flows) are `#[non_exhaustive]`, built with `new` and `with_*`; `AgentCard::new` declares streaming; `a2a-protocol-server` enables `tls-rustls` by default; `sign_agent_card` is removed; configuration errors are `ServerError::Config`/`ClientError::Config`; internal error text is withheld from callers; `JwtValidator` checks `iss` and `aud`; the WebSocket listener refuses browsers unless allowed; `ServeReport` is `#[must_use]`; `tls::HttpsClient` is a struct; `Telemetry` is `#[must_use]` and `install_subscriber()` returns `()`; `OpenAiChatModel` answers a 429 with `ModelError::RateLimited`; every agent card declares the lineage extension.
@@ -37,10 +43,56 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **Serving and API shape:** every listener has one graceful `serve_with_shutdown` and takes `ServeConfig` (the axum router now runs on `Server`), `EventStream` is a `futures_core::Stream`, a one-shot agent answers with `complete_with_text`, and 23 names are deprecated (26 in the release, counting the ones under `### Deprecated` that this package did not add), to be removed no earlier than 0.17.0.
 - **Agent Skills in the tool loop** (`skills` feature, ADR 0035): a directory of `SKILL.md` becomes a catalog in the system prompt, `activate_skill` and a confined `read_skill_file`, and no script is ever run.
 - **Steering a running task** (ADR 0036, opt-in): a message to a `working` task goes into a bounded inbox the executor reads, across replicas through the claim store, with `Delegation::steer` and `steer_all` on the client.
+- **Deployment profiles and operations:** `Profile::DurableProduction`, `Profile::LocalDevelopment` and `Profile::RegulatedData` are checked by `build()`, `RequestHandler::profile_report()` says what was checked, given up and only declared, and the book adds operations runbooks and a support matrix.
 - **Not in this release:** the parts listed under Known Limitations, and the live checks `docs/readiness-bar.md` still lists as unmeasured.
 
 ### Added
 
+- **Named deployment profiles for local development and durable production, and a report of what a handler's profiles guarantee**
+  (server; adversarial review of 2026-11-13: "offer named profiles … report which guarantees escape hatches disable").
+  `Profile::LocalDevelopment` states that keeping everything in this process is intended, and `build()` refuses it beside
+  `Production` or `DurableProduction`. `Profile::DurableProduction` refuses a handler with no authenticating interceptor, no task
+  store, or a task, push-config, push-outbox (when the card declares push), halt, lease or audit store that keeps its state in this
+  process alone. Several replicas with tenants kept apart are `DurableProduction` + `Production` + `MultiTenant`.
+  `RequestHandler::profile_report()` returns a `ProfileReport` (also `Display`): what `build()` checked, each escape hatch given
+  (`allow_process_local_stores()`, `accept_unisolated_tenants()`, `share_tasks_across_callers()`, `LocalDevelopment`) and what it
+  gives up, logged at `WARN`, and what no check at startup can establish (backups, the database's availability, a tool loop's step
+  journal, key custody, retention jobs). `TaskStore::is_process_local` and `PushOutbox::is_process_local` (default `false`, as on the
+  halt, lease, push-config and audit store traits) say which stores are in memory; the bundled wrappers forward it.
+
+- **`Profile::RegulatedData`, and declarations of the controls a process cannot see** (server; adversarial review of 2026-11-13,
+  enterprise asks). `build()` refuses the profile without an authenticating interceptor; without an audit log that is required
+  (`require_record(true)`) and seals what records say about people (`with_privacy`), which needs the `audit` and `encryption`
+  features; without task content sealed by the store (`EncryptedTaskStore`) or declared encrypted at rest; without
+  `refuse_private_file_urls()`; with a push sender that allows private addresses or plain HTTP; and until trusted proxies, key
+  custody, backups and retention are each declared with `declare_external_control(ExternalControl::…, how)`. It is refused beside
+  `LocalDevelopment`. A declaration is a statement for the record, not a check: `ProfileReport::declared` carries it, the report
+  prints it as "declared, not verified", and a blank one is refused under any profile. `TaskStore::seals_content` (default
+  `false`; `EncryptedTaskStore` answers `true`, the audited and traced wrappers forward it) and `AuditLog::is_private` are new.
+- **`AuditLog::with_retired_key` and `AuditLog::trusted_keys`** (server). `AuditLog::verify` trusted only the current signer's key,
+  and a checkpoint is checked under the key its `kid` names, so after a rotation of the checkpoint key the chain's earlier
+  checkpoints were reported unverifiable. A retired public key given with `with_retired_key` is now trusted beside the signer's.
+- **Book: Operations Runbooks and a Support Matrix** (`deployment/operations.md`, `reference/support-matrix.md`). The runbooks are
+  procedures, each naming the calls it makes: erasing one person across the task stores, the step journal and the audit trail;
+  answering an access request; legal holds; retention jobs; halting a tenant or a job; rotating content, HMAC and checkpoint keys;
+  losing the audit store; restoring a backup; and upgrading from 0.15 with its rollback. The support matrix states what 0.16
+  supports and how far each part is qualified (products, protocol bindings, Rust versions, features, databases and schema
+  versions, sealed formats, upgrades, the support window), each with the file it is read from.
+- **Book: a Qualification Matrix** (`reference/qualification-matrix.md`; evidence in `docs/audits/2026-11-14-qualification/`): what
+  this release was run against before it shipped. Replicas killed, frozen past their claim and started thirty at once; the database's
+  connections terminated, its link paused, cut and partitioned, the database restarted and a row locked; a replica killed at either
+  side of its push outbox's reservation; a scripted provider that misbehaves in 24 ways and a real `llama-server` that is down, killed
+  mid-generation and restarted; and a v0.15.0 replica beside a 0.16 one. Every row held but one not run, with the reason.
+
+- **`OpenAiChatModel::with_stream_connection_reuse()`** (adversarial review of 2026-11-13, N16). A streamed turn asked for its connection to
+  be closed (`Connection: close`) on every endpoint, for a llama-server behaviour: it closes the connection after a streamed answer (measured
+  again on llama.cpp `9daa0aa`: three of three reuse attempts found the connection closed). That stays the default, now stated as a
+  per-model setting, and an endpoint that keeps its connections (a hosted provider, a proxy) can reuse them. The cost of the handshake was
+  not measured: only a local endpoint was at hand.
+- **`ClientBuilder::with_strict_interface_tenant()`** (adversarial review of 2026-11-13, N12): holds every request to spec §8.3.2 rule 4, so
+  a request naming a tenant other than the selected card interface's fails before it is sent (`ClientError::Config`), and `build()` refuses a
+  card builder whose tenant `with_tenant` replaced. Without it both stay escape hatches for a deployment whose tenants are not each a card
+  interface, now documented as such on `with_tenant`.
 - **`PushOutbox::reserve`, `arm`, `release`, `held` and `held_for_task`, `supports_renewal` and `renew`**, `PushOutbox::supports_reservations` (false by default, so an outbox of your own keeps working
   and keeps recording after the event is stored), the `Held` type, and the push outcome `reservation_settled` (`push_outcome::RESERVATION_SETTLED`; the
   metric and its label are in the book). `InMemoryPushOutbox`, `SqlitePushOutbox` and `PostgresPushOutbox` implement them (an outbox that wraps another has to forward each, or the handler uses the trait's default for it); `record` and `reserve` now leave a delivery id that is already in the outbox as it is; the table
@@ -1025,6 +1077,30 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Behaviour Changes
 
+- **The observability stack and the `deploy-agent` image move to newer bases** (`deploy/observability`, `examples/deploy-agent`).
+  The stack runs OpenTelemetry Collector 0.164.0, Prometheus 3.16.0 (and CI's promtool with it), Tempo 3.1.1 and Grafana 13.3.0.
+  Tempo 3 compacts and applies retention in its backend worker, so `tempo.yaml`'s `compactor` block is now
+  `backend_worker.compaction`, and its image has no shell, so the one-shot that hands the data volumes to uid 10001 runs from the
+  Prometheus image. While idle, Tempo 3's worker logs `no jobs found` at error level every few seconds. `deploy-agent` builds on
+  `rust:1.98-bookworm` (was 1.94; CI's 1.94 job still proves the MSRV) and runs on the current `debian:bookworm-slim`.
+
+- **A SQLite store over `sqlite::memory:` says it is process-local** (server). The SQLite task, tenant task, halt, audit,
+  push-config, tenant push-config stores and the SQLite push outbox answered `is_process_local() == false` whatever their URL;
+  over `sqlite::memory:` they answer `true` now (read from the database name sqlx gives an in-memory URL; a named database opened
+  with `?mode=memory` is still taken for a file). One effect on `Profile::Production`: a task store that is process-local is no
+  longer treated as shared between processes because it hands out turn claims, so an in-memory halt or lease store beside a
+  `sqlite::memory:` task store is no longer refused. A store over a file is unchanged.
+
+- **The tool loop bounds the bytes a run holds** (adversarial review of 2026-11-13, N09). Turns and calls were bounded, and the bundled
+  adapter bounded a provider's response, but a tool's result was kept whole in the conversation, sent again on every later turn and written
+  again in every checkpoint (on the old code a 2 MiB result reached the model whole). Now a result past `ToolLoop::with_result_limit`
+  (default 1 MiB) is cut and the model is told so; a model request past `with_request_limit` (default 8 MiB) is not sent and the run ends
+  `LoopError::TooLarge`; a checkpoint past `with_checkpoint_limit` (default 32 MiB) is not written and the run stops before the step. A
+  deployment whose tools return more than 1 MiB that the model must read sets the limit higher.
+- **A client selects only `1.0` card interfaces, whatever the patch** (adversarial review of 2026-11-13, N11). Any `protocolVersion` with major 1
+  counted, so a card listing a `1.1` interface before its `1.0` one was served `A2A-Version: 1.0` at the `1.1` endpoint, which processes a
+  request with exactly the `Major.Minor` it names (spec §3.6.2). `1.1`, and any minor but `0`, is now passed over; `1.0.1`, `v1.0` and a bare
+  `1` still count. A test pinned `1.1-rc1` as compatible; it now pins the opposite, and the old code chose the `1.1` endpoint in the new one.
 - **A NUL character (U+0000) anywhere in a `SendMessage` request is now `InvalidParams` on every store** (hostile campaign, wave 2,
   2026-11-08). PostgreSQL's `jsonb` cannot hold one, so the three PostgreSQL stores answered `-32603` (carrying the database's own message)
   and created no task for a NUL in a text part, filename, URL, media type, metadata key or value, extension or `data` value, while the
@@ -1698,6 +1774,91 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Fixed
 
+- **A model provider no longer chooses how many metric series a turn makes** (server, `tool-loop`; live campaign W2-LIVE-9). The
+  provider's own name for the model that answered (`gen_ai.response.model`) labelled five turn instruments as given, so a provider
+  or gateway answering 200 names made 200 series on each. A meter now records the first 16 names it sees and any later one, or one
+  over 128 bytes, as `_OTHER`; the span keeps the name as given. Live, the same 200 replies make 17 series per instrument.
+
+- **A blocking send on a single-worker runtime could hang until the executor timeout** (server; found 2026-11-13 by the live
+  end-to-end test of an approved, audited tool call, `tests/tool_loop_audit_live.rs`; present since 2026-10-03 and in 0.15.0). On a
+  runtime with one worker (a `current_thread` runtime, every `#[tokio::test]`, or a container limited to one CPU) a blocking send runs
+  its executor in the task that collects its events, and that task stopped polling the executor while it folded an event into the
+  store. An executor holding something the fold needed was then never polled again and never let it go: with `AuditedPolicy` and an
+  audit log on the handler, the executor held the audit chain's lock across a store read while the fold of its own event waited for
+  that lock, and the send hung for the executor timeout, an hour by default, holding the chain's lock for every other writer. The
+  executor is now polled while an event is folded and while the collection closes out. Reproduced first: on the old code a handler
+  whose executor holds a lock its store's `save` takes, across one await, did not answer within 10 s
+  (`handler/messaging/inline_executor_tests.rs`); with the real model the approval test hung in 2 of 3 and 1 of 3 runs of its file.
+
+- **Two calls with one id, and an id used again, could cross their results and receipts** (adversarial review of 2026-11-13, N08). A reply
+  naming two calls with one id ran both; their results went back under one id, and the journal kept one receipt for both and could answer
+  the second from the first's result on resume. A call that came without an id was given `call-<turn>-<position>` even when the provider had
+  used that name in the same reply. And receipts were found by id alone, so an id used again in a later turn updated the earlier call's
+  receipt and the later call had none. A reply naming one id twice is now refused before any call runs (`LoopError::AmbiguousCalls`), a
+  generated id takes a suffix when the name is taken, and receipts are kept by turn and id (`ActionReceipt::turn`). Reproduced first: on the
+  old code the ambiguous reply ran its calls, the reused id left one receipt, and two results went back under `call-0-1`
+  (`tool_loop/run_tests/limits_and_ids.rs`).
+- **An extended agent card was adopted unverified by a client built from a verified signed card** (adversarial review of 2026-11-13, N10).
+  `ClientBuilder::from_signed_card` verified the public card and kept nothing of the keys, so `get_extended_agent_card` adopted an extended
+  card's capabilities and security requirements with no signature check. The client now keeps the keys (`ContentKeys`, feature `signing`) and
+  verifies the extended card's JSON, as received, before reading or adopting anything; `ClientBuilder::with_card_signature_keys(keys)` sets
+  them for a client built from a card discovery verified. Reproduced first: on the old code an unsigned extended card declaring push
+  notifications was adopted (`tests/extended_card_signature.rs`); now it, and a forged one, fail the call and a push call is still refused locally.
+- **A task's ending that was not durably logged and queued could lose the only record that it was owed** (adversarial review of 2026-11-13,
+  N05 and N06). The reaper completes a finished task's ending through the stale claim its dead replica left; it took the claim and released it
+  whatever happened, so a task it could not read, a log it could not read, an append that failed, or webhook deliveries the outbox had not
+  durably taken left the task in no later look. And `PushLanes::record_now` answered `true` whenever an outbox was installed, also when the push
+  configs could not be read past their retries or the outbox refused the rows and the event was sent once from memory, so the owner and the
+  reaper then logged the ending and released the claim as if its webhooks were owed nothing. `record_now` now returns
+  `Option<Recorded>` (`Durable`, `NoSubscribers`, `ConfigsUnread`, `FromMemory`; `None` with no outbox) and `append_ending` whether it
+  appended. An ending whose deliveries are not durable is not logged (a log without the ending is what the reaper looks for), and the turn's
+  claim is **kept**, not renewed and not released (`TurnClaim::keep_for_repair`), whether the owner's processor, its blocking collector or the
+  reaper left it owed; once it is stale the reaper's next look tries again. Reproduced first: on the old code each of four one-shot faults
+  (task read, log read, log append, configs unreadable) released the reaper's claim (`handler/claims/reaper/tests/repair.rs`), and the processor
+  logged an ending whose webhooks were never queued (`close_out_tests.rs`); all pass now, each repaired on the next look with the ending logged
+  once and the webhook told.
+- **A journaled run's end was unfenced and came before the task's result, and its checkpoints were a plaintext copy of every run outside
+  erasure** (adversarial review of 2026-11-13, N04 and N07; the step journal is new in this release, so its contract changes here).
+  `StepJournal::clear(key)` deleted whatever was stored, so a stale invocation's final answer removed a newer invocation's checkpoint; and the
+  loop cleared the checkpoint before the executor published the answer, so a process that died in between lost the conversation, the receipts
+  and the answer. A final answer is now a *completed* checkpoint written under the revision fence (a stale invocation gets `LoopError::Journal`
+  and publishes nothing), a run begun again under its key returns that answer without asking a model or running a tool, `clear` takes the
+  revision it deletes, and nothing in the loop deletes: `StepJournal::sweep(completed_before, unfinished_before)` does. Each entry
+  (`JournalEntry`) now records its owner (`RunOwner`: tenant, caller, task, from the request and kept when an approver resumes), for
+  `StepJournal::runs_of` (an access request) and `StepJournal::erase` (a person's erasure, which the task store's and audit log's do not reach);
+  and `ToolLoop::with_journal_cipher` (`encryption`) seals each body with a `ContentCipher` bound to the run's key and revision. The SQLite and
+  PostgreSQL tables gain `tenant`, `principal`, `task` and `completed`, added in place to a table an earlier build made. Reproduced first: on
+  the old code a stale invocation published its answer and the newer checkpoint was gone, and a replay after completion asked the model again
+  (`tool_loop/run_tests/journal_finish.rs`); the sealed journal holds none of three canaries placed in the prompt, a tool's arguments and its
+  result (`journal_sealed.rs`).
+- **Across replicas, a key cleanup could delete the key of a record being appended, and an erasure could delete keys under a legal hold**
+  (adversarial review of 2026-11-13, N03; S8 of 2026-11-12). The chain lock is per process. Replica A made a new person's key and, before its
+  append, replica B's key cleanup (which every `purge` runs) found the key unused and deleted it; A then stored a record whose actor could never
+  be revealed, in a chain that verified. And `erase_subject` read the holds and deleted keys later, so a hold B placed in between did not stop
+  it. `AuditStore` gains three fences, overridden atomically by the SQLite store (one statement each) and the PostgreSQL store (under the
+  chain's advisory lock, on the append's own connection): `append_next_naming` stores a record only while its keys exist (`NamedAppend::KeyGone`
+  otherwise, and the log makes a new key and seals again), `delete_subject_key_unless_named` keeps a key that a record stored since the scan
+  names, and `delete_subject_keys_unless_held` deletes all of an erasure's keys or none under a hold, which `erase_subject` answers with a new
+  `subject.erasure_refused` record (`kind::SUBJECT_ERASURE_REFUSED`) and an error. Reproduced first with two logs over one store, one paused at
+  the race, on the in-memory store, two SQLite pools and two PostgreSQL pools (`audit/privacy/tests/key_lifecycle.rs`): all six failed on the
+  old code. The trait defaults are not atomic across processes; a store of your own shared by replicas must override them (ADR 0015 amendment).
+- **A call a person approved could run with no audit record of running, and a healthy store recorded it as denied** (adversarial review of
+  2026-11-13, N02). `AuditedPolicy` treated `RequireApproval` as not allowed: it wrote `decision = deny`, ignored whether that write succeeded,
+  and, once the run resumed with a matching approval, the loop ran the call with no further record. With the audit store down after the run was
+  parked, an approved transfer ran unrecorded. `ToolPolicy` gains `approved(request, approver)` (default: run), which the loop calls with the
+  approver the gate verified **immediately before an approved call runs**; an `Err` stops the call. `AuditedPolicy` now records `allow`, `deny`,
+  `approval_required` (pending, kept like a denial) and `approved` (durable like `allow`, naming the approver in `approvedBy`, which audit privacy
+  seals), and does not run an approved call whose record the store refuses. A wrapped policy's own `approved` is asked first. Reproduced with the
+  audit store failing only after parking and a healthy journal (`tool_loop/run_tests/audited_approval.rs`): on the old code the tool ran once and
+  the healthy-store record said `deny`; both fail there and pass now.
+- **An approval written under audit privacy kept its requester and approvers in the clear, and erasure said nothing was left** (adversarial review of
+  2026-11-13, N01). `detail.reviewFor` (the requester a reviewer answered for) and every element of `detail.approvedBy` (a quorum's approvers) were in
+  none of the field lists that key resolution, sealing, reveal and the in-clear scan each kept, so `AuditLog::with_privacy` stored them unsealed and
+  `erase_subject` reported `in_clear = []` for a person named only there. One classification (`audit/privacy/fields.rs`: `requestedBy`,
+  `erasedCaller`, `reviewFor`; the lists `actors` and `approvedBy`, each element sealed as `<field>/<index>`) is now read by all four, and a test
+  holds it to every `detail` key the server's own records write. A record written before this change still names those people in the clear;
+  erasure now reports its `seq` instead of nothing. Reproduced first over HTTP+JSON with a two-approver quorum answered through review grants and the
+  chain in a SQLite file whose bytes are searched (`tests/audit_privacy_approvals.rs`): both tests failed on the old code and pass now.
 - **A stream could be told a task completed that the store never recorded as completed** (adversarial review of 2026-11-12, R1). When the write of a
   terminal status failed (rejected, or the acknowledgement lost) the processor answered the terminal gate with the event as emitted, so the
   stream said `Completed` while `GetTask` still said `Working`, and, when the write had in fact landed, the reservation was released and
@@ -3060,8 +3221,7 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 - **Tool-loop and model-provider edges found by running real models** (live-model campaign, wave 2, 2026-11-08; each reproduced by the agent, not all
   re-run since): a provider's error body (at most 512 bytes, which can echo the prompt) reaches the `invoke_agent` span as span events and the
-  operator's log, where `book/src/deployment/observability/` says spans carry no content (W2-LIVE-8); `gen_ai.response.model`, a string the provider
-  chooses, labels five metrics, so 200 names made 1,000 series (W2-LIVE-9); a trusted project skill whose name is a Cyrillic look-alike of an
+  operator's log, where `book/src/deployment/observability/` says spans carry no content (W2-LIVE-8); a trusted project skill whose name is a Cyrillic look-alike of an
   operator's skill is a second skill (W2-LIVE-11); `finish_reason: content_filter` with partial text completes the task unmarked, as only `length` is
   marked (W2-LIVE-12); a tool call cut at `max_tokens` surfaces as the provider's HTTP 500 and fails the task `internal` (llama-server's own parse error,
   W2-LIVE-13); a steering message sent during the answering turn is receipted `inbox` and never read (by design; the `unread` metric says so,

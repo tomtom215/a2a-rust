@@ -829,6 +829,10 @@ fn apply_delta(stored: &mut Task, incoming: &Task, delta: ArtifactDelta) -> bool
 
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for InMemoryTaskStore {
+    fn is_process_local(&self) -> bool {
+        true
+    }
+
     fn supports_idempotency(&self) -> bool {
         true
     }

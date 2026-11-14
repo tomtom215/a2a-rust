@@ -27,18 +27,15 @@ enum Gate {
 }
 
 impl ToolLoop {
-    /// What the policy says of `call`.
-    async fn gate(
-        &self,
-        call: &ToolCall,
+    /// What the loop asks a policy about `call`: the call, and the identity
+    /// of the request, never of the model.
+    fn policy_request<'a>(
+        call: &'a ToolCall,
         read_only: bool,
-        arguments: &serde_json::Value,
-        origin: Origin<'_>,
-    ) -> Gate {
-        let Some(policy) = self.policy.as_ref() else {
-            return Gate::Allow;
-        };
-        let request = PolicyRequest {
+        arguments: &'a serde_json::Value,
+        origin: Origin<'a>,
+    ) -> PolicyRequest<'a> {
+        PolicyRequest {
             tool: &call.name,
             arguments,
             call_id: &call.id,
@@ -47,8 +44,15 @@ impl ToolLoop {
             tenant: origin.identity.and_then(|i| i.tenant.as_deref()),
             principal: origin.identity.and_then(|i| i.principal.as_deref()),
             task: origin.identity.and_then(|i| i.task.as_deref()),
+        }
+    }
+
+    /// What the policy says of `request`.
+    async fn gate(&self, request: &PolicyRequest<'_>) -> Gate {
+        let Some(policy) = self.policy.as_ref() else {
+            return Gate::Allow;
         };
-        match policy.authorize(&request).await {
+        match policy.authorize(request).await {
             PolicyDecision::Deny(why) => Gate::Deny(why),
             PolicyDecision::RequireApproval(summary) => Gate::Approval(summary),
             _ => Gate::Allow,
@@ -100,6 +104,45 @@ impl ToolLoop {
                     tool: call.name.clone(),
                     call_id: call.id.clone(),
                 }))))
+            }
+        }
+    }
+
+    /// Everything that decides whether `call` runs, in order: the policy, a
+    /// person's approval of exactly this call, and the policy told of that
+    /// approval last. `None` runs it; `Some` is what it returns instead.
+    async fn decide(
+        &self,
+        call: &ToolCall,
+        read_only: bool,
+        arguments: &serde_json::Value,
+        scope: &str,
+        origin: Origin<'_>,
+        span: &GenAiSpan,
+    ) -> Option<Result<(String, CallStatus), LoopError>> {
+        let request = Self::policy_request(call, read_only, arguments, origin);
+        match self.gate(&request).await {
+            Gate::Allow => None,
+            Gate::Deny(why) => {
+                span.failed("policy_denied");
+                let content = format!("error: this call was not permitted: {why}");
+                Some(Ok((content, CallStatus::Failed)))
+            }
+            Gate::Approval(summary) => {
+                if let Some(refusal) =
+                    Self::approval_gate(call, arguments, summary, scope, origin, span)
+                {
+                    return Some(refusal);
+                }
+                // Approved, for exactly this call: the policy is told so,
+                // last, and may still stop it (N02).
+                if let (Some(policy), Some(verdict)) = (self.policy.as_ref(), origin.approval)
+                    && let Err(why) = policy.approved(&request, &verdict.by).await
+                {
+                    span.failed("approval_unrecorded");
+                    return Some(Ok((format!("error: {why}"), CallStatus::Failed)));
+                }
+                None
             }
         }
     }
@@ -168,20 +211,11 @@ impl ToolLoop {
             span.failed("invalid_arguments");
             return Ok((format!("error: {why}"), CallStatus::Failed));
         }
-        match self.gate(call, tool.read_only(), &arguments, origin).await {
-            Gate::Allow => {}
-            Gate::Deny(why) => {
-                span.failed("policy_denied");
-                let content = format!("error: this call was not permitted: {why}");
-                return Ok((content, CallStatus::Failed));
-            }
-            Gate::Approval(summary) => {
-                if let Some(refusal) =
-                    Self::approval_gate(call, &arguments, summary, scope, origin, &span)
-                {
-                    return refusal;
-                }
-            }
+        if let Some(refused) = self
+            .decide(call, tool.read_only(), &arguments, scope, origin, &span)
+            .await
+        {
+            return refused;
         }
         let invocation = ToolInvocation::new(arguments, key.clone());
         let result = tokio::select! {
@@ -189,7 +223,13 @@ impl ToolLoop {
             () = cancel.cancelled() => return Err(LoopError::Cancelled),
             result = span.instrument(tool.call(invocation)) => result,
         };
-        Self::settled(result, &span, (&**tool, call, key), done)
+        Self::settled(
+            result,
+            &span,
+            (&**tool, call, key),
+            done,
+            self.byte_limits.result,
+        )
     }
 
     /// What a call that ran returns to the model and records.
@@ -198,7 +238,11 @@ impl ToolLoop {
         span: &GenAiSpan,
         (tool, call, key): (&dyn Tool, &ToolCall, String),
         done: &mut HashMap<String, String>,
+        limit: usize,
     ) -> Result<(String, CallStatus), LoopError> {
+        // What the model is shown, and what an identical call is answered
+        // with later, is bounded (N09).
+        let result = result.map(|output| crate::tool_loop::limits::bound_result(output, limit));
         match result {
             Ok(output) => {
                 span.succeeded();
@@ -209,7 +253,10 @@ impl ToolLoop {
             }
             Err(ToolError::Failed(e)) => {
                 span.failed("tool_error");
-                Ok((format!("error: {e}"), CallStatus::Failed))
+                Ok((
+                    crate::tool_loop::limits::bound_result(format!("error: {e}"), limit),
+                    CallStatus::Failed,
+                ))
             }
             Err(ToolError::Fatal(message)) => {
                 span.failed("tool_fatal");

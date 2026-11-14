@@ -76,6 +76,21 @@ pub enum LoopError {
         /// Why the reply stopped, as the provider spelled it, when it said.
         finish_reason: Option<String>,
     },
+    /// The model's reply named two calls with one id, so no result could be
+    /// told apart from the other's; no call in it was run (adversarial review
+    /// N08, 2026-11-13).
+    AmbiguousCalls {
+        /// The id named twice.
+        id: String,
+    },
+    /// What the run would have sent the model was past the loop's request
+    /// limit, and was not sent (adversarial review N09, 2026-11-13).
+    TooLarge {
+        /// Its size in bytes.
+        bytes: usize,
+        /// The limit ([`ToolLoop::with_request_limit`](super::ToolLoop::with_request_limit)).
+        limit: usize,
+    },
 }
 
 /// The `finish_reason` OpenAI-compatible providers send when a content filter
@@ -113,6 +128,16 @@ impl fmt::Display for LoopError {
             Self::EmptyAnswer {
                 finish_reason: None,
             } => f.write_str("the model returned an empty answer"),
+            Self::AmbiguousCalls { id } => write!(
+                f,
+                "the model's reply named two tool calls with the id {id:?}; none of its calls \
+                 was run"
+            ),
+            Self::TooLarge { bytes, limit } => write!(
+                f,
+                "the next model request is {bytes} bytes, past the loop's request limit of \
+                 {limit}; it was not sent"
+            ),
         }
     }
 }
@@ -197,6 +222,8 @@ impl LoopError {
             Self::Indeterminate { .. } => "indeterminate_call".to_owned(),
             Self::Budget(_) => "budget_exhausted".to_owned(),
             Self::EmptyAnswer { .. } => "empty_answer".to_owned(),
+            Self::AmbiguousCalls { .. } => "ambiguous_calls".to_owned(),
+            Self::TooLarge { .. } => "too_large".to_owned(),
         }
     }
 
@@ -207,14 +234,17 @@ impl LoopError {
     /// retrying the same request hits it again), a refusal when the
     /// provider's content filter withheld it, and `internal` when the model
     /// just sent nothing. [`TurnLimit`](Self::TurnLimit) and
-    /// [`Budget`](Self::Budget) are bounds. [`Cancelled`](Self::Cancelled)
+    /// [`Budget`](Self::Budget) are bounds, and so is
+    /// [`TooLarge`](Self::TooLarge). [`Cancelled`](Self::Cancelled)
     /// ends no task as failed, so what it returns is not sent.
     pub(super) fn failure_class(&self) -> FailureClass {
         if self.is_transient() {
             return FailureClass::Transient;
         }
         match self {
-            Self::TurnLimit(_) | Self::Budget(_) => FailureClass::BudgetExhausted,
+            Self::TurnLimit(_) | Self::Budget(_) | Self::TooLarge { .. } => {
+                FailureClass::BudgetExhausted
+            }
             Self::EmptyAnswer { finish_reason } => match finish_reason.as_deref() {
                 Some(FINISH_REASON_LENGTH) => FailureClass::BudgetExhausted,
                 Some(FINISH_REASON_CONTENT_FILTER) => FailureClass::PolicyRefusal,
@@ -226,7 +256,8 @@ impl LoopError {
             | Self::AwaitingApproval(_)
             | Self::Journal(_)
             | Self::PinMismatch(_)
-            | Self::Indeterminate { .. } => FailureClass::Internal,
+            | Self::Indeterminate { .. }
+            | Self::AmbiguousCalls { .. } => FailureClass::Internal,
         }
     }
 }

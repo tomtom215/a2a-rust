@@ -36,7 +36,7 @@ let tool_loop = ToolLoop::new(model, tools)
 | `with_trace_content(TraceContent)` | `Full` | What the caller's `tool-trace` artifact holds: `Full` (`name(arguments) -> result`, truncated, **not redacted**) or `Receipt` (`name [call id]: ran`, `failed` or `not run again`: no arguments, no result; the model still sees both) |
 | `with_argument_check(ArgumentCheck)` | `Off` | Whether a call's arguments are checked against the tool's JSON Schema before the policy is asked and the tool runs: `Off` (an object is enough, as before), `Checked` (a violation is answered to the model as an error it can correct, and the tool does not run; a keyword the loop does not implement is ignored) or `Strict` (as `Checked`, and a tool whose schema uses a keyword the loop cannot check is refused by name). Checked: `type`, `enum`, `const`, `properties`, `required`, `additionalProperties`, `items`, `minItems`, `maxItems`, `uniqueItems`, `minLength`, `maxLength`, `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `minProperties`, `maxProperties`, `anyOf`, `oneOf`, `allOf`, `not`. Not implemented: `$ref`, `pattern`, `patternProperties`, `multipleOf`, `if`/`then`/`else`, `contains`, `prefixItems`, `propertyNames`, `dependentRequired`, `unevaluated*`, a list-form `items`. A tool that needs one of those validates it itself |
 | `with_policy(ToolPolicy)` | none | Asked before **every** call runs (native, recovered from text, repeated after a retry) with the tool, the arguments and the request's tenant and authenticated caller, and able to refuse it; the reason is the call's result as the model sees it. With the `audit` feature, `AuditedPolicy::new(log)` (optionally `.wrapping(your_policy)`) writes a `tool.action` record (tool, call id, verdict, a digest of the arguments, caller, task) to the audit log *before* an allowed call runs and does not run a call it cannot record ([Audit trail](../../deployment/audit.md#required-mode)) |
-| `with_journal(Arc<dyn StepJournal>)` | none | Keeps each run's progress, so a run begun again under the same key (the task and message it answers) **resumes** instead of starting over, and a call a policy says needs approval can wait for it ([Resuming a run, and approving a call](#resuming-a-run-and-approving-a-call)) |
+| `with_journal(Arc<dyn StepJournal>)` | none | Keeps each run's progress (sealed with `with_journal_cipher`), so a run begun again under the same key (the task and message it answers) **resumes** instead of starting over, and a call a policy says needs approval can wait for it ([Resuming a run, and approving a call](#resuming-a-run-and-approving-a-call)) |
 | `with_pin(name, value)` | none | Adds a pin to every checkpoint (a policy version, a skill bundle digest): a run whose checkpoint carries other pins is refused on resume |
 | `with_idempotency_secret([u8; 32])` | random per loop | The secret call keys are derived under. Set it, to the same value on every replica, if a journaled call may be in flight when a replica dies |
 | `ToolLoop::strict(model, tools)` | — | `new` with `TextCallRecovery::Off`, `TraceContent::Receipt` and `ArgumentCheck::Strict`: for a deployment that takes a tool call to be an action with consequences |
@@ -54,6 +54,23 @@ them.
 The default of eight turns is four more than the two rounds a
 discover-then-query catalogue needs, and small enough that a model which never
 stops calling tools fails in seconds rather than at the executor timeout.
+
+## How many bytes a run holds
+
+Turns and calls per turn are bounded; so are bytes (adversarial review N09,
+2026-11-13):
+
+| Setting | Default | What happens past it |
+|---|---|---|
+| `with_result_limit(bytes)` | 1 MiB (`DEFAULT_RESULT_LIMIT`) | A tool's result is cut at a character boundary and the model is told how many bytes there were and how many it is shown. The tool ran; its receipt holds a digest of the arguments, never the result |
+| `with_request_limit(bytes)` | 8 MiB (`DEFAULT_REQUEST_LIMIT`) | The model request (preamble, conversation, tool catalogue) is not sent; the run ends `LoopError::TooLarge` (failure class `budget-exhausted`) |
+| `with_checkpoint_limit(bytes)` | 32 MiB (`DEFAULT_CHECKPOINT_LIMIT`) | The checkpoint is not written, and the run stops before the step it would have recorded, as for any checkpoint the journal cannot write |
+
+A reply that names two calls with one id is refused before any of its calls
+runs (`LoopError::AmbiguousCalls`): their results could not be told apart. An
+id a provider uses again in a later turn is fine: each call's receipt is kept
+by turn and id. A call that came without an id is given one that no other call
+of the run has.
 
 ## Resuming a run, and approving a call
 
@@ -100,10 +117,43 @@ database.
   call it was about to record (`LoopError::Journal`).
 * **Fencing.** Each checkpoint carries a revision and a write is accepted only as the
   successor of the one stored, so a replica that lost its claim cannot overwrite a
-  newer run's progress.
+  newer run's progress. A delete (`StepJournal::clear(key, revision)`) is fenced the
+  same way.
+* **A finished run is kept.** The final answer is written as a *completed*
+  checkpoint, under the same fence, before the loop returns it; a stale invocation
+  whose answer arrives after another moved the run on gets `LoopError::Journal` and
+  publishes nothing. A run begun again under that key returns the stored answer
+  and asks no model and runs no tool, so a process that died after the answer and
+  before the task said `Completed` gives the same answer when the message is sent
+  again. Nothing in the loop deletes a run; `StepJournal::sweep(completed_before,
+  unfinished_before)` does, on your schedule. Run it from a periodic job: the
+  completed cutoff is your replay window, the unfinished one must be well past your
+  longest run and its approvals (a swept run that is still going is refused its next
+  write).
 
-Not here: compensation (undoing a call that ran), and retry policy beyond the model
-retry.
+### What a journal holds, and erasing it
+
+A checkpoint holds the run's whole conversation: the prompt, every tool's
+arguments and results, the trace. It is a separate copy of that content: **the task
+store's encryption and erasure and the audit log's privacy do not reach it.**
+
+* **Seal it.** `ToolLoop::with_journal_cipher(cipher)` (the `encryption` feature)
+  seals each checkpoint with a `ContentCipher` such as `Aes256GcmCipher`, bound to
+  the run's key and revision. The journal table then holds the owner, the revision,
+  whether the run finished and when it was written, and nothing of the content. A
+  checkpoint written before the cipher was set is read and sealed from its next
+  write; a sealed one cannot be read by a loop without the cipher.
+* **Find and erase a person's runs.** Each run records its owner (tenant,
+  authenticated caller, task) from the request, not from the model, and keeps it
+  when an approver resumes it. `StepJournal::runs_of(principal, tenant)` lists their
+  runs without content, for an access request; `StepJournal::erase(principal,
+  tenant)` deletes them. Call it with the task store's and the audit log's erasure.
+  A person named only *inside* a run's content (an argument, a message) is not
+  found by either; sealing is what protects them.
+
+Not here: compensation (undoing a call that ran), retry policy beyond the model
+retry, and resuming an orphaned task by itself: a run is resumed when its message
+is sent again; the reaper fails a task whose replica died.
 
 ### A call that needs a person's approval
 
@@ -128,6 +178,12 @@ a decision from another tenant or task, and asks the policy again on resume: an
 approval does not outrank a later `Deny`. A refusal is a result the model sees ("this
 call was not approved by …") and the call never runs. A loop with no journal has
 nowhere to wait: it refuses such a call, as for `Deny`.
+
+Once the digest matches and the policy has been asked again, the loop tells the policy
+who approved, through `ToolPolicy::approved(request, approver)`, immediately before the
+call runs; an `Err` there stops it. It is the only point that sees the effective
+decision, so a policy that must record or check an approved action does it there.
+`AuditedPolicy` writes its durable `approved` record in it.
 
 It needs an `ApprovalGate` on the handler (`with_approval_gate`): without one, a
 decision in a message is only a claim and `ctx.approval()` is always `None`. With tasks

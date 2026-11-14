@@ -8,9 +8,16 @@
 //! # The rules
 //!
 //! 1. **Protocol version first.** Only interfaces whose `protocolVersion`
-//!    has the major this SDK speaks ([`SUPPORTED_PROTOCOL_MAJOR`], from
+//!    is the `Major.Minor` this SDK speaks ([`SUPPORTED_PROTOCOL_MAJOR`] and
+//!    [`SUPPORTED_PROTOCOL_MINOR`], from
 //!    [`A2A_VERSION`](a2a_protocol_types::A2A_VERSION) `"1.0"`) are
-//!    candidates. An empty version does not: `protocolVersion` is REQUIRED
+//!    candidates. The patch number is ignored (spec §3.6: it MUST NOT be
+//!    considered); a missing minor (`"1"`, `"v1"`) reads as `0`. Every
+//!    request says `A2A-Version: 1.0`, and a server processes it with the
+//!    semantics of exactly that `Major.Minor` (§3.6.2), so an interface for
+//!    `1.1` is not a candidate: until 2026-11-13 any `1.x` was, and one
+//!    listed first was chosen over the card's `1.0` interface (adversarial
+//!    review N11). An empty version does not: `protocolVersion` is REQUIRED
 //!    (a2a.proto), so an interface without one is not one this SDK can
 //!    know it speaks (until 2026-10-23 it counted as compatible, "the card
 //!    did not say"). A leading `v` is allowed (`"v1.0"`), as a2a-go's
@@ -35,7 +42,7 @@
 
 use a2a_protocol_types::{AgentCard, AgentInterface};
 
-use super::SUPPORTED_PROTOCOL_MAJOR;
+use super::{SUPPORTED_PROTOCOL_MAJOR, SUPPORTED_PROTOCOL_MINOR};
 use crate::config::{BINDING_GRPC, BINDING_HTTP_JSON, BINDING_JSONRPC, BINDING_REST};
 use crate::error::{ClientError, ClientResult};
 
@@ -49,10 +56,25 @@ pub(super) fn protocol_major(version: &str) -> Option<u32> {
     rest[..digits].parse().ok()
 }
 
-/// Whether an interface advertising `version` speaks this SDK's protocol.
-/// An empty version has no major, so it does not.
+/// The minor version in `version`: the digits after the first `.`, `0` when
+/// there is no `.` (`"1"`, `"v1"`, `"1-preview"`). `None` when what follows
+/// the `.` is not a number.
+pub(super) fn protocol_minor(version: &str) -> Option<u32> {
+    let Some((_, rest)) = version.split_once('.') else {
+        return Some(0);
+    };
+    let digits = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
+    rest[..digits].parse().ok()
+}
+
+/// Whether an interface advertising `version` speaks this SDK's protocol:
+/// its `Major.Minor` is `1.0`, whatever its patch. An empty version has no
+/// major, so it does not.
 pub fn is_compatible(version: &str) -> bool {
     protocol_major(version) == Some(SUPPORTED_PROTOCOL_MAJOR)
+        && protocol_minor(version) == Some(SUPPORTED_PROTOCOL_MINOR)
 }
 
 /// The canonical name of a binding this SDK implements, matched ignoring
@@ -136,7 +158,8 @@ pub(super) fn candidates(
             .map(|i| format!("{} {} at {}", i.protocol_binding, i.protocol_version, i.url))
             .collect();
         return Err(ClientError::InvalidEndpoint(format!(
-            "agent card offers no interface for A2A protocol major {SUPPORTED_PROTOCOL_MAJOR}; \
+            "agent card offers no interface for A2A protocol \
+             {SUPPORTED_PROTOCOL_MAJOR}.{SUPPORTED_PROTOCOL_MINOR}; \
              it offers: {}",
             offered.join(", ")
         )));
@@ -174,6 +197,30 @@ mod tests {
         assert!(!is_compatible("2.0"));
         assert!(!is_compatible("11.0"), "11 is not 1");
         assert!(!is_compatible("latest"));
+    }
+
+    /// Spec §3.6: `Major.Minor` decides, the patch never does (N11).
+    #[test]
+    fn compatibility_is_one_point_zero_whatever_the_patch() {
+        for yes in [
+            "1.0",
+            "v1.0",
+            "1.0.0",
+            "1.0.1",
+            "1",
+            "V1",
+            "1.0-rc1",
+            "1-preview",
+        ] {
+            assert!(is_compatible(yes), "{yes}");
+        }
+        for no in ["1.1", "1.1.0", "1.1-rc1", "v1.2", "1.10", "1.x", "1."] {
+            assert!(!is_compatible(no), "{no}");
+        }
+        assert_eq!(protocol_minor("1.0"), Some(0));
+        assert_eq!(protocol_minor("1.12.3"), Some(12));
+        assert_eq!(protocol_minor("1"), Some(0));
+        assert_eq!(protocol_minor("1.x"), None);
     }
 
     #[test]

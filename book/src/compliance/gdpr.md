@@ -19,6 +19,7 @@ gives you toward each, with the code that does it, and where it stops.
 |---|---|---|
 | Task stores (in-memory, SQLite, PostgreSQL) | Message and artifact content, task and context ids, `metadata`, the event log, the artifact journal, idempotency keys | The in-memory store evicts terminal tasks an hour after their last write and holds at most 10,000. The SQL stores keep everything until you purge |
 | Push-config stores | Webhook URLs and their credentials | Delivered to `http://` webhooks unless the sender is `https_only` |
+| Tool-loop step journal (`tool-loop`; in-memory, SQLite, PostgreSQL) | Each run's conversation, tool arguments and results, trace and receipts; and, in the clear, its owner (tenant, authenticated caller, task) | Bodies are plain JSON unless you seal them with `ToolLoop::with_journal_cipher` (`encryption`). A finished run's entry is kept, so a replay returns its answer, until `StepJournal::sweep` removes it |
 | Audit store | Who called, who approved, which operator halted or erased | Content is a digest, never text. Callers are named in the clear unless you use `AuditLog::with_privacy` |
 | Spans, logs, metrics | Message content, only if you turn it on | Off. `with_span_content_capture(true)` turns it on |
 | Peer agents, webhook receivers, telemetry back ends | Whatever you sent them | Outside the SDK's reach: it keeps no list of what was sent where (the audit trail records calls received) |
@@ -80,6 +81,9 @@ Erasure is something an operator starts. What the calls do:
 | `erase_caller` | On the tenant-aware task and push-config stores, everything one authenticated caller's partitions hold, in every tenant: tasks, events, idempotency keys, webhooks | Needs caller isolation |
 | `AuditLog::purge` | Audit records past a retention floor (`AuditRetention`) | Refused under a legal hold |
 | `AuditLog::erase_subject` | One person in a tenant's audit chain, by destroying their key (needs `with_privacy`) | Refused under a legal hold; the chain still verifies |
+| `StepJournal::runs_of` | Lists one authenticated caller's journaled runs, in a tenant when given, without their content | For an access request, and to see what `erase` would delete |
+| `StepJournal::erase` | Every journaled run of one authenticated caller, in a tenant when given | Found by the run's recorded owner: a person named only inside a run's content (a tool argument, a message) is not found by it |
+| `StepJournal::sweep` | Finished runs last written before one time, and unfinished runs before another | An unfinished run swept while still going is refused its next write; keep that cutoff well past the longest run and its approvals |
 
 Each leaves a trail if you ask it to. The audited task store writes
 `task.deleted` (the id, never the content); `AuditLog::record_erasure` records a
@@ -117,10 +121,15 @@ The map states these limits; plan around them.
 - **Concurrency.** A legal hold and a retention purge are serialised, on one
   log and across replicas: the store checks the hold in the same step that
   deletes, so a hold that has completed stops a purge that began before it
-  (adversarial review A1, 2026-11-12). An erasure of a person's key
-  (`erase_subject`) is checked against holds under the chain's lock in one log,
-  but across replicas an erasure and a hold, or an erasure and an append, are not
-  serialised ([ADR 0015](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0015-audit-trail.md)).
+  (adversarial review A1, 2026-11-12). An erasure of a person's keys
+  (`erase_subject`) deletes all of them or none under a hold, in one step on each
+  store the SDK ships, so a hold placed on another replica stops it; a hold
+  placed after the erasure's record is answered with a `subject.erasure_refused`
+  record. A record whose person's key another replica's cleanup deleted in the
+  meantime is not stored under the lost key: it is sealed again under a new one
+  (adversarial review N03, 2026-11-13). An `AuditStore` of your own that keeps
+  the trait's default methods is not atomic across processes
+  ([ADR 0015](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0015-audit-trail.md)).
 
 ## Where to go next
 

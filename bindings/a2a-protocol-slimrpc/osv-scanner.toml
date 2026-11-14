@@ -28,10 +28,10 @@
 # RUSTSEC-2026-0459 (libsqlite3-sys < 0.39.0, bundled SQLite before 3.54.0).
 # Locked here: 0.35.0, through rusqlite 0.37 <- mls-rs-provider-sqlite 0.23.0
 # <- agntcy-slim-persistence 0.2.1 <- agntcy-slim-mls 0.5.1, each the latest
-# published (checked 2026-11-11). The fix needs rusqlite 0.41 or newer. The
+# published (checked 2026-11-14). The fix needs rusqlite 0.41 or newer. The
 # binding's own code opens no SQLite file; SLIM's MLS persistence opens the
 # path SLIM is configured with, which is the operator's.
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0459"
 ignoreUntil = 2027-02-11
-reason = "libsqlite3-sys 0.35 via rusqlite 0.37 via mls-rs-provider-sqlite 0.23.0 (latest, checked 2026-11-11); local attack through a crafted database and -wal pair on a path the operator configures; mirrors the deny.toml ignore. Remove when the SLIM chain moves to rusqlite >= 0.41."
+reason = "libsqlite3-sys 0.35 via rusqlite 0.37 via mls-rs-provider-sqlite 0.23.0 (latest, checked 2026-11-14); local attack through a crafted database and -wal pair on a path the operator configures; mirrors the deny.toml ignore. Remove when the SLIM chain moves to rusqlite >= 0.41."

@@ -374,10 +374,40 @@ jobs:
         with:
           command: check
 
+# ── Job 3b: Main CI passed for the tagged commit ──────────────────────────────
+# The `ci` job above is a reduced copy of ci.yml (no feature combinations, no
+# PostgreSQL, no static gates). A tag is released only if ci.yml itself
+# concluded `success` for the exact tagged commit, with no job failed,
+# cancelled or timed out; skipped jobs are listed. Adversarial review N13
+# (2026-11-13): a signature over the artifacts says who built them, not that
+# the gates passed. The evidence is attached to the release.
+  ci-evidence:
+    name: Main CI passed for the tagged commit
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read  # read ci.yml's runs and jobs for the tagged commit
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: ci.yml concluded success for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/ci_evidence.py --self-test
+          python3 scripts/ci_evidence.py --repo "$GITHUB_REPOSITORY" --sha "$GITHUB_SHA" --out ci-evidence.json
+      - name: Upload the CI evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-evidence
+          path: ci-evidence.json
+          retention-days: 90
+          if-no-files-found: error
+
 # ── Job 4: Package crates and generate provenance ─────────────────────────────
   package:
     name: Package and attest
-    needs: [ci, security]
+    needs: [ci, security, ci-evidence]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -391,6 +421,23 @@ jobs:
       # No rust-cache here: the attested .crate artifacts are built cold so the
       # release path never restores build state written by routine CI runs.
       # protoc is bundled via the `protoc-bin-vendored` crate.
+
+      # The release evidence manifest (scripts/release_evidence.py): the
+      # tagged commit's inputs, waivers, profiles, features, register counts
+      # and measured limits, with the static gates' exit statuses. Generated
+      # before packaging so the tree is the tag's, and verified against it:
+      # any gate that did not exit 0 fails the release here.
+      - name: Release evidence manifest for the tagged commit
+        run: |
+          python3 scripts/release_evidence.py --self-test
+          python3 scripts/release_evidence.py generate --commit HEAD --run-gates --out release-evidence.json
+          python3 scripts/release_evidence.py verify release-evidence.json --head
+
+      - name: Download the CI evidence
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-evidence
+          path: ci-evidence/
 
       - name: Package all publishable crates
         shell: bash
@@ -406,6 +453,9 @@ jobs:
           echo "::group::Archive sizes"
           ls -lh target/package/*.crate
           echo "::endgroup::"
+          mkdir -p target/package/evidence
+          mv release-evidence.json target/package/evidence/
+          cp ci-evidence/ci-evidence.json target/package/evidence/
 
       # Each .crate names the commit it was built from. Reading that file by
       # hand is how N7 was established; this reads it for every release.
@@ -484,6 +534,7 @@ jobs:
             target/package/*.crate
             target/package/SHA256SUMS
             target/package/sbom/*.cdx.json
+            target/package/evidence/*.json
           retention-days: 90
           if-no-files-found: error
 
@@ -574,46 +625,12 @@ jobs:
 
           echo "::group::Extracting release notes for v$VERSION"
 
-          # Extract everything between ## [VERSION] and the next ## [ heading
-          awk "
-            /^## \[$VERSION\]/ { found=1; next }
-            found && /^## \[/  { exit }
-            found              { print }
-          " CHANGELOG.md > release_notes.md
-
-          if [[ ! -s release_notes.md ]]; then
-            echo "::error::Empty release notes extracted for $VERSION"
-            echo "Ensure CHANGELOG.md has a non-empty ## [$VERSION] section."
-            exit 1
-          fi
-
-          # GitHub refuses a release body over 125,000 characters, and the
-          # 0.15.0 section is about 289,000: `gh release create` would fail
-          # here, before the publish job, with the tag already pushed. A
-          # section over the limit is released as the parts an adopter reads
-          # before upgrading (the opening paragraph, and the Known Limitations,
-          # Breaking Changes, Behaviour Changes, Deprecated and Security
-          # sections), with a link to the whole section at the tag.
-          # CHANGELOG.md itself is not shortened. Behaviour Changes is kept
-          # because a runtime change that needs no code change is the one an
-          # adopter who reads only the release page would otherwise miss.
-          LIMIT=120000
-          if [[ "$(wc -m < release_notes.md)" -gt "$LIMIT" ]]; then
-            echo "::warning::The $VERSION section is $(wc -m < release_notes.md) characters, over the $LIMIT a GitHub release body can carry; releasing its upgrade-critical sections and a link."
-            mv release_notes.md release_notes.full.md
-            {
-              echo "These are the sections to read before upgrading. The full notes for this release are in [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/v${VERSION}/CHANGELOG.md) at this tag."
-              echo ""
-              awk '
-                /^### / { seen = 1; keep = ($0 ~ /^### (Known Limitations|Breaking Changes|Behaviour Changes|Deprecated|Security)$/) }
-                !seen || keep { print }
-              ' release_notes.full.md
-            } > release_notes.md
-            if [[ "$(wc -m < release_notes.md)" -gt "$LIMIT" ]]; then
-              echo "::error::Even the upgrade-critical sections of $VERSION are over $LIMIT characters."
-              exit 1
-            fi
-          fi
+          # The section, or, over the 120,000 characters a GitHub release body
+          # can carry (0.15.0's was about 289,000), its upgrade-critical parts
+          # and a link to the whole: scripts/check_release_tree.py `notes`,
+          # whose self-test (in the validate job) proves what it keeps. CHANGELOG.md
+          # itself is not shortened.
+          python3 scripts/check_release_tree.py notes "$VERSION" "$GITHUB_REPOSITORY" release_notes.md
 
           echo "Release notes preview:"
           cat release_notes.md
@@ -656,7 +673,8 @@ jobs:
               --clobber \
               release-artifacts/*.crate \
               release-artifacts/SHA256SUMS \
-              release-artifacts/sbom/*.cdx.json
+              release-artifacts/sbom/*.cdx.json \
+              release-artifacts/evidence/*.json
             echo "::endgroup::"
             echo "::notice::GitHub release updated: $RELEASE_URL"
           else
@@ -667,7 +685,8 @@ jobs:
               --notes-file release_notes.md \
               release-artifacts/*.crate \
               release-artifacts/SHA256SUMS \
-              release-artifacts/sbom/*.cdx.json
+              release-artifacts/sbom/*.cdx.json \
+              release-artifacts/evidence/*.json
             echo "::endgroup::"
             echo "::notice::GitHub release created: $RELEASE_URL"
           fi

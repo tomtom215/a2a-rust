@@ -56,13 +56,66 @@ impl ToolLoop {
     /// the resumed run fails with [`LoopError::Indeterminate`](super::LoopError::Indeterminate).
     #[must_use]
     pub fn with_journal(mut self, journal: std::sync::Arc<dyn super::StepJournal>) -> Self {
-        self.journal = Some(journal);
+        self.journal.store = Some(journal);
+        self
+    }
+
+    /// Seals each checkpoint's body with `cipher` before the journal stores
+    /// it: the conversation, tool arguments and results and the trace a run
+    /// carries are then not readable from the journal's table, its backups or
+    /// its replicas without the key (adversarial review N07, 2026-11-13). The
+    /// owner (tenant, caller, task), the revision and whether the run is
+    /// finished stay readable: they are what the journal's lifecycle
+    /// ([`StepJournal::erase`](super::StepJournal::erase),
+    /// [`StepJournal::sweep`](super::StepJournal::sweep)) finds a run by.
+    ///
+    /// A body is bound to its run's key and revision, so it does not open
+    /// moved to another run or rolled back. A checkpoint written as JSON
+    /// before the cipher was set is still read, and sealed from its next
+    /// write.
+    #[cfg(feature = "encryption")]
+    #[must_use]
+    pub fn with_journal_cipher(
+        mut self,
+        cipher: std::sync::Arc<dyn crate::store::encrypted::ContentCipher>,
+    ) -> Self {
+        self.journal.cipher = Some(cipher);
+        self
+    }
+
+    /// Shows the model at most `bytes` of one tool's result; the rest is cut,
+    /// at a character boundary, and the model is told how much there was
+    /// ([`DEFAULT_RESULT_LIMIT`](crate::tool_loop::DEFAULT_RESULT_LIMIT), 1 MiB). The
+    /// tool ran either way; this bounds what the run keeps of it (N09).
+    #[must_use]
+    pub const fn with_result_limit(mut self, bytes: usize) -> Self {
+        self.byte_limits.result = bytes;
+        self
+    }
+
+    /// Sends no model request past `bytes` (preamble, conversation and tool
+    /// catalogue, as JSON): the run ends with
+    /// [`LoopError::TooLarge`](super::LoopError::TooLarge) instead
+    /// ([`DEFAULT_REQUEST_LIMIT`](crate::tool_loop::DEFAULT_REQUEST_LIMIT), 8 MiB; N09).
+    #[must_use]
+    pub const fn with_request_limit(mut self, bytes: usize) -> Self {
+        self.byte_limits.request = bytes;
+        self
+    }
+
+    /// Writes no checkpoint body past `bytes`: the run stops before the step
+    /// it would have recorded, as for any checkpoint the journal cannot write
+    /// ([`DEFAULT_CHECKPOINT_LIMIT`](crate::tool_loop::DEFAULT_CHECKPOINT_LIMIT),
+    /// 32 MiB; N09).
+    #[must_use]
+    pub const fn with_checkpoint_limit(mut self, bytes: usize) -> Self {
+        self.journal.max_body = bytes;
         self
     }
 
     /// Whether a journal is installed.
     pub(in crate::tool_loop) fn has_journal(&self) -> bool {
-        self.journal.is_some()
+        self.journal.store.is_some()
     }
 
     /// Adds a pin to every checkpoint: a policy version, a skill bundle digest,

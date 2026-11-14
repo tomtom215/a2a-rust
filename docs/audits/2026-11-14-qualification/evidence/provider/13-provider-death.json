@@ -1,0 +1,30 @@
+{
+  "header": {
+    "load_at_start": "0.48",
+    "model_file": "Qwen3-1.7B-Q4_K_M.gguf",
+    "time": "2026-11-14T11:07:54Z",
+    "title": "a real provider down, killed mid-generation, and back"
+  },
+  "rows": {
+    "back": {
+      "has_answer": true,
+      "seconds": 5.2,
+      "state": "TASK_STATE_COMPLETED",
+      "status_text": ""
+    },
+    "down": {
+      "failure": "transient",
+      "seconds": 0.01,
+      "state": "TASK_STATE_FAILED",
+      "status_text": "could not reach the model provider"
+    },
+    "killed": {
+      "agent_alive": true,
+      "failure": "transient",
+      "seconds_after_kill": 0.0,
+      "state": "TASK_STATE_FAILED",
+      "state_at_kill": "TASK_STATE_WORKING",
+      "status_text": "could not reach the model provider"
+    }
+  }
+}

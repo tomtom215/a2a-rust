@@ -61,7 +61,7 @@ impl A2aClient {
     ) -> ClientResult<Task> {
         const METHOD: &str = "GetTask";
 
-        params.tenant = self.tenant_or_default(params.tenant.take());
+        params.tenant = self.tenant_or_default(params.tenant.take())?;
         let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;
 
         let mut req = ClientRequest::new(METHOD, params_value);

@@ -2,6 +2,7 @@
 // Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 mod holds;
+mod key_rotation;
 pub mod outcome_durability;
 mod outcome_reconcile;
 mod purge_hold_race;
