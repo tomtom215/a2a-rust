@@ -348,3 +348,20 @@ async fn the_postgres_journal_keeps_the_contract() {
     .execute(&admin)
     .await;
 }
+
+/// The checkpoint limit admits a body of exactly its size and refuses one
+/// byte more (N09).
+#[tokio::test]
+async fn a_checkpoint_exactly_at_the_limit_is_written() {
+    let cp = checkpoint(1);
+    let len = to_text(&cp).unwrap().len();
+    let limited = |max_body| crate::tool_loop::journal_codec::JournalHandle {
+        max_body,
+        ..Default::default()
+    };
+    assert!(limited(len).encode("k", &cp).await.is_ok(), "at the limit");
+    assert!(
+        limited(len - 1).encode("k", &cp).await.is_err(),
+        "one byte past it"
+    );
+}

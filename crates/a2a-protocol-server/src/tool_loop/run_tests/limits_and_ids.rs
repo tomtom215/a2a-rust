@@ -153,6 +153,33 @@ async fn a_request_past_the_limit_is_not_sent() {
     );
 }
 
+/// N09: the default checkpoint limit is 32 MiB, so a checkpoint of a call
+/// whose arguments run to 100 kB is written and the call runs.
+#[tokio::test]
+async fn a_large_checkpoint_under_the_default_limit_is_written() {
+    let j = journal();
+    let (transfer, used) = TestTool::new("transfer", |_| Ok("sent".to_owned()));
+    let (model, _) = Scripted::new(vec![
+        calls(vec![call(
+            "c1",
+            "transfer",
+            &format!(r#"{{"memo":"{}"}}"#, "z".repeat(100_000)),
+        )]),
+        text("done"),
+    ]);
+    let answer = run_keyed(
+        &ToolLoop::new(model, tools(vec![transfer]))
+            .with_journal(Arc::clone(&j) as Arc<dyn StepJournal>),
+        KEY,
+        Side::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(answer.text, "done");
+    assert_eq!(used.load(Ordering::SeqCst), 1);
+    assert_eq!(j.len(), 1);
+}
+
 /// N09: a checkpoint past the limit is not written, and the call it was to
 /// record does not run.
 #[tokio::test]
