@@ -25,10 +25,11 @@ it instead of copying the number. The previous version of this block (pull reque
 
 - **Where the code is.** `main` is `70dc3374` (`git rev-parse origin/main`), the merge of pull request #209; the workspace reads 0.16.0 and **nothing is
   tagged** (`git tag --sort=-creatordate | head -1` prints `v0.15.0`). **This session's branch** is `claude/dazzling-wozniak-xp79ii`, ahead of `main`
-  (`git log --oneline 70dc3374..HEAD`), pushed, **with no pull request** (none was asked for). Commits are authored as Tom F. with one `Signed-off-by` and no
+  (`git log --oneline 70dc3374..HEAD`), pushed, with a pull request opened on 2026-11-14 when the maintainer asked for this to be the last
+  pull request before tagging 0.16.0 (its number is in the branch's GitHub page; this file is written before it exists). Commits are authored as Tom F. with one `Signed-off-by` and no
   assistant trailer (`CONTRIBUTING.md`, `dco.yml`).
 - **Why this session.** An independent adversarial review of `70dc337` (a 27-page PDF) added sixteen findings, `N01` to `N16`, reported `main`'s CI red on macOS,
-  and corrected stale claims in this file. Its register is `docs/audits/2026-11-13-adversarial-review/` (`findings.json`, 26 rows: 23 FIXED, 2 PARTIAL (N14, E1),
+  and corrected stale claims in this file. Its register is `docs/audits/2026-11-13-adversarial-review/` (`findings.json`, 31 rows: 27 FIXED, 3 PARTIAL (N14, E1, E6),
   1 OPEN (CI1); the README has the command that counts them). The 2026-11-12 register was updated: S8 fixed, S1 and S6 notes. Read both before acting.
 - **Built, each behaviour defect first reproduced by a test that failed on the code as it stood** (the evidence is in each commit message and register row):
   `861187ae` N01 (approval identities sealed; one field classification for sealing, reveal and erasure scans), `dd9502ad` N02 (`ToolPolicy::approved`; an approved
@@ -67,8 +68,8 @@ it instead of copying the number. The previous version of this block (pull reque
   (floor 87), MUST classification 85 pass, 2 fail, 5 skipped, 7 manual, 16 not tested; minimal profile 175 passed, 4 failed, 84 skipped, 65 graded (floor 65);
   required extension 2 passed. ACTS passed on `main` at `70dc337` (run 43394485553); its per-binding counts are the review's, not re-run here. Both are now
   in `book/src/reference/conformance-statement.md`. *Branch protection:* `main` is unprotected (G1, the maintainer's), as *Waiting on the maintainer* already said.
-- **Not verified / not done:** the workflows on GitHub for any commit of this branch (no pull request, so no CI run); `CI1`, the macOS mDNS failures
-  (diagnosed, not root-caused: each process saw the other's announcement and not its own; Linux 0 of 160 concurrent runs failed); the N13 and N15 workflow
+- **Not verified / not done:** `ci.yml` on GitHub for this branch until its pull request runs; `CI1`, the one macOS mDNS failure on `main` (not
+  root-caused: 270 targeted macOS runs on 2026-11-14 reproduced nothing; the register row has the probe runs); the N13 and N15 workflow
   changes beyond `prove_workflow_gates_fail.py` and synthetic inputs; N14 on PostgreSQL; any two-replica run outside the tests that pause one log at the race.
   Of the review's enterprise asks: the conformance statement is written (`book/src/reference/conformance-statement.md`); named deployment
   profiles are done but for the step journal (E1, PARTIAL: `a76a5957` `LocalDevelopment`, `DurableProduction` and `profile_report()`; `21ab2e93`
@@ -76,26 +77,40 @@ it instead of copying the number. The previous version of this block (pull reque
   retention; a journal is set on the `ToolLoop`, which the builder never sees); a support matrix (E2), operations runbooks (E3) and curated
   release notes (E4: `### Upgrading` and `### Highlights` lead `[Unreleased]`; the release page keeps both, D5) are written, in `21ab2e93`.
   Writing them found D4 (a rotated checkpoint key made `AuditLog::verify` report an intact chain broken) and D5, both fixed there.
-  The **qualification matrix** (replica kill, store faults, provider faults) is **not started**; see *First, next*.
-  At `21ab2e93`: `ci.yml` `clippy`, `features`, `doc` and `static-checks` PASS locally (`scripts/run_workflow_job.py`); the server library with
-  PostgreSQL and `--include-ignored`: **3,686 passed, 0 failed**.
+  The **qualification matrix** (E5) was run on 2026-11-14 (`book/src/reference/qualification-matrix.md`, evidence in
+  `docs/audits/2026-11-14-qualification/`): every row held but 60 replicas at once, not run for want of connections. It found W2-LIVE-9 still
+  open (fixed, `5250527c`) and two rotted harnesses (D8). All six open Dependabot PRs were taken in (`117709b9`, `73020c78`), two corrected
+  (D6, D7), and every lockfile refreshed; the six Scorecard Pinned-Dependencies alerts are fixed (`224419a4`); E6 is PARTIAL for the three
+  Scorecard alerts that are the maintainer's settings or the documented waiver.
+  At `95244661`: `ci.yml` `clippy` (14 feature sets), `features`, `doc` and `static-checks` (47 steps) PASS locally; at `1cf52ef9`'s tree
+  `test-postgres` PASS and `cargo test --workspace --all-features --no-fail-fast` with PostgreSQL 16: **8,521 passed, 0 failed, 275 ignored**
+  over 415 result lines.
 
 ### First, next
 
-1. **Open a pull request** for this branch when the maintainer asks, label it `mutation-test`, and read every shard's log (the aggregate now fails on a
-   timeout, N15). The Windows and macOS legs decide CI1.
-2. **CI1, the macOS mDNS failures:** reproduce on a macOS runner with `workflow_dispatch`; the conjecture to test is that a `ServiceDaemon` does not deliver
-   its own process's announcement to a browser `ServiceDaemon` in the same process on that runner.
-3. **The review's last release criterion** (PDF section 7): the qualification matrix (replica kill, store faults, provider faults), each row a
-   run with its evidence. E1's rest is a decision first: whether the step journal's durability should be checked, which needs the builder to see
-   the `ToolLoop`'s journal.
-4. **N14's rest:** a PostgreSQL 0.15 to 0.16 rehearsal of the audit and push-config stores, and a PostgreSQL rollback. Tasks across a rolling
-   two-version fleet were already measured against a real 0.15.0 replica on 2026-10-28 (`book/src/deployment/horizontal-scaling.md`,
-   *Upgrading a fleet*; `tests/turn_claims/upgrade.rs`), which this file's earlier wording missed.
-5. **Older register rows still open:** S2 skill pinning, S3 fleet quota (a decision first), S4 telemetry-failure visibility; partial R3, A3, S1, S5.
-6. The maintainer's items stay under *Waiting on the maintainer*, G1 among them.
+1. **Read the pull request's CI**, every leg, the Windows and macOS ones first: each macOS leg runs the discovery tests seven times, which is
+   CI1's evidence. A failure now says whether the agent was late or lost. Label it `mutation-test` if it is not, and read every shard's log
+   (the aggregate fails on a timeout, N15).
+2. **To release 0.16.0 after the merge** (`STABILITY.md`, `release.yml`): a release-preparation commit that renames `## [Unreleased]` to
+   `## [0.16.0] - <date>` and adds an empty `[Unreleased]`, and moves `SECURITY.md`'s supported line to 0.16.x; `main`'s `ci.yml` run on that
+   commit green (N13's gate reads it); then tag that commit. `scripts/check_release_tree.py` checks the tree (`unreleased`, `prep`, `cadence`,
+   `highlights`) and `notes` writes the release body.
+3. **CI1**, if it recurs: the failure message now says late or lost; take it from there. If it never recurs, close it with the count of green
+   macOS runs.
+4. **N14's rest:** a PostgreSQL 0.15 to 0.16 rehearsal of the audit and push-config stores, and a PostgreSQL rollback.
+5. **E1's rest** is a decision first: whether the step journal's durability should be checked, which needs the builder to see the
+   `ToolLoop`'s journal. **E6's rest** is the maintainer's: protect `main` with reviews (Scorecard #93, #126; G1).
+6. **Older register rows still open:** S2 skill pinning, S3 fleet quota (a decision first), S4 telemetry-failure visibility; partial R3, A3, S1, S5.
+7. The maintainer's items stay under *Waiting on the maintainer*, G1 among them.
 
 ### Facts this session established
+
+- **Added 2026-11-14.** Docker works here (`docker info`); the qualification runs used `postgres:17` on port 5433 (the local PostgreSQL 16
+  keeps 5432), toxiproxy 2.12.0 with `--network host`, and a `git worktree` of `v0.15.0` at `target/live/v015`; all were removed afterwards
+  to free disk. The harness builds (`target/hostile`, `target/live`, `target/campaign`) take about 2.5 GB, and `target/debug` grows to 19 GB
+  with the workspace's all-feature tests: a full disk shows up as `curl: (23) Failure writing output` in static-checks' promtool step.
+  `c1_chaos.py` and the campaign drivers run with `python3 -I`; the `scripts/live/*.py` ones import `common` from their own directory and
+  need plain `python3`.
 
 - **A container restart stops PostgreSQL and llama-server** (seen 2026-11-14: 80 library tests failed with `PoolTimedOut` and connection
   refused, and nothing else). Before reading a red PostgreSQL run, `pg_isready -h localhost`; restart with `pg_ctlcluster 16 main start`
