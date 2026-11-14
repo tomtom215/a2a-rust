@@ -41,7 +41,7 @@ ARG BIN=${PACKAGE}
 #
 # Without the secret nothing changes. (`HTTP_PROXY`/`HTTPS_PROXY` given as
 # `--build-arg`s are passed through by Docker as they are.)
-FROM rust:1.94-bookworm@sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55 AS chef
+FROM rust:1.98-bookworm@sha256:93ce27a88655056a51dbdd8f5f2d7ddc071c7b0070fb288a37b5a285fc83971e AS chef
 # An exact version from crates.io, built with its own lock file.
 RUN --mount=type=secret,id=cacert,required=false \
     if [ -s /run/secrets/cacert ]; then export CARGO_HTTP_CAINFO=/run/secrets/cacert; fi \
@@ -76,7 +76,7 @@ RUN --mount=type=secret,id=cacert,required=false \
 # mounted PEM; set SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt to trust
 # this image's store), telemetry through OTEL_EXPORTER_OTLP_CERTIFICATE, and
 # PostgreSQL through the URL's sslrootcert.
-FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS runtime
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS runtime
 
 # The CA store, taken from the digest-pinned build image rather than from an
 # `apt-get install` against the day's Debian index, which made this layer
