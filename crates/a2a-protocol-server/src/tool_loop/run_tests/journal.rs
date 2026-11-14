@@ -60,6 +60,7 @@ async fn a_run_begun_again_resumes_and_does_not_repeat_a_call() {
     assert!(matches!(first, Err(LoopError::Model(_))), "{first:?}");
     assert_eq!(used.load(Ordering::SeqCst), 1);
     assert_eq!(j.len(), 1, "the failed run left its checkpoint");
+    assert_eq!(j.unfinished(), 1, "and it is unfinished");
 
     // Another process, the same journal, a new model client and tool objects.
     let (transfer, used_again) = mutating();
