@@ -1,0 +1,65 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# TEMPORARY probe for register row CI1 (adversarial review of 2026-11-13):
+# two mDNS discovery tests failed once on stable/macOS at 70dc337. This
+# measures how often, on which macOS image, whether running the tests
+# concurrently is the trigger, and whether mdns-sd 0.21.7 changes it. It
+# fails nothing; the counts are the result. Removed before the branch's
+# pull request.
+name: probe-macos-mdns
+
+on:
+  push:
+    branches: [claude/dazzling-wozniak-xp79ii]
+    paths: [.github/workflows/probe-macos-mdns.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
+        with:
+          toolchain: stable
+      - name: Host
+        run: |
+          sw_vers
+          uname -a
+          ifconfig -a | grep -E '^[a-z]|inet |flags=' | head -60
+      - name: Install cargo-nextest
+        run: |
+          version=$(sed -n 's/^CARGO_NEXTEST_VERSION=//p' scripts/install_cargo_mutants.sh)
+          cargo install --locked cargo-nextest --version "$version"
+      - name: Probe
+        run: |
+          set -u
+          run() { # label runs extra-args...
+            local label=$1 n=$2; shift 2
+            cargo nextest run -p a2a-protocol-discovery --no-default-features --no-run "$@" >/dev/null 2>&1
+            local fail=0
+            for i in $(seq 1 "$n"); do
+              if ! cargo nextest run -p a2a-protocol-discovery --no-default-features --no-fail-fast "$@" >"run-$label-$i.log" 2>&1; then
+                fail=$((fail + 1))
+                echo "::group::$label run $i failed"
+                grep -E 'FAIL|panicked|not among|never found|goodbye|exited without' "run-$label-$i.log" | head -20
+                echo "::endgroup::"
+              fi
+            done
+            echo "RESULT $label: $fail of $n runs failed" | tee -a "$GITHUB_STEP_SUMMARY"
+          }
+          run A-0.21.6-parallel 25
+          run B-0.21.6-serial 25 --test-threads 1
+          sed -i '' 's/version = "=0.21.6"/version = "=0.21.7"/' crates/a2a-protocol-discovery/Cargo.toml
+          cargo update -p mdns-sd --precise 0.21.7
+          run C-0.21.7-parallel 25
