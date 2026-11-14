@@ -164,10 +164,10 @@
   "severity": "High (release gate)",
   "finding": "Main CI red: two mDNS discovery tests fail on stable macOS, no-default-features",
   "status": "OPEN",
-  "note": "Diagnosed, not root-caused; no test was skipped or weakened.",
-  "commit": "",
-  "evidence": "In run 43394485744 each test process on macOS found the other process's announcement and not its own; the same job passed at 124b70f4 with identical discovery code; on Linux 0 failures in 160 concurrent-process runs. CONJECTURED: same-process delivery between the separate announcer and browser ServiceDaemons on the macOS runner. N13's gate refuses a release while this job is red.",
-  "tests": "crates/a2a-protocol-discovery (an_announced_agent_is_found_and_its_card_fetched, a_withdrawn_announcement_is_seen_lost)"
+  "note": "Not reproduced, not root-caused; no test skipped or weakened. 270 targeted runs on macOS failed none, and a recurrence now says whether the agent was late or lost. N13's gate refuses a release while main's CI is red, so a recurrence on main blocks the tag.",
+  "commit": "117709b9, 9f50cc2d",
+  "evidence": "In run 43394485744 each test process on macOS found the other process's announcement and not its own; the same job passed at 124b70f4 with identical discovery code; on Linux 0 failures in 160 concurrent-process runs. CONJECTURED: same-process delivery between the separate announcer and browser ServiceDaemons on the macOS runner. N13's gate refuses a release while this job is red. 2026-11-14: probe workflow runs 43584838814 and 43586881682 ran the discovery tests 270 times on macOS 26.7.2 (macos-latest) and 15.8.2 (macos-15): 25 each parallel and serial with mdns-sd 0.21.6, 25 parallel with 0.21.7, 30 with every core saturated as written, 30 saturated with the windows widened to 15 s; 0 failed. Earlier main runs that failed (9214541, 3685b8f) failed elsewhere (Install mdBook; an ubuntu leg), so the macOS failure is one occurrence. mdns-sd 0.21.7 (117709b9) wakes its daemon through a mio::Waker instead of binding a loopback UDP socket per command; CONJECTURED, not shown, to be the path that failed on a loaded runner. 9f50cc2d makes each test that misses its agent browse 15 s more and report whether, and when, it appeared.",
+  "tests": "crates/a2a-protocol-discovery (an_announced_agent_is_found_and_its_card_fetched, a_withdrawn_announcement_is_seen_lost); probe-macos-mdns.yml (removed)"
  },
  {
   "id": "D1",
@@ -258,5 +258,55 @@
   "commit": "21ab2e93",
   "evidence": "CHANGELOG.md [Unreleased] opens with ### Upgrading (the guide, data, rollback) and ### Highlights (13 of 15 lines). Writing it found D5.",
   "tests": "scripts/check_release_tree.py self-test and notes"
+ },
+ {
+  "id": "D6",
+  "severity": "Medium (deployment)",
+  "status": "FIXED",
+  "finding": "Dependabot's #205 pinned the Collector to 0.164.0-386, a single-platform linux/386 image",
+  "note": "Found while taking in the open Dependabot updates; never merged.",
+  "commit": "73020c78",
+  "evidence": "docker buildx imagetools inspect --raw on the -386 digest: a single manifest, \"architecture\": \"386\"; the 0.164.0 tag's index lists 386, amd64, arm64, arm/v7, ppc64le, riscv64, s390x. Pinned to the index (sha256:340c9ca6...). check_stack.py refuses a tag that names one architecture: with #205's pin it exits 1, with the index 0; self-test cases for both kinds.",
+  "tests": "deploy/observability/scripts/check_stack.py (self-test)"
+ },
+ {
+  "id": "D7",
+  "severity": "Medium (deployment)",
+  "status": "FIXED",
+  "finding": "Dependabot's #200 (Tempo 2.9.0 -> 3.1.1) would not have started the observability stack",
+  "note": "A Tempo 2.9 data volume opened by 3.1.1 was not tested; the CHANGELOG's Upgrading block says so.",
+  "commit": "73020c78",
+  "evidence": "Tempo 3.1.1 exits with 'field compactor not found in type app.Config', and its image has no sh or chown, which volume-init used. Retention moved to backend_worker.compaction.block_retention; volume-init runs from the Prometheus image (busybox chown); both Tempo versions run as 10001. 5 of 5 pushed traces searchable and fetchable by id on 3.1.1 and on 2.9.0; scripts/live/adopter/06-observability.sh on the whole stack: the same 32 check_dashboards lines as the recorded run on the old images.",
+  "tests": "scripts/live/adopter/06-observability.sh (live)"
+ },
+ {
+  "id": "D8",
+  "severity": "Low (tooling)",
+  "status": "FIXED",
+  "finding": "Two live harnesses had rotted: partition_live.py P2 checked a superseded design, and the v0.15.0 replica no longer built",
+  "note": "Found running the qualification matrix (E5). No product defect behind either.",
+  "commit": "120d668e",
+  "evidence": "P2 expected a continuation to run on the other replica past the claim's time to live; since the renewal watchdog and the abandoned-task reaper the task is ended failed (transient) instead, which the first run showed (partition-old-p2.txt). P2 now checks that contract with measured times (watchdog 13.1 s, reaper 16.0 s). The v0.15 replica compiled the shared main.rs, which now imports 0.16-only APIs (8 errors); it has its own copy as of 420c3cb3 and builds.",
+  "tests": "scripts/live/partition_live.py, scripts/live/upgrade_live.py (live)"
+ },
+ {
+  "id": "E5",
+  "severity": "Release criterion",
+  "status": "FIXED",
+  "finding": "A qualification matrix: replica kill, store faults, provider faults (PDF section 7)",
+  "note": "Not covered, and said so in the book: other hosts and a real network between replicas, SQLite under faults, a PostgreSQL rollback, the audit and push-config stores across the upgrade, disk full, OOM, clock skew, providers other than llama.cpp. 60 replicas at once not run (120 connections of 97).",
+  "commit": "120d668e",
+  "evidence": "docs/audits/2026-11-14-qualification/: c1_chaos.py 9 scenarios, 26 of 26 checks; terminate, restart, lock, partition (4 of 4), outbox arm and reserve, all held; 06_provider.py 24 of 24; 13_provider_death.py 3 of 3 (real llama-server killed mid-generation); upgrade_live.py 4 of 4, control without the guard 1 of 4. Found W2-LIVE-9 still open and fixed it (5250527c), D8.",
+  "tests": "book/src/reference/qualification-matrix.md"
+ },
+ {
+  "id": "E6",
+  "severity": "Release criterion",
+  "status": "PARTIAL",
+  "finding": "GitHub security scanning results and open dependency updates before release",
+  "note": "Three Scorecard alerts are repository settings or a documented waiver, for the maintainer: Code-Review (#126) and Branch-Protection (#93) need main protected with reviews (G1); Vulnerabilities (#125) is RUSTSEC-2026-0459, waived in deny.toml and osv-scanner.toml until sqlx allows libsqlite3-sys >= 0.39 (sqlx 0.9.0 still the newest on 2026-11-14).",
+  "commit": "117709b9, 73020c78, 224419a4",
+  "evidence": "Code scanning on main had 9 open alerts, all Scorecard (the maintainer's list, 2026-11-14). The six Pinned-Dependencies alerts (#211-#216, curl piped into python3 in two adopter scripts) are fixed in 224419a4. OSV on main: no finding but the waiver. All six open Dependabot PRs are taken in, two corrected (D6, D7); every lockfile refreshed.",
+  "tests": "OSV-Scanner and Scorecard re-run on main after merge"
  }
 ]
