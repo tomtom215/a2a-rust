@@ -41,6 +41,18 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 
 ### Added
 
+- **Named deployment profiles for local development and durable production, and a report of what a handler's profiles guarantee**
+  (server; adversarial review of 2026-11-13: "offer named profiles … report which guarantees escape hatches disable").
+  `Profile::LocalDevelopment` states that keeping everything in this process is intended, and `build()` refuses it beside
+  `Production` or `DurableProduction`. `Profile::DurableProduction` refuses a handler with no authenticating interceptor, no task
+  store, or a task, push-config, push-outbox (when the card declares push), halt, lease or audit store that keeps its state in this
+  process alone. Several replicas with tenants kept apart are `DurableProduction` + `Production` + `MultiTenant`.
+  `RequestHandler::profile_report()` returns a `ProfileReport` (also `Display`): what `build()` checked, each escape hatch given
+  (`allow_process_local_stores()`, `accept_unisolated_tenants()`, `share_tasks_across_callers()`, `LocalDevelopment`) and what it
+  gives up, logged at `WARN`, and what no check at startup can establish (backups, the database's availability, a tool loop's step
+  journal, key custody, retention jobs). `TaskStore::is_process_local` and `PushOutbox::is_process_local` (default `false`, as on the
+  halt, lease, push-config and audit store traits) say which stores are in memory; the bundled wrappers forward it.
+
 - **`OpenAiChatModel::with_stream_connection_reuse()`** (adversarial review of 2026-11-13, N16). A streamed turn asked for its connection to
   be closed (`Connection: close`) on every endpoint, for a llama-server behaviour: it closes the connection after a streamed answer (measured
   again on llama.cpp `9daa0aa`: three of three reuse attempts found the connection closed). That stays the default, now stated as a
@@ -1033,6 +1045,13 @@ Collector 0.163.2, Prometheus 3.15.1, Tempo 2.9.0, Loki 3.7.9, Grafana
 - **`ModelError::RateLimited { retry_after, body }`** (audit H17): `OpenAiChatModel` answers a 429 with it instead of `ModelError::Status { status: 429, .. }`.
 
 ### Behaviour Changes
+
+- **A SQLite store over `sqlite::memory:` says it is process-local** (server). The SQLite task, tenant task, halt, audit,
+  push-config, tenant push-config stores and the SQLite push outbox answered `is_process_local() == false` whatever their URL;
+  over `sqlite::memory:` they answer `true` now (read from the database name sqlx gives an in-memory URL; a named database opened
+  with `?mode=memory` is still taken for a file). One effect on `Profile::Production`: a task store that is process-local is no
+  longer treated as shared between processes because it hands out turn claims, so an in-memory halt or lease store beside a
+  `sqlite::memory:` task store is no longer refused. A store over a file is unchanged.
 
 - **The tool loop bounds the bytes a run holds** (adversarial review of 2026-11-13, N09). Turns and calls were bounded, and the bundled
   adapter bounded a provider's response, but a tool's result was kept whole in the conversation, sent again on every later turn and written

@@ -414,6 +414,10 @@ impl TenantAwareInMemoryTaskStore {
 
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for TenantAwareInMemoryTaskStore {
+    fn is_process_local(&self) -> bool {
+        true
+    }
+
     fn isolates_tenants(&self) -> bool {
         true
     }

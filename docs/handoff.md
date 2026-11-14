@@ -28,7 +28,7 @@ it instead of copying the number. The previous version of this block (pull reque
   (`git log --oneline 70dc3374..HEAD`), pushed, **with no pull request** (none was asked for). Commits are authored as Tom F. with one `Signed-off-by` and no
   assistant trailer (`CONTRIBUTING.md`, `dco.yml`).
 - **Why this session.** An independent adversarial review of `70dc337` (a 27-page PDF) added sixteen findings, `N01` to `N16`, reported `main`'s CI red on macOS,
-  and corrected stale claims in this file. Its register is `docs/audits/2026-11-13-adversarial-review/` (`findings.json`, 20 rows: 18 FIXED, 1 PARTIAL (N14),
+  and corrected stale claims in this file. Its register is `docs/audits/2026-11-13-adversarial-review/` (`findings.json`, 21 rows: 18 FIXED, 2 PARTIAL (N14, E1),
   1 OPEN (CI1); the README has the command that counts them). The 2026-11-12 register was updated: S8 fixed, S1 and S6 notes. Read both before acting.
 - **Built, each behaviour defect first reproduced by a test that failed on the code as it stood** (the evidence is in each commit message and register row):
   `861187ae` N01 (approval identities sealed; one field classification for sealing, reveal and erasure scans), `dd9502ad` N02 (`ToolPolicy::approved`; an approved
@@ -70,8 +70,9 @@ it instead of copying the number. The previous version of this block (pull reque
 - **Not verified / not done:** the workflows on GitHub for any commit of this branch (no pull request, so no CI run); `CI1`, the macOS mDNS failures
   (diagnosed, not root-caused: each process saw the other's announcement and not its own; Linux 0 of 160 concurrent runs failed); the N13 and N15 workflow
   changes beyond `prove_workflow_gates_fail.py` and synthetic inputs; N14 on PostgreSQL; any two-replica run outside the tests that pause one log at the race.
-  Of the review's enterprise asks, the conformance statement is written (`book/src/reference/conformance-statement.md`); named deployment
-  profiles validated at startup, a qualification matrix, runbooks and a curated release-notes section from the 3,090-line Unreleased changelog are **not
+  Of the review's enterprise asks, the conformance statement is written (`book/src/reference/conformance-statement.md`) and named deployment
+  profiles are partly done (E1: `Profile::LocalDevelopment`, `Profile::DurableProduction`, `RequestHandler::profile_report()`; audit privacy,
+  egress policy and proxy trust are validated by no profile yet); a qualification matrix, runbooks and a curated release-notes section from the 3,090-line Unreleased changelog are **not
   started**; see *First, next*.
 
 ### First, next
@@ -80,8 +81,8 @@ it instead of copying the number. The previous version of this block (pull reque
    timeout, N15). The Windows and macOS legs decide CI1.
 2. **CI1, the macOS mDNS failures:** reproduce on a macOS runner with `workflow_dispatch`; the conjecture to test is that a `ServiceDaemon` does not deliver
    its own process's announcement to a browser `ServiceDaemon` in the same process on that runner.
-3. **The review's release criteria** (PDF section 7; the conformance statement is done): a support matrix, named
-   deployment profiles validated at startup, the qualification matrix (replica kill, store faults, provider faults), runbooks, and curated release notes with
+3. **The review's release criteria** (PDF section 7; the conformance statement is done, named profiles partly, E1): a support matrix, E1's rest
+   (whether `DurableProduction` or a new profile should require audit privacy, an egress policy and named trusted proxies), the qualification matrix (replica kill, store faults, provider faults), runbooks, and curated release notes with
    the migration guide in front and the long changelog as an archive.
 4. **N14's rest:** a PostgreSQL 0.15 to 0.16 rehearsal (task, audit, push-config stores) and a rolling two-version run.
 5. **Older register rows still open:** S2 skill pinning, S3 fleet quota (a decision first), S4 telemetry-failure visibility; partial R3, A3, S1, S5.
@@ -89,6 +90,9 @@ it instead of copying the number. The previous version of this block (pull reque
 
 ### Facts this session established
 
+- **A container restart stops PostgreSQL and llama-server** (seen 2026-11-14: 80 library tests failed with `PoolTimedOut` and connection
+  refused, and nothing else). Before reading a red PostgreSQL run, `pg_isready -h localhost`; restart with `pg_ctlcluster 16 main start`
+  (`ssl = off` and both roles survive, being on disk), and llama-server with the command under *Now*.
 - **Added 2026-11-13.** `rustup update stable` gave 1.100.0; CI is 1.99.1, so an `#[allow]` of a lint 1.99 does not know fails CI
   (`unknown_lints`): avoid the lint (as `unused_async_trait_impl` was avoided by returning boxed futures) rather than allowing it. Cargo 1.100 also
   warns `unused dependency` for `book-tests`' `a2a-protocol-sdk` and `a2a-protocol-discovery`, which only the book's `include_str!` doc-tests use

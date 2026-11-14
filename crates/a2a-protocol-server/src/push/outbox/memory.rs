@@ -169,6 +169,10 @@ impl InMemoryPushOutbox {
 }
 
 impl PushOutbox for InMemoryPushOutbox {
+    fn is_process_local(&self) -> bool {
+        true
+    }
+
     fn record(&self, deliveries: Vec<NewDelivery>, per_webhook: usize) -> OutboxFuture<'_, usize> {
         Box::pin(async move { Ok(self.insert(deliveries, per_webhook, || None)) })
     }

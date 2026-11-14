@@ -104,6 +104,9 @@ pub(crate) enum CallerIsolation {
 
 #[cfg(test)]
 mod dead_webhook_tests;
+mod durable;
+#[cfg(test)]
+mod durable_tests;
 mod multi_tenant;
 #[cfg(test)]
 mod multi_tenant_tests;
@@ -477,6 +480,14 @@ impl RequestHandlerBuilder {
                     self.caller_isolation = Some(CallerIsolation::EveryCaller);
                 }
                 self.require_resolved_tenant = true;
+            }
+            crate::profile::Profile::LocalDevelopment => {
+                self.profiles
+                    .push(crate::profile::ProfileKind::LocalDevelopment);
+            }
+            crate::profile::Profile::DurableProduction => {
+                self.profiles
+                    .push(crate::profile::ProfileKind::DurableProduction);
             }
         }
         self
@@ -1340,6 +1351,9 @@ impl RequestHandlerBuilder {
             ));
         }
 
+        // Two profiles that contradict each other are named before either one's
+        // requirements.
+        self.check_local_and_durable()?;
         #[cfg(feature = "audit")]
         if self
             .profiles
@@ -1359,6 +1373,8 @@ impl RequestHandlerBuilder {
         {
             self.check_multi_tenant()?;
         }
+        // Read before any field is moved out below.
+        let profile_report = self.profile_report();
 
         // Validate executor timeout is not zero.
         if let Some(timeout) = self.executor_timeout
@@ -1748,6 +1764,7 @@ impl RequestHandlerBuilder {
             }
         };
         let handler = RequestHandler {
+            profile_report,
             executor: self.executor,
             task_store,
             push_config_store,

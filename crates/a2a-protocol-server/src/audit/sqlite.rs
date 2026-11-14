@@ -55,6 +55,10 @@ impl SqliteAuditStore {
 }
 
 impl AuditStore for SqliteAuditStore {
+    fn is_process_local(&self) -> bool {
+        crate::sqlite_pool::is_in_memory(&self.pool)
+    }
+
     fn head<'a>(&'a self, chain: &'a str) -> BoxFuture<'a, A2aResult<Option<(u64, String)>>> {
         Box::pin(async move {
             let row = sqlx::query(

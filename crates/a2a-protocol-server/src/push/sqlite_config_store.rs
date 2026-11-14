@@ -103,6 +103,10 @@ impl SqlitePushConfigStore {
 
 #[allow(clippy::manual_async_fn)]
 impl PushConfigStore for SqlitePushConfigStore {
+    fn is_process_local(&self) -> bool {
+        crate::sqlite_pool::is_in_memory(&self.pool)
+    }
+
     fn set<'a>(
         &'a self,
         mut config: TaskPushNotificationConfig,

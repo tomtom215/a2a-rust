@@ -18,6 +18,7 @@ else assumes: the production profile and TLS.
 
 ## Deployment checklist
 
+- [ ] A profile for the kind of deployment applied (`DurableProduction`, with `Production` and `MultiTenant` for replicas and tenants), its report logged, and every escape hatch in it intended ([below](#choosing-a-profile))
 - [ ] `Profile::Production` and `ServeConfig::production()` applied, or each refusal they make accounted for ([below](#the-production-profile))
 - [ ] HTTPS termination configured ([below](#https))
 - [ ] CORS origins restricted to known clients ([CORS](./production/browsers-and-webhooks.md#cors))
@@ -35,6 +36,56 @@ else assumes: the production profile and TLS.
 - [ ] Server runs on jemalloc or mimalloc, not glibc's default allocator ([Allocator](./production/performance.md#allocator))
 
 ## Security
+
+### Choosing a profile
+
+A profile says what kind of deployment a handler is, and `build()` refuses a
+configuration that does not fit it. Profiles combine; none changes a default.
+
+| Deployment | Profiles | What `build()` then refuses |
+|---|---|---|
+| A developer's machine, a test, a demo | `LocalDevelopment` | Nothing, except being combined with `Production` or `DurableProduction` |
+| One service whose state must survive a restart | `DurableProduction` | No authenticator; no task store, or one that keeps its tasks in this process; with push declared, a push-config store or push outbox in this process (or none); a halt, lease or audit store in this process |
+| Several replicas, tenants kept apart | `DurableProduction` + `Production` + `MultiTenant` | All of the above, and [below](#the-production-profile), and [multi-tenancy](./multi-tenancy.md)'s |
+
+"In this process" means a store whose `is_process_local()` answers `true`: the
+in-memory stores, and the SQLite stores over `sqlite::memory:`. The SQLite
+stores over a file and the PostgreSQL stores answer `false`, and so does a
+store of your own unless you override it. A SQLite database named with
+`?mode=memory` is not recognised as in memory.
+
+`RequestHandler::profile_report()` says what the handler was built to
+promise: what `build()` checked, each escape hatch it was given and what that
+gives up (`allow_process_local_stores()`, `accept_unisolated_tenants()`,
+`share_tasks_across_callers()`, or `LocalDevelopment` itself), and what no
+check at startup can establish. Each escape hatch is also logged at `WARN`. Log
+the report when the service starts (the store here needs the `sqlite` feature):
+
+```rust,no_run
+use a2a_protocol_server::profile::Profile;
+use a2a_protocol_server::store::TenantAwareSqliteTaskStore;
+use a2a_protocol_server::{BearerTokenAuthInterceptor, RequestHandlerBuilder, agent_executor};
+
+struct Agent;
+agent_executor!(Agent, |_ctx, _queue| async { Ok(()) });
+
+async fn build() -> Result<(), Box<dyn std::error::Error>> {
+    let handler = RequestHandlerBuilder::new(Agent)
+        .without_agent_card()
+        .with_profile(Profile::DurableProduction)
+        .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([("token", "caller")]))
+        .with_task_store(TenantAwareSqliteTaskStore::new("sqlite:///var/lib/agent/tasks.db").await?)
+        .build()?; // refuses, naming what is missing
+    println!("{}", handler.profile_report());
+    Ok(())
+}
+```
+
+For that handler the report lists, as not verifiable at startup: backups and a
+rehearsed restore, the database outliving its host, a tool loop's step journal
+(it belongs to the executor, which the handler cannot see), where the keys of
+encrypted stores are kept, and whether retention jobs are scheduled. Those are
+the deployment's to show.
 
 ### The production profile
 

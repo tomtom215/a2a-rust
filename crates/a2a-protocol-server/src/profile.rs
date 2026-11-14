@@ -119,6 +119,51 @@ pub enum Profile {
     /// (`ToolLoop::strict`, `ArgumentCheck`, `AuditedPolicy`); and retention
     /// and erasure of what the stores hold.
     MultiTenant,
+
+    /// For a developer's machine, a test or a demonstration: says that keeping
+    /// everything in this process, and losing it at exit, is intended
+    /// (adversarial review of 2026-11-13).
+    ///
+    /// Applies nothing and requires nothing. What it changes is what the
+    /// handler says of itself: [`RequestHandler::profile_report`](crate::RequestHandler::profile_report)
+    /// lists it as giving up durability and sharing between processes, so a
+    /// configuration that keeps its tasks in memory says so instead of being
+    /// read as a production one. `build()` refuses it together with
+    /// [`Production`](Self::Production) or
+    /// [`DurableProduction`](Self::DurableProduction), which claim the
+    /// opposite.
+    LocalDevelopment,
+
+    /// For a single service whose tasks, webhooks, halts, leases and audit
+    /// records must survive a restart (adversarial review of 2026-11-13: "a
+    /// footgun when silently combined with a durable-production claim").
+    ///
+    /// Applies nothing. Makes `build()` refuse, naming what is missing, unless:
+    /// * an interceptor that authenticates is installed;
+    /// * a task store is set
+    ///   ([`with_task_store`](crate::RequestHandlerBuilder::with_task_store))
+    ///   and it does not keep its tasks in this process alone
+    ///   ([`TaskStore::is_process_local`](crate::store::TaskStore::is_process_local));
+    /// * when the agent card declares push notifications, a push-config store
+    ///   and a push outbox are set and neither is process-local: otherwise a
+    ///   webhook registered, or a delivery owed, is lost with the process;
+    /// * a halt, lease or audit store, when one is set, is not process-local.
+    ///
+    /// The bundled in-memory stores, and the SQLite stores over
+    /// `sqlite::memory:`, are process-local; the SQLite stores over a file and
+    /// the PostgreSQL stores are not. A store of your own is taken to be
+    /// durable unless it says otherwise.
+    ///
+    /// For several replicas, combine it with [`Production`](Self::Production),
+    /// which also refuses a store only one replica can see, and with
+    /// [`MultiTenant`](Self::MultiTenant) when tenants must be kept apart.
+    ///
+    /// What it cannot see, and lists in
+    /// [`RequestHandler::profile_report`](crate::RequestHandler::profile_report):
+    /// backups and their restore, the database's own availability, a tool
+    /// loop's step journal (the executor's, not the handler's), where keys are
+    /// kept, and whether retention jobs are scheduled.
+    DurableProduction,
 }
 
 /// Which profiles a builder had applied, for `build()` to check.
@@ -128,7 +173,13 @@ pub(crate) enum ProfileKind {
     Auditable,
     Production,
     MultiTenant,
+    LocalDevelopment,
+    DurableProduction,
 }
+
+#[path = "profile_report.rs"]
+mod report;
+pub use report::ProfileReport;
 
 #[cfg(test)]
 mod production_tests {

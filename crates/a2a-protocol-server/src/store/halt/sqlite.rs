@@ -67,6 +67,10 @@ fn failed(what: &str, e: &sqlx::Error) -> A2aError {
 }
 
 impl HaltStore for SqliteHaltStore {
+    fn is_process_local(&self) -> bool {
+        crate::sqlite_pool::is_in_memory(&self.pool)
+    }
+
     fn load(&self) -> Pin<Box<dyn Future<Output = A2aResult<Vec<StoredHalt>>> + Send + '_>> {
         Box::pin(async move {
             let rows: Vec<(String, String, String, i64)> =

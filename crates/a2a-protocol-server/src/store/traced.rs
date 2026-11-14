@@ -240,6 +240,10 @@ impl TaskStore for TracedTaskStore {
         self.inner.turn_claims()
     }
 
+    fn is_process_local(&self) -> bool {
+        self.inner.is_process_local()
+    }
+
     fn claim_idempotency_key<'a>(
         &'a self,
         key: &'a str,

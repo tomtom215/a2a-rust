@@ -109,6 +109,10 @@ impl TenantAwareSqlitePushConfigStore {
 
 #[allow(clippy::manual_async_fn)]
 impl PushConfigStore for TenantAwareSqlitePushConfigStore {
+    fn is_process_local(&self) -> bool {
+        crate::sqlite_pool::is_in_memory(&self.pool)
+    }
+
     fn isolates_tenants(&self) -> bool {
         true
     }

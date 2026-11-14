@@ -363,7 +363,7 @@ are rustdoc's job.
 | `interceptor` | Server-side interceptor chain |
 | `metrics` | Metrics hooks for observing handler activity |
 | `otel` | `OtelMetrics` (`otel` feature, on by default) and `Telemetry` (OTLP traces, metrics and logs; the Langfuse preset; `otlp` feature) |
-| `profile` | Deployment profiles, which combine. `Profile::Auditable` turns on the audit trail and an approval gate, with a `build()` that refuses a log that is not required or not signed, a chain with no authenticator, or a builder that has not said how callers' tasks relate (`audit` feature). `Profile::Production` refuses a handler with no authenticator, halt store, lease store or content signer (ADR 0025, ADR 0027; the signer needs the `signing` feature) |
+| `profile` | Deployment profiles, which combine. `Profile::Auditable` turns on the audit trail and an approval gate, with a `build()` that refuses a log that is not required or not signed, a chain with no authenticator, or a builder that has not said how callers' tasks relate (`audit` feature). `Profile::Production` refuses a handler with no authenticator, halt store, lease store or content signer (ADR 0025, ADR 0027; the signer needs the `signing` feature). `Profile::DurableProduction` refuses stores that keep their state in this process; `Profile::LocalDevelopment` says that is intended. `ProfileReport` (`RequestHandler::profile_report`) lists what was checked, what an escape hatch gave up, and what startup cannot verify |
 | `push` | Push notification configuration storage and delivery |
 | `rate_limit` | Fixed-window rate limiter as a `ServerInterceptor` |
 | `request_context` | Request context passed to the `AgentExecutor` |
