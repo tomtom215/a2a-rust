@@ -205,6 +205,8 @@ struct Rig {
     reaper: super::super::Reaper,
     claims_store: Arc<dyn TurnClaimStore>,
     id: String,
+    /// The state the task's ending reports once repaired.
+    ends_in: TaskState,
     _claims: Arc<super::super::super::TurnClaims>,
     path: std::path::PathBuf,
 }
@@ -231,6 +233,22 @@ fn lanes(
 }
 
 async fn rig() -> Rig {
+    rig_from(TaskState::Canceled).await
+}
+
+/// The state a task left in `state` ends in: the reaper fails one left
+/// running; any other already has its state.
+fn ending_of(state: TaskState) -> TaskState {
+    if state == TaskState::Working {
+        TaskState::Failed
+    } else {
+        state
+    }
+}
+
+/// A task left in `state` by a dead replica: `canceled` (its ending owed,
+/// the repair path) or `working` (left running, the path that fails it).
+async fn rig_from(state: TaskState) -> Rig {
     let (url, path) = sqlite_url();
     let sqlite = Arc::new(SqliteTaskStore::new(&url).await.unwrap());
     let claims_store = sqlite.turn_claims().expect("SQL stores claim turns");
@@ -238,8 +256,8 @@ async fn rig() -> Rig {
         inner: sqlite,
         fault: Mutex::new(None),
     });
-    let id = format!("cancelled-{}", uuid::Uuid::new_v4());
-    store.save(&task(&id, TaskState::Canceled)).await.unwrap();
+    let id = format!("left-{}", uuid::Uuid::new_v4());
+    store.save(&task(&id, state)).await.unwrap();
     assert!(
         claims_store
             .claim("", &id, "dead", "token", Duration::from_millis(1))
@@ -287,6 +305,7 @@ async fn rig() -> Rig {
         reaper,
         claims_store,
         id,
+        ends_in: ending_of(state),
         _claims: claims,
         path,
     }
@@ -346,12 +365,12 @@ impl Rig {
         assert_eq!(logged.len(), 1, "the ending is appended once: {logged:?}");
         assert!(matches!(
             &logged[0].event,
-            StreamResponse::StatusUpdate(e) if e.status.state == TaskState::Canceled
+            StreamResponse::StatusUpdate(e) if e.status.state == self.ends_in
         ));
         let told = self.told().await;
         assert!(matches!(
             &told[0],
-            StreamResponse::StatusUpdate(e) if e.status.state == TaskState::Canceled
+            StreamResponse::StatusUpdate(e) if e.status.state == self.ends_in
         ));
         assert!(
             self.claim_free().await,
@@ -399,5 +418,36 @@ async fn a_repair_whose_deliveries_are_not_durably_queued_keeps_its_marker() {
     );
     assert_eq!(rig.sent.0.lock().unwrap().len(), 0);
     rig.configs.down.store(false, Ordering::SeqCst);
+    rig.repaired_on_the_next_look().await;
+}
+
+/// A task its replica left running is failed by the reaper, which then
+/// releases its own claim: nothing is owed once the ending is logged and its
+/// webhook queued.
+#[tokio::test]
+async fn a_task_left_running_and_failed_cleanly_releases_the_claim() {
+    let rig = rig_from(TaskState::Working).await;
+    rig.reaper.look().await;
+    let logged = rig.ending().await;
+    assert_eq!(logged.len(), 1, "the ending is appended once: {logged:?}");
+    assert!(matches!(
+        &logged[0].event,
+        StreamResponse::StatusUpdate(e) if e.status.state == TaskState::Failed
+    ));
+    assert!(
+        rig.claim_free().await,
+        "an ending that is logged and queued keeps no claim"
+    );
+    remove_sqlite(&rig.path);
+}
+
+/// The same, with the ending's append failing: the task is stored `failed`
+/// but its ending is owed, so the claim is kept, and the next look completes
+/// the ending of the now finished task.
+#[tokio::test]
+async fn a_task_left_running_whose_ending_append_fails_keeps_the_claim() {
+    let rig = rig_from(TaskState::Working).await;
+    *rig.store.fault.lock().unwrap() = Some(Fault::Append);
+    rig.reaper.look().await;
     rig.repaired_on_the_next_look().await;
 }
