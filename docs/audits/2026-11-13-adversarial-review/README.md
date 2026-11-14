@@ -7,7 +7,7 @@ The review examined `main` at `70dc337` and is a 27-page PDF. It added sixteen f
 the 2026-11-12 review (`../2026-11-12-adversarial-review/`). That register's own rows are updated there, not here.
 
 `findings.json` is this review's register. It has one row per finding, one row for the red main CI the review reported (`CI1`),
-one row for each defect found while doing the work (`D1` to `D3`), and one for each of the review's wider asks taken on so far (`E1`, named deployment profiles). Each row carries `status`, a `note` for what the status does
+one row for each defect found while doing the work (`D1` to `D5`), and one for each of the review's wider asks taken on so far (`E1` named deployment profiles, `E2` a support matrix, `E3` runbooks, `E4` curated release notes). Each row carries `status`, a `note` for what the status does
 not cover, the `commit`, the `evidence` and the `tests`.
 
 Every behaviour defect was **reproduced by a test that failed on the code as it stood** before it was fixed. The evidence column
@@ -20,7 +20,7 @@ Read from `findings.json` with the command below, not copied from a summary.
 
 | Status | Rows | IDs |
 |---|---|---|
-| FIXED | 18 | N01 to N13, N15, N16, D1, D2, D3 |
+| FIXED | 23 | N01 to N13, N15, N16, D1 to D5, E2, E3, E4 |
 | PARTIAL | 2 | N14, E1 |
 | OPEN | 1 | CI1 |
 

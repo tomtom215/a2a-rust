@@ -101,6 +101,7 @@ else. 0.15 ignores both. The audit database's schema is identical (compared as `
 * The push-config, tenant-scoped, encrypted-task and halt stores, and the step journal, which is new in 0.16 and has no 0.15
   data.
 * Signed checkpoints, legal holds and erasure carried across the upgrade.
-* A second process running 0.15 and 0.16 side by side, as in a rolling upgrade.
+* A second process running 0.15 and 0.16 side by side, as in a rolling upgrade, in this rehearsal. For tasks on PostgreSQL that was
+  measured earlier, against a real 0.15.0 replica on 2026-10-28 (`book/src/deployment/horizontal-scaling.md`, *Upgrading a fleet*).
 * Configuration files: the SDK reads none. Environment-variable changes are in the guide's "The server's outbound HTTP
   follows the proxy and CA variables" and the `Telemetry` section.

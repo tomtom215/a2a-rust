@@ -28,7 +28,7 @@ it instead of copying the number. The previous version of this block (pull reque
   (`git log --oneline 70dc3374..HEAD`), pushed, **with no pull request** (none was asked for). Commits are authored as Tom F. with one `Signed-off-by` and no
   assistant trailer (`CONTRIBUTING.md`, `dco.yml`).
 - **Why this session.** An independent adversarial review of `70dc337` (a 27-page PDF) added sixteen findings, `N01` to `N16`, reported `main`'s CI red on macOS,
-  and corrected stale claims in this file. Its register is `docs/audits/2026-11-13-adversarial-review/` (`findings.json`, 21 rows: 18 FIXED, 2 PARTIAL (N14, E1),
+  and corrected stale claims in this file. Its register is `docs/audits/2026-11-13-adversarial-review/` (`findings.json`, 26 rows: 23 FIXED, 2 PARTIAL (N14, E1),
   1 OPEN (CI1); the README has the command that counts them). The 2026-11-12 register was updated: S8 fixed, S1 and S6 notes. Read both before acting.
 - **Built, each behaviour defect first reproduced by a test that failed on the code as it stood** (the evidence is in each commit message and register row):
   `861187ae` N01 (approval identities sealed; one field classification for sealing, reveal and erasure scans), `dd9502ad` N02 (`ToolPolicy::approved`; an approved
@@ -70,10 +70,15 @@ it instead of copying the number. The previous version of this block (pull reque
 - **Not verified / not done:** the workflows on GitHub for any commit of this branch (no pull request, so no CI run); `CI1`, the macOS mDNS failures
   (diagnosed, not root-caused: each process saw the other's announcement and not its own; Linux 0 of 160 concurrent runs failed); the N13 and N15 workflow
   changes beyond `prove_workflow_gates_fail.py` and synthetic inputs; N14 on PostgreSQL; any two-replica run outside the tests that pause one log at the race.
-  Of the review's enterprise asks, the conformance statement is written (`book/src/reference/conformance-statement.md`) and named deployment
-  profiles are partly done (E1: `Profile::LocalDevelopment`, `Profile::DurableProduction`, `RequestHandler::profile_report()`; audit privacy,
-  egress policy and proxy trust are validated by no profile yet); a qualification matrix, runbooks and a curated release-notes section from the 3,090-line Unreleased changelog are **not
-  started**; see *First, next*.
+  Of the review's enterprise asks: the conformance statement is written (`book/src/reference/conformance-statement.md`); named deployment
+  profiles are done but for the step journal (E1, PARTIAL: `a76a5957` `LocalDevelopment`, `DurableProduction` and `profile_report()`; `21ab2e93`
+  `RegulatedData`, which checks audit privacy, egress and sealing at rest and requires declarations of proxies, key custody, backups and
+  retention; a journal is set on the `ToolLoop`, which the builder never sees); a support matrix (E2), operations runbooks (E3) and curated
+  release notes (E4: `### Upgrading` and `### Highlights` lead `[Unreleased]`; the release page keeps both, D5) are written, in `21ab2e93`.
+  Writing them found D4 (a rotated checkpoint key made `AuditLog::verify` report an intact chain broken) and D5, both fixed there.
+  The **qualification matrix** (replica kill, store faults, provider faults) is **not started**; see *First, next*.
+  At `21ab2e93`: `ci.yml` `clippy`, `features`, `doc` and `static-checks` PASS locally (`scripts/run_workflow_job.py`); the server library with
+  PostgreSQL and `--include-ignored`: **3,686 passed, 0 failed**.
 
 ### First, next
 
@@ -81,10 +86,12 @@ it instead of copying the number. The previous version of this block (pull reque
    timeout, N15). The Windows and macOS legs decide CI1.
 2. **CI1, the macOS mDNS failures:** reproduce on a macOS runner with `workflow_dispatch`; the conjecture to test is that a `ServiceDaemon` does not deliver
    its own process's announcement to a browser `ServiceDaemon` in the same process on that runner.
-3. **The review's release criteria** (PDF section 7; the conformance statement is done, named profiles partly, E1): a support matrix, E1's rest
-   (whether `DurableProduction` or a new profile should require audit privacy, an egress policy and named trusted proxies), the qualification matrix (replica kill, store faults, provider faults), runbooks, and curated release notes with
-   the migration guide in front and the long changelog as an archive.
-4. **N14's rest:** a PostgreSQL 0.15 to 0.16 rehearsal (task, audit, push-config stores) and a rolling two-version run.
+3. **The review's last release criterion** (PDF section 7): the qualification matrix (replica kill, store faults, provider faults), each row a
+   run with its evidence. E1's rest is a decision first: whether the step journal's durability should be checked, which needs the builder to see
+   the `ToolLoop`'s journal.
+4. **N14's rest:** a PostgreSQL 0.15 to 0.16 rehearsal of the audit and push-config stores, and a PostgreSQL rollback. Tasks across a rolling
+   two-version fleet were already measured against a real 0.15.0 replica on 2026-10-28 (`book/src/deployment/horizontal-scaling.md`,
+   *Upgrading a fleet*; `tests/turn_claims/upgrade.rs`), which this file's earlier wording missed.
 5. **Older register rows still open:** S2 skill pinning, S3 fleet quota (a decision first), S4 telemetry-failure visibility; partial R3, A3, S1, S5.
 6. The maintainer's items stay under *Waiting on the maintainer*, G1 among them.
 

@@ -204,9 +204,59 @@
   "severity": "Developer experience / release criterion",
   "finding": "Named deployment profiles validated at startup, with escape hatches reporting the guarantees they disable (PDF section 3)",
   "status": "PARTIAL",
-  "note": "Stores, authentication and (through MultiTenant) the tenant resolver are validated; audit privacy, URL/egress policy and proxy trust are not validated by any profile; the step journal, key custody and retention are reported as not verifiable at startup rather than checked.",
-  "commit": "a76a5957",
-  "evidence": "Profile::LocalDevelopment (refused beside Production or DurableProduction) and Profile::DurableProduction (refuses no authenticator, no task store, and a task, push-config, push-outbox, halt, lease or audit store that keeps its state in this process); tenant-isolated multi-replica is DurableProduction + Production + MultiTenant. RequestHandler::profile_report() lists what build() checked, each escape hatch given and what it gives up (also logged at WARN), and what no startup check can establish. TaskStore and PushOutbox gain is_process_local (wrappers forward); SQLite stores over sqlite::memory: answer true. 28 hand mutants of the new decisions and answers, each applied with the source hash checked on restore: 27 killed at first; the survivor (an in-memory push-config store beside a card that declares push) got its test and is killed. Three of the first run's mutants did not compile (a guard that left a match non-exhaustive) and were rewritten so they did.",
-  "tests": "builder/durable_tests.rs; profile_shared_tests.rs; sqlite_pool tests"
+  "note": "Profile::RegulatedData now validates audit privacy (a required, private audit log), egress (private file URLs refused; a push sender neither allowing private addresses nor plain HTTP) and content sealed at rest, and requires declarations of trusted proxies, key custody, backups and retention. Still not validated by any profile: the step journal (set on the ToolLoop, which the builder does not see), and each declared control, which a process cannot observe; declarations are reported as declared, not verified.",
+  "commit": "a76a5957, 21ab2e93",
+  "evidence": "Profile::LocalDevelopment (refused beside Production or DurableProduction) and Profile::DurableProduction (refuses no authenticator, no task store, and a task, push-config, push-outbox, halt, lease or audit store that keeps its state in this process); tenant-isolated multi-replica is DurableProduction + Production + MultiTenant. RequestHandler::profile_report() lists what build() checked, each escape hatch given and what it gives up (also logged at WARN), and what no startup check can establish. TaskStore and PushOutbox gain is_process_local (wrappers forward); SQLite stores over sqlite::memory: answer true. 28 hand mutants of the new decisions and answers, each applied with the source hash checked on restore: 27 killed at first; the survivor (an in-memory push-config store beside a card that declares push) got its test and is killed. Three of the first run's mutants did not compile (a guard that left a match non-exhaustive) and were rewritten so they did. 21ab2e93: Profile::RegulatedData and RequestHandlerBuilder::declare_external_control (ExternalControl, ProfileReport::declared; a blank declaration refused under any profile); TaskStore::seals_content and AuditLog::is_private added, forwarded by the audited and traced wrappers. 18 hand mutants of the new decisions, each applied with the source hash checked on restore: 17 killed at first, 0 survived, 1 did not compile and was rewritten as a valid mutant, which was killed.",
+  "tests": "builder/durable_tests.rs; profile_shared_tests.rs; sqlite_pool tests; builder/regulated_tests.rs"
+ },
+ {
+  "id": "D4",
+  "severity": "Medium",
+  "finding": "AuditLog::verify trusted only the current signer's key, so a rotated checkpoint key made an intact chain verify as broken",
+  "status": "FIXED",
+  "note": "Found while writing the key-rotation runbook (E3). An external verifier given every key (a2a audit verify --keys) was not affected.",
+  "commit": "21ab2e93",
+  "evidence": "verify_checkpoint (a2a-protocol-types audit/checkpoint.rs) matches a key by kid, and AuditLog::verify passed only trusted_key(). audit::tests::key_rotation signs a checkpoint under one key, restarts with another, and asserts the chain is reported unverifiable without the old key and intact with it (AuditLog::with_retired_key; AuditLog::trusted_keys). With verify reverted to the one key, the test fails at the intact assertion.",
+  "tests": "audit/tests/key_rotation.rs"
+ },
+ {
+  "id": "D5",
+  "severity": "Medium (release)",
+  "finding": "release.yml's notes for a section over 120,000 characters dropped the ### Highlights block the release gate requires",
+  "status": "FIXED",
+  "note": "Found while curating the 0.16 notes (E4); 0.16's section is 284,931 characters (measured at 21ab2e93), so it would have been released without its summary.",
+  "commit": "21ab2e93",
+  "evidence": "The inline awk kept the opening and Known Limitations, Breaking Changes, Behaviour Changes, Deprecated and Security only. The filter is now scripts/check_release_tree.py notes, which also keeps Upgrading and Highlights; its self-test (6 cases, run in the validate job) fails when Highlights is dropped from the kept sections. On the current CHANGELOG it writes 89160 characters whose only difference from the old awk output is the link line and the Highlights block.",
+  "tests": "scripts/check_release_tree.py self-test"
+ },
+ {
+  "id": "E2",
+  "severity": "Release criterion",
+  "finding": "A support matrix (PDF section 7)",
+  "status": "FIXED",
+  "note": "Each entry names the file it is read from; it states what is not qualified (PostgreSQL rollback, two 0.15 replicas on one task, SQLite side by side).",
+  "commit": "21ab2e93",
+  "evidence": "book/src/reference/support-matrix.md: products, bindings, Rust, features, databases and schema versions (read from store/migration and store/pg_migration at HEAD and v0.15.0), sealed formats, upgrades, support window.",
+  "tests": "book build, check_book_links, check_book_code"
+ },
+ {
+  "id": "E3",
+  "severity": "Release criterion",
+  "finding": "Runbooks (PDF section 7)",
+  "status": "FIXED",
+  "note": "Procedures name calls verified in source; nothing in them was run end to end as a drill.",
+  "commit": "21ab2e93",
+  "evidence": "book/src/deployment/operations.md: erasure across stores, access requests, legal holds, retention, halts, key rotation, audit store loss, restore, 0.15 to 0.16 upgrade and rollback. Writing it found D4.",
+  "tests": "book build, check_book_links, check_book_code"
+ },
+ {
+  "id": "E4",
+  "severity": "Release criterion",
+  "finding": "Curated release notes with the migration guide in front and the long changelog as an archive (PDF section 7)",
+  "status": "FIXED",
+  "note": "The full record stays in CHANGELOG.md; the release page carries Upgrading, Highlights and the upgrade-critical sections.",
+  "commit": "21ab2e93",
+  "evidence": "CHANGELOG.md [Unreleased] opens with ### Upgrading (the guide, data, rollback) and ### Highlights (13 of 15 lines). Writing it found D5.",
+  "tests": "scripts/check_release_tree.py self-test and notes"
  }
 ]
