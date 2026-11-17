@@ -110,6 +110,17 @@ fn a_wrapped_in_memory_store_is_still_refused() {
     assert!(why.contains("the task store"), "{why}");
 }
 
+/// The in-memory stores say they keep their contents in this process, the
+/// tenant-aware one and the push outbox as well as the plain task store.
+#[test]
+fn the_in_memory_stores_say_they_are_process_local() {
+    use crate::push::PushOutbox;
+    use crate::store::TaskStore;
+    assert!(InMemoryTaskStore::new().is_process_local());
+    assert!(crate::store::TenantAwareInMemoryTaskStore::new().is_process_local());
+    assert!(crate::push::InMemoryPushOutbox::new().is_process_local());
+}
+
 #[cfg(feature = "sqlite")]
 mod sqlite {
     use std::sync::Arc;
@@ -302,6 +313,27 @@ mod sqlite {
             traced.is_process_local(),
             "the traced wrapper does not forward"
         );
+        let f = Db::new();
+        let shared = crate::store::traced::TracedTaskStore::wrap(Arc::new(
+            SqliteTaskStore::new(&f.url()).await.unwrap(),
+        ));
+        assert!(
+            !shared.is_process_local(),
+            "the traced wrapper calls a shared store process-local"
+        );
+    }
+
+    /// An encrypted store over a database file is not in memory: the wrapper
+    /// asks the store it wraps, both ways.
+    #[cfg(feature = "encryption")]
+    #[tokio::test]
+    async fn an_encrypted_store_over_a_file_is_shared() {
+        use crate::store::TaskStore;
+        use crate::store::encrypted::{AES_256_KEY_LEN, Aes256GcmCipher, EncryptedTaskStore};
+        let f = Db::new();
+        let cipher = Arc::new(Aes256GcmCipher::new("k", [1; AES_256_KEY_LEN]).unwrap());
+        let sealed = EncryptedTaskStore::new(SqliteTaskStore::new(&f.url()).await.unwrap(), cipher);
+        assert!(!sealed.is_process_local());
     }
 
     /// What each SQLite store over `url` answers.
