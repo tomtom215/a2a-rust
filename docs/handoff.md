@@ -19,6 +19,34 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
+State on 2026-11-17 (UTC), written at the end of the session that drove pull request #210. Re-run every command named; copy no figure.
+
+- **Pull request #210** (`claude/dazzling-wozniak-xp79ii` into `main`; `main` is `70dc3374`, `git rev-parse origin/main`): 56 commits
+  (`git log --oneline 70dc3374..HEAD | wc -l`), head `b1c4a84d`. Not merged; nothing tagged (`v0.15.0` is the newest tag).
+- **Mutation gate.** The incremental gate (40 server shards, `--jobs 4`, `--timeout 300`) found new survivors on almost every head from 2026-11-14 to
+  2026-11-17; each was closed by a test applied against the mutant by hand (each commit message names the mutant and the assertion that fails), or, for
+  code `--all-features` compiles out, by `#[mutants::skip]` with the proof beside it (`builder/regulated.rs`). The first complete run was at `bd9e6803`
+  (39 of 40 shards passed; shard 36 fixed in `8283c4a0`). At `8283c4a0` every shard passed (388 caught, 0 missed) but one mutant timed out twice,
+  `tool_loop/limits.rs:38` `32 * 1024 * 1024` -> `32 + 1024 * 1024`: a real survivor (no test wrote a checkpoint between 1 MiB and 32 MiB, so no test
+  failed and the suite ran into the 300 s cap), fixed in `b1c4a84d`. **Whether the run at `b1c4a84d` is clean is not yet known: check it first.**
+  Two lessons: reproduce a mutant from the shard's own `diff/` file in the `mutation-report-incremental-shard-*` artifact, never by hand-writing it
+  (this session mis-applied this one and called a real survivor runner noise); and a TIMEOUT whose log shows every test passing is a survivor.
+- **Sign-off.** `git commit -s` signs with the *committer*; with `GIT_COMMITTER_NAME=Claude` it wrote `Signed-off-by: Claude`, which `dco.yml` rejects.
+  Use `--trailer "Signed-off-by: Tom F. <tomf@tomtomtech.net>"`. Three such commits were rewritten and force-pushed on 2026-11-17 with the maintainer's
+  approval.
+- **Other CI at `8283c4a0`:** every test leg passed, both macOS ones included; `Rust lockfiles`, `cargo-deny` and `Regression Gate` passed.
+  RUSTSEC-2026-0543 (`chrono`) and -0555 (`chrono-tz`), unmaintained notices with no fix, are waived with reasons in the `deny.toml` and
+  `osv-scanner.toml` beside each lockfile that records them (`196b59eb`). `Regression Gate` flagged `transport_payload_scaling/jsonrpc_send/64`
+  once on a test-only commit (`2038bf39`); identical library code passed before and after.
+- **CI1** (register row, OPEN): every macOS test leg that completed on pull request #210 from `7acfbe35` on passed (seen: `7acfbe35` stable,
+  `f65239ec` both, `b442b8d8` 1.94, `8283c4a0` both). That is evidence, not a root cause; the row stays OPEN.
+- **Register** `docs/audits/2026-11-13-adversarial-review/findings.json`: 31 rows, 27 FIXED, 3 PARTIAL (N14, E1, E6), 1 OPEN (CI1)
+  (the README's command counts them).
+- **Next:** read the mutation run and CI at the pull request's head; close anything red; then the release-prep commit (`[Unreleased]` ->
+  `[0.16.0] - date`, `SECURITY.md` lists 0.16.x), merge by the maintainer, green `main`, tag.
+
+## Previous state (2026-11-13)
+
 State on 2026-11-13 (UTC). Each figure was read from a command in the session that wrote it, and the command is named so the next session re-runs
 it instead of copying the number. The previous version of this block (pull request #209 and the 2026-11-12 review) is kept verbatim in
 [`handoff-history.md`](handoff-history.md), last section.
