@@ -81,14 +81,43 @@ The SLIMRPC binding (`bindings/a2a-protocol-slimrpc`) is versioned
 independently and is not part of the tagged release; `release.yml` does not
 touch it.
 
-## v0.16.0 (in preparation, not released)
+## v0.16.0 (2026-11-18)
 
-The fixes of the pre-release audit (2026-10-29 and 2026-11-01) and the 0.16
-breaking window; [Upgrading from 0.15 to 0.16](./upgrading/0.15-to-0.16.md) has
-the migrations and
+A minor release with breaking changes. Read
+[Upgrading from 0.15 to 0.16](./upgrading/0.15-to-0.16.md) before you build
+against it: it has every API break with its migration.
 [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md)
-has every item in full. A 0.15.1 was prepared on 2026-10-26 and never tagged or
-published; what it held ships here, and is summarised next:
+has every item in full, and its `Upgrading`, `Highlights` and
+`Known Limitations` blocks are the short version. What the release is about:
+
+- **Several replicas on one PostgreSQL database need no session affinity.**
+  Each turn claims its task in the database, a cancel reaches the executor on
+  another replica, a dead replica's tasks are handed over, and a replica that
+  stalls past its claim writes nothing more. The task stores add one table,
+  `a2a_task_claims`; [Operations](../deployment/operations.md) has the upgrade
+  procedure and its rollback, and the [Support Matrix](./support-matrix.md)
+  says what is supported at which schema version.
+- **Breaking changes for code that builds against the SDK**, among them:
+  `RequestContext.context_id` is a `ContextId`; the wire structs (`Task`,
+  `Message`, `Part`, `AgentCard` and others) are `#[non_exhaustive]` and built
+  with `new` and `with_*`;
+  `a2a-protocol-server` enables `tls-rustls` by default; `sign_agent_card` is
+  removed; `JwtValidator` checks `iss` and `aud`.
+- **Changes an operator must act on**, among them: loopback is never sent to
+  a proxy; `Profile::Production` refuses process-local stores over a shared
+  task store; the gRPC and WebSocket listeners probe idle peers.
+- **Deployment profiles** (`Profile::DurableProduction`,
+  `Profile::LocalDevelopment`, `Profile::RegulatedData`) that `build()`
+  checks, with operations runbooks and the support matrix in this book.
+- **Swarms and fleets, observability, Agent Skills in the tool loop, and
+  steering a running task**: see the changelog's `Highlights`.
+
+The [Qualification Matrix](./qualification-matrix.md) says what was run
+against real replicas and what was not, and the changelog's
+`Known Limitations` lists what this release does not do.
+
+A 0.15.1 was prepared on 2026-10-26 and never tagged or published; what it
+held ships here, and is summarised next:
 
 OpenTelemetry export works in more deployments and says what it is doing. A
 diff of the public items against v0.15.0 finds only additions for that part.

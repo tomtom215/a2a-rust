@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.16.0] - 2026-11-18
+
 Several replicas can now share one PostgreSQL database (or several processes
 one SQLite file) with no session affinity: each turn of a task claims it in
 the database, so two replicas never run one task at once, a continuation
