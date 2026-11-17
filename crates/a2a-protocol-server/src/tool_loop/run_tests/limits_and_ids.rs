@@ -175,7 +175,9 @@ async fn a_request_exactly_at_the_limit_is_sent() {
 }
 
 /// N09: the default checkpoint limit is 32 MiB, so a checkpoint of a call
-/// whose arguments run to 100 kB is written and the call runs.
+/// whose arguments run to 2 MB is written and the call runs. 2 MB, not less:
+/// a limit of about 1 MiB (`32 + 1024 * 1024`, a mutant of the constant) must
+/// refuse it.
 #[tokio::test]
 async fn a_large_checkpoint_under_the_default_limit_is_written() {
     let j = journal();
@@ -184,7 +186,7 @@ async fn a_large_checkpoint_under_the_default_limit_is_written() {
         calls(vec![call(
             "c1",
             "transfer",
-            &format!(r#"{{"memo":"{}"}}"#, "z".repeat(100_000)),
+            &format!(r#"{{"memo":"{}"}}"#, "z".repeat(2_000_000)),
         )]),
         text("done"),
     ]);
