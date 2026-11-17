@@ -365,3 +365,22 @@ async fn a_checkpoint_exactly_at_the_limit_is_written() {
         "one byte past it"
     );
 }
+
+/// A handle's debug form says whether a journal is installed and whether
+/// checkpoints are sealed, and prints neither the journal nor the cipher.
+#[test]
+fn a_handle_says_what_it_holds_without_printing_it() {
+    use crate::tool_loop::journal_codec::JournalHandle;
+    assert_eq!(
+        format!("{:?}", JournalHandle::default()),
+        "JournalHandle { store: false, sealed: false, .. }"
+    );
+    let installed = JournalHandle {
+        store: Some(std::sync::Arc::new(InMemoryStepJournal::new())),
+        ..Default::default()
+    };
+    assert_eq!(
+        format!("{installed:?}"),
+        "JournalHandle { store: true, sealed: false, .. }"
+    );
+}

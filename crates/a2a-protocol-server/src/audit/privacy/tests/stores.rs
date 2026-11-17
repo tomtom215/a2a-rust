@@ -116,7 +116,7 @@ async fn fence_deletes_unless_named(store: &dyn AuditStore, chain: &str) {
 }
 
 /// Under a hold, no key goes; without one, every key named goes at once.
-async fn fence_deletes_unless_held(store: &dyn AuditStore, chain: &str) {
+pub(super) async fn fence_deletes_unless_held(store: &dyn AuditStore, chain: &str) {
     let a = SubjectKey::new("h1:a", "sid-a", "wa");
     let b = SubjectKey::new("h1:b", "sid-b", "wb");
     assert!(store.put_subject_key(chain, &a).await.unwrap());

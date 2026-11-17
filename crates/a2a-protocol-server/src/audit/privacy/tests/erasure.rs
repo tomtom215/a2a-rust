@@ -167,6 +167,18 @@ impl AuditStore for Flaky {
     }
 }
 
+/// A store that keeps subject keys but not the trait's fenced deletion gets
+/// the default, which holds to the same contract: nothing deleted under a
+/// hold on the chain, everything once it is released.
+#[tokio::test]
+async fn the_default_fenced_deletion_keeps_the_contract() {
+    let store = Flaky {
+        inner: InMemoryAuditStore::new(),
+        fail_delete: AtomicBool::new(false),
+    };
+    super::stores::fence_deletes_unless_held(&store, "acme").await;
+}
+
 /// Recorded first, deleted second: a failed delete is retried, and the
 /// erasure is on record both times.
 #[tokio::test]
