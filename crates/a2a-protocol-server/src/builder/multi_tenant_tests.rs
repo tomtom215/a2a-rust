@@ -190,6 +190,19 @@ fn stores_that_share_records_across_tenants_are_refused() {
     assert!(why.contains("accept_unisolated_tenants"), "{why}");
 }
 
+/// A handler whose stores keep tenants apart reports no escape hatch: the
+/// profile alone is not a choice to share across tenants.
+#[test]
+fn stores_that_keep_tenants_apart_report_no_hatch() {
+    let handler = complete()
+        .with_task_store(TenantAwareInMemoryTaskStore::new())
+        .with_push_config_store(TenantAwareInMemoryPushConfigStore::new())
+        .build()
+        .expect("everything the profile asks for");
+    let report = handler.profile_report();
+    assert_eq!(report.disabled, Vec::new(), "{report}");
+}
+
 /// Sharing tasks between callers is allowed when it is chosen and the store
 /// keeps tenants apart; the profile does not override the choice.
 #[test]

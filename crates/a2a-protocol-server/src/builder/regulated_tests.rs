@@ -240,6 +240,14 @@ mod complete {
             audited.seals_content(),
             "the audited wrapper does not forward"
         );
+        let plain = crate::audit::AuditedTaskStore {
+            inner: Arc::new(InMemoryTaskStore::new()),
+            ..audited
+        };
+        assert!(
+            !plain.seals_content(),
+            "the audited wrapper says a plain store seals"
+        );
     }
 
     /// The traced wrapper answers as the store it wraps, either way.
