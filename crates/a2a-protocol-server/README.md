@@ -136,7 +136,7 @@ println!("{report:?}");
 
 ## Features
 
-`tracing` and `otel` are on by default; `otlp`, which exports, is not.
+`tracing`, `otel` and `tls-rustls` are on by default; `otlp`, which exports, is not.
 
 | Feature | Default | Purpose |
 |---------|---------|---------|
@@ -149,7 +149,7 @@ println!("{report:?}");
 | `grpc` | No | gRPC transport via tonic (`lf.a2a.v1.A2AService`) |
 | `grpc-tls` | No | TLS on the gRPC listener; implies `grpc` |
 | `otel` | Yes | `OtelMetrics` and the spans' OpenTelemetry bridge, through the OpenTelemetry API only (implies `tracing`; no exporter) |
-| `otlp` | No | `otel::Telemetry`: OTLP export of traces, metrics and logs over gRPC or HTTP/protobuf, configured by `OTEL_*`, with a Langfuse preset; and `init_otlp_pipeline` (implies `otel`) |
+| `otlp` | No | `otel::Telemetry`: OTLP export of traces, metrics and logs over gRPC or HTTP/protobuf, configured by `OTEL_*`, with a Langfuse preset; and `init_otlp_pipeline`, deprecated since 0.16.0 (implies `otel`) |
 | `otlp-json` | No | OTLP/HTTP with JSON bodies (`OtlpProtocol::HttpJson`, `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`); off by default because `opentelemetry-otlp`'s `http-json` also makes JSON the default of any exporter built without a protocol (implies `otlp`) |
 | `otel-prometheus` | No | `OTEL_METRICS_EXPORTER=prometheus`: serve the metrics at `/metrics` for a Prometheus that scrapes, with no collector in between (`OTEL_EXPORTER_PROMETHEUS_HOST`, default `localhost`, and `_PORT`, default 9464); off by default because it adds `opentelemetry-prometheus` and a listener (implies `otlp`) |
 | `conformance` | No | A harness that grades an `AgentExecutor` against the protocol's invariants |

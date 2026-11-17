@@ -26,7 +26,7 @@ spec section, where it lives in the code, and how it is verified.
 | Unit / integration tests | Per-crate behavior (`cargo test --workspace --all-features`: 3,198 passed, 0 failed, 175 ignored across 103 test binaries, measured 2026-09-10; the ignored ones need a live PostgreSQL, SPIRE or hours of soak and run in their own CI jobs). |
 | **Official TCK** (`a2aproject/a2a-tck`) | The A2A project's own conformance suite, RFC 2119-graded, run against `tck/sut`. Authoritative where it overlaps the in-repo TCK. Score and open findings: `docs/official-tck-findings.md`. |
 | **In-repo TCK** (`a2a-tck`) | 22 conformance checks, run over all four bindings (JSON-RPC, REST, WebSocket, gRPC) against our own SUT, and over JSON-RPC and REST against echo agents built on the official Python, JavaScript, Go, and Java SDKs (`itk/agents/*-sdk`) — the cross-SDK client direction the official TCK does not cover. |
-| **Bidirectional interop** | The official Python `a2a-sdk` **client** driving our server (`itk/interop/python_client_vs_rust.py`, 26 checks). |
+| **Bidirectional interop** | The official Python `a2a-sdk` **client** driving our server (`itk/interop/python_client_vs_rust.py`). |
 | **ITK** | The upstream `a2aproject/a2a-itk` multi-hop traversal harness with this repo mounted as the `current` agent, plus the deterministic in-repo `itk/interop/itk_traversal_selftest.py`. |
 | **gRPC wire fixtures** | Golden protobuf bytes serialized by the official Python SDK, decoded/re-encoded and diffed (`tck/fixtures/grpc/`). |
 | **Fuzz** | libFuzzer targets over every untrusted parse surface (`fuzz/`). |
@@ -107,7 +107,7 @@ the compliance claim is worse than no matrix.
 | §8.3 Well-known agent card at `/.well-known/agent-card.json` | dispatchers; `client/discovery.rs` | discovery tests; card served versionless (see §3.6.2 row) |
 | §8.3.2 rule 4 Client sends the selected interface's `tenant` on **every** request | `methods/mod.rs::tenant_or_default`, applied in all eleven methods; `builder/mod.rs` populates `ClientConfig::tenant` from the card | `methods::tests::card_tenant_is_sent_on_every_request` (per-method, by name); `tenant_round_trip_tests.rs` (client vs. tenant-partitioned server over JSON-RPC and REST, with a `TaskNotFound` control) |
 | `AgentInterface.url` for gRPC is a target `host:port` (proto comment, upstream `cfc9d34`) | `transport/grpc.rs::normalize_endpoint`; `GrpcBareAddressScheme` | `normalize_*` unit tests; `a2a-protocol-sdk/tests/grpc_address_e2e.rs` (bare loopback → plaintext; bare target with TLS and a pinned CA; bundled roots reject an unknown CA) |
-| Card body bounded (DoS) | `client/discovery.rs` (`MAX_CARD_BODY_SIZE`, read timeout) | hostile-peer: `oversized_card_body_rejected`, `slow_drip_card_body_times_out`, `short_body_under_declared_length_errors`, `immediate_reset_errors`, `valid_json_wrong_shape_rejected` |
+| Card body bounded (DoS) | `client/discovery.rs` (`MAX_CARD_BODY_SIZE`, read timeout) | hostile-peer: `oversized_card_body_rejected`, `slow_drip_card_body_times_out`, `short_body_under_declared_length_errors`, `immediate_close_errors`, `valid_json_wrong_shape_rejected` |
 | §13.3 Extended card requires authentication by default | `handler/lifecycle/extended_card.rs`; `ServerInterceptor::authenticates()` | extended-card auth tests; `allow_unauthenticated_extended_card` opt-out |
 
 ## §9 / §10 / §11 — Protocol bindings

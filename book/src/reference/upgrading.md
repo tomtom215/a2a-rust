@@ -10,8 +10,8 @@ rename and when it is not. Every Rust "after" block in the chapter is compiled
 against the current crates by `a2a-book-tests`; the "before" blocks are fenced
 as `text` because they no longer compile, which is the point.
 
-The newest minor boundary covered is 0.15 → 0.16, whose breaking section is
-`## [Unreleased]` until 0.16.0 is released, in
+The newest minor boundary covered is 0.15 → 0.16, whose breaking section is under
+`## [0.16.0]` in
 [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).
 A test, `book-tests/tests/upgrading_guide.rs`, fails when the changelog calls a
 release from 0.7 on breaking and this page has no `## X.Y → X.Z` section for
@@ -51,7 +51,7 @@ patches still ask something of some deployments:
   sets the header and strips any inbound copy; the `[0.14.1]` entry in
   CHANGELOG.md has the advisory.
 - **There is no 0.15.1.** One was prepared on 2026-10-26 and never tagged or
-  published (crates.io and the GitHub releases end at 0.15.0); what it held
+  published (neither crates.io nor the GitHub releases has one); what it held
   ships in 0.16.0, and its two `Telemetry` behaviour changes are in
   [the 0.15 to 0.16 guide](./upgrading/0.15-to-0.16.md#telemetry-installs-a-subscriber-and-reads-the-proxy-variables).
 

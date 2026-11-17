@@ -72,9 +72,9 @@ and 32 SHOULD, and 13 MAY on each. Those counts are the reviewer's; this page di
 * **The WebSocket binding** is outside both external suites.
 * **Deployment.** Conformance is measured against `tck/sut` with in-memory stores on one process. Durability, multiple
   replicas and load are qualified separately ([Readiness bar](https://github.com/tomtom215/a2a-rust/blob/main/docs/readiness-bar.md)), and only in part.
-* **Open findings.** The adversarial-review registers under `docs/audits/` list every open and partial row. At the time of
-  writing, `main`'s CI is red on two macOS discovery tests (`CI1`), which are not part of the protocol surface. The release
-  workflow refuses a tag until `main`'s CI is green.
+* **Open findings.** The adversarial-review registers under `docs/audits/` list every open and partial row. One open row,
+  `CI1`, is two macOS discovery tests that failed on `main` on 2026-11-13; 270 targeted runs since reproduced nothing and the
+  cause was not found. They are not part of the protocol surface. The release workflow refuses a tag until `main`'s CI is green.
 
 How each suite is run, and what CI gates on, is in [Conformance Testing](./conformance-testing.md). Every run's history is in
 [Conformance History](./conformance-history.md).

@@ -1,0 +1,1163 @@
+[
+ {
+  "id": "N14",
+  "source": "docs/audits/2026-11-13-adversarial-review/findings.json",
+  "status": "PARTIAL",
+  "finding": "Passing semver job skips the compatibility checks relevant to migration review",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Release machinery, not shipped behaviour. What was not rehearsed (a PostgreSQL rollback, the audit and push-config stores, a rolling two-version deployment) is said in the release notes under Upgrading (CHANGELOG.md, \"a rollback on PostgreSQL was not rehearsed\"). Planned: ROADMAP.md, After 0.16.0, Fleet and failure correctness, item 4. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "CI1",
+  "source": "docs/audits/2026-11-13-adversarial-review/findings.json",
+  "status": "OPEN",
+  "finding": "Main CI red: two mDNS discovery tests fail on stable macOS, no-default-features",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Two macOS tests of a2a-protocol-discovery, which is not published (crates/a2a-protocol-discovery/Cargo.toml: publish = false), so no 0.16.0 user of the four crates can hit it. It is a risk to the tag, not to a user: release.yml refuses a tag while ci.yml is red on the commit. The macOS legs of main's ci.yml run 44190122806 (7ac5b74e) were still running when this was written. Planned: ROADMAP.md, After 0.16.0, Fleet and failure correctness, item 3. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "E1",
+  "source": "docs/audits/2026-11-13-adversarial-review/findings.json",
+  "status": "PARTIAL",
+  "finding": "Named deployment profiles validated at startup, with escape hatches reporting the guarantees they disable (PDF section 3)",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "A validation that is missing, not a wrong result: Profile::RegulatedData does not check the step journal and reports declared controls as declared (the row's note). Disclosed by this pull request in Known Limitations, \"Regulated use\". Planned: ROADMAP.md, After 0.16.0, Security, item 2. The notes: named in Known Limitations (CHANGELOG.md:3261)."
+ },
+ {
+  "id": "E6",
+  "source": "docs/audits/2026-11-13-adversarial-review/findings.json",
+  "status": "PARTIAL",
+  "finding": "GitHub security scanning results and open dependency updates before release",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Repository settings (Scorecard Code-Review and Branch-Protection) and the documented waiver RUSTSEC-2026-0459, which Known Limitations \"Dependencies\" discloses. The maintainer's. Planned: ROADMAP.md, After 0.16.0, Security, item 9. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "R3",
+  "source": "docs/audits/2026-11-12-adversarial-review/findings.json",
+  "status": "PARTIAL",
+  "finding": "Reservation expiring during a still-running write can lose a committed event's delivery",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Fixed for a live writer. What is left (a writer whose process dies mid-write is settled from the task store after the hold) is disclosed in Known Limitations \"Push\". Planned: ROADMAP.md, After 0.16.0, Fleet and failure correctness, item 11. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1881)."
+ },
+ {
+  "id": "A3",
+  "source": "docs/audits/2026-11-12-adversarial-review/findings.json",
+  "status": "PARTIAL",
+  "finding": "Required audit gates admission, not durable completion",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "What is left: the audit spool is memory (crates/a2a-protocol-server/src/audit/mod.rs:55, \"a process that dies with records in its spool loses them\"). Disclosed by this pull request in Known Limitations, \"Regulated use\". The row's \"no result record after a tool ran\" was not re-checked on 2026-11-18. Planned: ROADMAP.md, After 0.16.0, Security, item 2. The notes: named in Known Limitations (CHANGELOG.md:3261)."
+ },
+ {
+  "id": "S1",
+  "source": "docs/audits/2026-11-12-adversarial-review/findings.json",
+  "status": "PARTIAL",
+  "finding": "Durable step journal (resume points, pinned versions, pending approvals, action receipts)",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "A product gap (what the durable step journal does not yet do), not a defect in what ships. Planned: ROADMAP.md, After 0.16.0, Tool use and parameterization, item 4. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1920)."
+ },
+ {
+  "id": "S2",
+  "source": "docs/audits/2026-11-12-adversarial-review/findings.json",
+  "status": "OPEN",
+  "finding": "Skill content pinning (manifests over bodies and resources, deployment pins, hashes in audit evidence, revocation)",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "A product gap: skill content is not pinned. Agent Skills are opt-in (the skills feature); Known Limitations \"Agent Skills\" says what the reader does and does not check. Planned: ROADMAP.md, After 0.16.0, Security, item 7. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "S3",
+  "source": "docs/audits/2026-11-12-adversarial-review/findings.json",
+  "status": "OPEN",
+  "finding": "Fleet-wide inference quota and cost reservation with a declared overshoot bound",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "A scale feature that does not exist (a fleet-wide inference quota); Known Limitations \"Load and admission\" says a tool-loop limit across processes is not built. Planned: ROADMAP.md, After 0.16.0, Fleet and failure correctness, item 12. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "S4",
+  "source": "docs/audits/2026-11-12-adversarial-review/findings.json",
+  "status": "OPEN",
+  "finding": "Independent visibility of telemetry export failure; collector-outage and cardinality qualification",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Not examined; an operational visibility gap, not a wrong result. Planned: ROADMAP.md, After 0.16.0, OpenTelemetry, item 1. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "S5",
+  "source": "docs/audits/2026-11-12-adversarial-review/findings.json",
+  "status": "PARTIAL",
+  "finding": "Measure docs/readiness-bar.md rows R1-R7, C1-C5, F2-F5 and publish failure and recovery evidence",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Missing measurements, not a defect. The Highlights say so: \"Not in this release: ... the live checks docs/readiness-bar.md still lists as unmeasured\". Planned: ROADMAP.md, After 0.16.0, Fleet and failure correctness, item 5. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "S6",
+  "source": "docs/audits/2026-11-12-adversarial-review/findings.json",
+  "status": "PARTIAL",
+  "finding": "Release evidence manifest tying the source tree to tests, waivers, supported profiles and measured limits",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Release governance: the manifest is wired into release.yml (.github/workflows/release.yml:425-434); it runs no test suite and is not signed on its own. Planned: ROADMAP.md, After 0.16.0, Release engineering, item 5. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "G1",
+  "source": "docs/audits/2026-11-12-adversarial-review/findings.json",
+  "status": "MAINTAINER",
+  "finding": "main unprotected; protect-main ruleset disabled",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "A repository setting, the maintainer's; not shipped code. Planned: ROADMAP.md, After 0.16.0, Security, item 9. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "X-07",
+  "source": "docs/audits/2026-11-11-external-review/findings.json",
+  "status": "OPEN (evidence only)",
+  "finding": "SSRF corpus never run against both SDKs",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "A comparison that was not run; no defect is claimed. Planned: ROADMAP.md, After 0.16.0, Security, item 4. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "X-09",
+  "source": "docs/audits/2026-11-11-external-review/findings.json",
+  "status": "PARTLY FIXED",
+  "finding": "crash-consistency issues of the earlier review still apply",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "What is left (a finished task whose owner died is completed after about three claim lifetimes) is disclosed in Known Limitations with the measurement (42 to 44 s). Planned: ROADMAP.md, After 0.16.0, Fleet and failure correctness, item 7. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "X-10",
+  "source": "docs/audits/2026-11-11-external-review/findings.json",
+  "status": "CONFIRMED, OPEN",
+  "finding": "an outage longer than the write retry loses the event and can drop the failed status",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "A data-loss path in a failure mode: an outage longer than HandlerLimits::store_write_retry (30 s, crates/a2a-protocol-server/src/handler/limits/mod.rs:48) loses the event being written (book/src/reference/configuration.md:76 says so). It was not in the release notes before this pull request, which would have made it a blocker by the rule; this pull request discloses it in Known Limitations, \"A store outage longer than store_write_retry\", with the workaround. No fix was attempted on 2026-11-18: a fix is a library change. Planned: ROADMAP.md, After 0.16.0, Fleet and failure correctness, item 1. The notes: named in Known Limitations (CHANGELOG.md:3259)."
+ },
+ {
+  "id": "X-11",
+  "source": "docs/audits/2026-11-11-external-review/findings.json",
+  "status": "CONFIRMED, OPEN",
+  "finding": "a status written with no event (E-F25)",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed in Known Limitations, \"A status written with no event\". The reaper half of the row is closed: Reaper::announce appends the ending (crates/a2a-protocol-server/src/handler/claims/reaper/mod.rs:273-287). Planned: ROADMAP.md, After 0.16.0, Fleet and failure correctness, item 2. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "X-13",
+  "source": "docs/audits/2026-11-11-external-review/findings.json",
+  "status": "TRADE-OFF, documented",
+  "finding": "MSRV 1.94 against 1.85",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "A documented trade-off (MSRV 1.94), the maintainer's decision. Planned: ROADMAP.md, After 0.16.0, Developer experience and defaults, item 6. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "X-14",
+  "source": "docs/audits/2026-11-11-external-review/findings.json",
+  "status": "CONFIRMED, MEASURED; a2a-rs is faster here; partly improved, gap open",
+  "finding": "no current head-to-head benchmark; the history shows a2a-rs faster in places",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Performance, disclosed in Known Limitations \"Throughput against a2a-rs and against 0.14.1\" with the figures. Planned: ROADMAP.md, After 0.16.0, Performance, item 1. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "X-15",
+  "source": "docs/audits/2026-11-11-external-review/findings.json",
+  "status": "CONFIRMED, one row measured (F1); the rest open",
+  "finding": "the production-readiness measurement matrix is incomplete",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Missing measurements, said in the Highlights (\"Not in this release\"). Planned: ROADMAP.md, After 0.16.0, Fleet and failure correctness, item 5. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "X-16",
+  "source": "docs/audits/2026-11-11-external-review/findings.json",
+  "status": "CONFIRMED, MAINTAINER'S DECISION",
+  "finding": "SLIMRPC is outside the workspace and unpublished",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "The maintainer's decision (the SLIMRPC binding is unpublished); RELEASING.md describes it. Planned: ROADMAP.md, After 0.16.0, Developer experience and defaults, item 6. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "X-17",
+  "source": "docs/audits/2026-11-11-external-review/findings.json",
+  "status": "CONFIRMED, MAINTAINER'S DECISION",
+  "finding": "the CLI is not published",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "The maintainer's decision (the CLI is unpublished). Planned: ROADMAP.md, After 0.16.0, Developer experience and defaults, item 6. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "X-18",
+  "source": "docs/audits/2026-11-11-external-review/findings.json",
+  "status": "PARTLY TRUE, OPEN (low)",
+  "finding": "the official CLI states it sends no usage telemetry and redacts credentials; a2a-rust's CLI says neither",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "A statement the CLI's documentation does not make; low. Planned: ROADMAP.md, After 0.16.0, Security, item 8. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "X-19",
+  "source": "docs/audits/2026-11-11-external-review/findings.json",
+  "status": "CONFIRMED, OPEN",
+  "finding": "crash-time audit consistency, cross-replica erasure, metadata encryption and onward propagation need resolution for regulated use",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Gaps for regulated use. Disclosed by this pull request in Known Limitations, \"Regulated use\"; book/src/compliance/cyber-resilience-act.md:87 already said what EncryptedTaskStore leaves in the clear. The row's crash-between-append-and-audit-record claim was not re-checked on 2026-11-18. Planned: ROADMAP.md, After 0.16.0, Security, item 2. The notes: named in Known Limitations (CHANGELOG.md:3261)."
+ },
+ {
+  "id": "X-21",
+  "source": "docs/audits/2026-11-11-external-review/findings.json",
+  "status": "CONFIRMED, not a code finding",
+  "finding": "single-maintainer concentration",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Governance (one maintainer); not a code finding. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "X-22",
+  "source": "docs/audits/2026-11-11-external-review/findings.json",
+  "status": "CONFIRMED for a2a-rs; a2a-rust is pinned",
+  "finding": "ACTS runs of the two projects used different revisions",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "About the other project's runs; here ACTS is pinned (book/src/reference/conformance-statement.md). Planned: ROADMAP.md, After 0.16.0, conformance, item 4. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "A13",
+  "source": "docs/audits/2026-11-01-triage/a-l.json",
+  "status": "fixed (part) (section O, 636eaf0)",
+  "finding": "Walking README.md:263-267 line by line still fails twice: the Secret `deploy-agent-db` is never created (CreateContainerConfigError), then `deploy-agent:latest` with the default Always pull policy is pulled from Docker Hub, where nothing publishes it (release.yml pushes no image). The deploy-agent R",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: medium (unchanged). The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:389)."
+ },
+ {
+  "id": "A15",
+  "source": "docs/audits/2026-11-01-triage/a-l.json",
+  "status": "fixed (part) (section O, 13da92c7, 43ef4d2e)",
+  "finding": "Pool size is now settable (DATABASE_POOL_SIZE, `new_with_pool_size`) and the push pool is a fixed 2, so a replica opens size+2 rather than 20. Readiness still checks only the task store's pool.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: performance or scale (a cost or a limit at scale, not a wrong result). Recorded severity: low (remaining part: info/low). The notes: named in Known Limitations (CHANGELOG.md:3256)."
+ },
+ {
+  "id": "A26",
+  "source": "docs/audits/2026-11-01-triage/a-l.json",
+  "status": "fixed (part) (section O, 05263fe4)",
+  "finding": "On a many-core node the pod runs one tokio worker per node CPU and jemalloc sizes its arenas from the node's CPUs (and would even under a CPU limit), against a 256 Mi memory limit; whether that OOMs under bursty load is unmeasured.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: deployment example (the deploy-agent example and its manifests, not the published crates). Recorded severity: low (the mechanism is confirmed by reading; the OOM consequence is still conjecture). The notes: named in Known Limitations (CHANGELOG.md:3256)."
+ },
+ {
+  "id": "A27",
+  "source": "docs/audits/2026-11-01-triage/a-l.json",
+  "status": "fixed (part) (section O, 636eaf0)",
+  "finding": "Every deployed deploy-agent advertises version 0.0.0, so the card cannot tell rollouts apart.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: deployment example (the deploy-agent example and its manifests, not the published crates). Recorded severity: low (unchanged). The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:389)."
+ },
+ {
+  "id": "NEW-a-l-1",
+  "source": "docs/audits/2026-11-01-triage/a-l.json",
+  "status": "fixed (part) (section O, 636eaf0)",
+  "finding": "deploy-agent never purges terminal tasks. With DATABASE_URL set, retention silently changes from the in-memory default (10,000 tasks, 1 h TTL) to forever: `tasks`, `task_events` and `idempotency_keys` grow without bound. The audit raised this under A2, which was closed for its readiness half only; t",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: deployment example (the deploy-agent example and its manifests, not the published crates). Recorded severity: low (medium for a long-running deployment). The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1277)."
+ },
+ {
+  "id": "NEW-a-l-3",
+  "source": "docs/audits/2026-11-01-triage/a-l.json",
+  "status": "fixed (part) (section O, 636eaf0)",
+  "finding": "Every Secret recipe uses `sslmode=verify-full&sslrootcert=/path/ca.pem` and says 'mount it there', but the manifest has no volumes/volumeMounts and a read-only root filesystem, and shows no ConfigMap/Secret mount for the CA. With sqlx's tls-rustls-ring-webpki, omitting sslrootcert falls back to the ",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: deployment example (the deploy-agent example and its manifests, not the published crates). Recorded severity: low. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "NEW-a-l-4a",
+  "source": "docs/audits/2026-11-01-triage/a-l.json",
+  "status": "fixed (part) (section O, 05263fe4)",
+  "finding": "No CI job builds the deploy-agent image or validates the manifest (no docker build of this Dockerfile, no kubeconform/kube-linter/PSS check). L18 records that the Dockerfile's build stages (cargo-chef install, cook, build) have never been run live either.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: deployment example (the deploy-agent example and its manifests, not the published crates). Recorded severity: low. The notes: named in Known Limitations (CHANGELOG.md:3256)."
+ },
+ {
+  "id": "NEW-a-l-4b",
+  "source": "docs/audits/2026-11-01-triage/a-l.json",
+  "status": "fixed (part) (section O, 636eaf0)",
+  "finding": "The Dockerfile pins rust:1.94-bookworm and debian:bookworm-slim by digest, and nothing refreshes those digests (no Dependabot docker ecosystem, pin-freshness.yml covers SDK pins only). The runtime layer gets no `apt-get upgrade`, so the shipped image carries whatever Debian packages (glibc, etc.) th",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: deployment example (the deploy-agent example and its manifests, not the published crates). Recorded severity: low. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:389)."
+ },
+ {
+  "id": "B-03",
+  "source": "docs/audits/2026-11-01-triage/b.json",
+  "status": "fixed (part) (section O, 6d746dd)",
+  "finding": "Card resolver and client fetch_jwks take a rustls config through CardFetchOptions::with_tls_config, and card, JWKS and token provider all read SSL_CERT_FILE/SSL_CERT_DIR and the proxy variables. The token provider (client credentials, OIDC discovery, RFC 8693 exchange) still has no in-code TLS optio",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: medium. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:415,555)."
+ },
+ {
+  "id": "B-10",
+  "source": "docs/audits/2026-11-01-triage/b.json",
+  "status": "fixed (part) (section O, f532f245)",
+  "finding": "Quiet WebSocket and gRPC streams still carry no traffic by default on either side, so an L7 load balancer's idle timeout (often 60 s) closes them. Turning keepalive on by default was explicitly decided against for gRPC.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: medium. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:299)."
+ },
+ {
+  "id": "B-12",
+  "source": "docs/audits/2026-11-01-triage/b.json",
+  "status": "fixed (part) (section O, 4b6b382)",
+  "finding": "The direct WebSocket dial is still tokio's sequential connect with no happy eyeballs and no TCP keepalive.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: medium. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:2624)."
+ },
+ {
+  "id": "B-13",
+  "source": "docs/audits/2026-11-01-triage/b.json",
+  "status": "fixed (part) (section O, 2b83f88)",
+  "finding": "An http:// webhook is still delivered to the first resolved public address on every attempt, with no failover across A/AAAA records.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: low. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:364,1211)."
+ },
+ {
+  "id": "B-15",
+  "source": "docs/audits/2026-11-01-triage/b.json",
+  "status": "fixed (part) (section O, 6d746dd)",
+  "finding": "The CLI still has no TLS or proxy flags, but it now picks up SSL_CERT_FILE/SSL_CERT_DIR and the proxy variables, which covers private-CA and self-signed agents on JSON-RPC, HTTP+JSON and WebSocket. gRPC to a private CA and any mutual-TLS agent stay unreachable.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: low. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:423,429)."
+ },
+ {
+  "id": "B-18",
+  "source": "docs/audits/2026-11-01-triage/b.json",
+  "status": "fixed (part) (section O, 6d746dd)",
+  "finding": "A strict PEM constructor exists and is tested, but the old DER helper still drops a bad CA silently, and an SSL_CERT_FILE that holds no usable certificate is invisible at normal log levels.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: low. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:2673)."
+ },
+ {
+  "id": "B-19",
+  "source": "docs/audits/2026-11-01-triage/b.json",
+  "status": "fixed (part) (section O, 6d746dd)",
+  "finding": "Unchanged: the gRPC client needs h2 in ALPN, plaintext means h2c prior knowledge, and one connection pins one replica; none of it is documented for clients.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: low. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "B-20",
+  "source": "docs/audits/2026-11-01-triage/b.json",
+  "status": "fixed (part) (section O, 6d746dd)",
+  "finding": "Trust still differs by path and has got wider: SSL_CERT_FILE reaches every HTTP path and WebSocket but not the gRPC client or OTLP, and gRPC needs its own tonic config type that replaces Mozilla's roots instead of adding to them. In a container whose private CA comes from SSL_CERT_FILE, JSON-RPC wor",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: medium. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1350)."
+ },
+ {
+  "id": "B-23",
+  "source": "docs/audits/2026-11-01-triage/b.json",
+  "status": "fixed (part) (section O, 4b6b382)",
+  "finding": "Unchanged and now shared by every outbound path: NO_PROXY host:port and *.domain entries never match, upper case wins, loopback is not exempt, and SOCKS/HTTPS proxies are bypassed with a warning.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: low. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1331)."
+ },
+ {
+  "id": "B-27",
+  "source": "docs/audits/2026-11-01-triage/b.json",
+  "status": "fixed (part) (section O, 4b6b382)",
+  "finding": "All four IPv6 edge cases are unchanged.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: low. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1331,2631,2634)."
+ },
+ {
+  "id": "B-28",
+  "source": "docs/audits/2026-11-01-triage/b.json",
+  "status": "fixed (part) (section O, 53664f62, 4c0c0496, 30fe152a, 6077888a)",
+  "finding": "Unchanged: no DNS caching or bound on client transports, an unpooled client per card fetch, and no ndots guidance.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: low. The notes: named in Known Limitations (CHANGELOG.md:3252)."
+ },
+ {
+  "id": "B-29",
+  "source": "docs/audits/2026-11-01-triage/b.json",
+  "status": "fixed (part) (section O, 878dfc47)",
+  "finding": "Unchanged: ring only on default paths, TLS 1.2+ AEAD suites, no FIPS, CRL or OCSP, and no insecure mode. A custom ClientConfig is the escape hatch everywhere except the token provider and the gRPC client.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: info. The notes: named in Known Limitations (CHANGELOG.md:3252)."
+ },
+ {
+  "id": "B-30",
+  "source": "docs/audits/2026-11-01-triage/b.json",
+  "status": "fixed (part) (section O, 2b83f88)",
+  "finding": "In tls-rustls builds (the SDK default) the push, JWKS/OIDC and model clients now bound the TCP connect and keep connections alive. No test pins it, and the server crate's non-TLS build still has neither.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: low. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:553,2598)."
+ },
+ {
+  "id": "NEW-b-2",
+  "source": "docs/audits/2026-11-01-triage/b.json",
+  "status": "fixed (part) (section O, 4b6b382)",
+  "finding": "Loopback is never exempt from the proxy variables: hyper-util's Matcher consults only NO_PROXY, and Go's net/http exempts localhost and loopback while this code does not. The SDK allows plaintext http:// only to loopback on the premise that it never leaves the host: the token endpoint (token_provide",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: medium. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1330)."
+ },
+ {
+  "id": "C-05",
+  "source": "docs/audits/2026-11-01-triage/c.json",
+  "status": "fixed (part) (section O, 1409c3fd, 53357901, e1e37115)",
+  "finding": "The SDK cannot emit exemplars (upstream opentelemetry_sdk 0.33.1 hard-codes none and ignores OTEL_METRICS_EXEMPLAR_FILTER), and the shipped stack neither stores exemplars nor generates span metrics, so no panel links to a trace and Tempo's service graph and span-to-metrics links are empty.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: medium (unchanged). The notes: named in Known Limitations (CHANGELOG.md:3238)."
+ },
+ {
+  "id": "C-08",
+  "source": "docs/audits/2026-11-01-triage/c.json",
+  "status": "fixed (part) (section O, 4fd80d0)",
+  "finding": "Unrecognised enum values and unparsable numbers in the OTEL_* variables fail build() and every binary exits 2, contrary to the spec's MUST warn-and-ignore; this is a documented choice, not an oversight.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: medium (unchanged). The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1288)."
+ },
+ {
+  "id": "C-17",
+  "source": "docs/audits/2026-11-01-triage/c.json",
+  "status": "fixed (part) (section O, e2712ec)",
+  "finding": "The per-call WARN is real and deliberate; it also fires for the SDK's own non-credential A2A-Extensions header, where its advice is wrong.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: low (unchanged). The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1241)."
+ },
+ {
+  "id": "NEW-c-2",
+  "source": "docs/audits/2026-11-01-triage/c.json",
+  "status": "fixed (part) (section O, 065f0a0)",
+  "finding": "logs.md says spans are not filtered by level and that with install_subscriber 'every span is exported'; since the C-01 fix spans below TelemetryBuilder::with_span_level (default INFO, telemetry/mod.rs:191-205) are not exported, and with_span_level appears nowhere in the book (rg). walkthrough.md say",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:2637)."
+ },
+ {
+  "id": "NEW-c-5",
+  "source": "docs/audits/2026-11-01-triage/c.json",
+  "status": "fixed (part) (section O, 4fd80d0)",
+  "finding": "OTEL_SDK_DISABLED accepts only case-insensitive 'true'; '1', 'yes' or 'on' are silently false. The spec's boolean rule says any value other than true, false or empty SHOULD log a warning; none is pushed to notices.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: low. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1298)."
+ },
+ {
+  "id": "D-05",
+  "source": "docs/audits/2026-11-01-triage/d.json",
+  "status": "fixed (part) (section O, be7ff31e)",
+  "finding": "All four sub-claims hold on main: a few in-memory attempts, nothing persisted across restart (and lanes now also shed under backlog), no dedupe id, and a 404/410 webhook is kept and paid for on every later event.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "The durable outbox was built (H14, ADR 0037); what is not covered is disclosed in Known Limitations \"Push\". Planned: ROADMAP.md, After 0.16.0, Fleet and failure correctness, item 11. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:354,2537)."
+ },
+ {
+  "id": "D-07",
+  "source": "docs/audits/2026-11-01-triage/d.json",
+  "status": "fixed (part) (section O, e2712ec)",
+  "finding": "One connection whose peer stops reading can pin the server's read loop on an untimed sink lock, so the idle bound and the closing signal are never evaluated, and shutdown waits out drain_timeout and abandons it.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Liveness: a peer that stops reading can hold a WebSocket connection past its idle bound until drain_timeout. Part fixed in e2712ec; the default idle probe is D-20 (fixed). Availability, not a wrong result. Planned: ROADMAP.md, After 0.16.0, Fleet and failure correctness, item 13. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1214)."
+ },
+ {
+  "id": "D-08",
+  "source": "docs/audits/2026-11-01-triage/d.json",
+  "status": "fixed (part) (section O, e2712ec)",
+  "finding": "A silently dropped WebSocket flow is never detected by the client: no ping, no TCP keepalive, and a timeout does not mark the connection dead, so every call times out on the same socket until the kernel gives up (~15 min with tcp_retries2), and longer if the client never writes.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Liveness on the client side of a WebSocket; part fixed in e2712ec. Calls time out; no wrong result. Planned: ROADMAP.md, After 0.16.0, Fleet and failure correctness, item 13. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1214)."
+ },
+ {
+  "id": "D-09",
+  "source": "docs/audits/2026-11-01-triage/d.json",
+  "status": "fixed (part) (section O, e2712ec)",
+  "finding": "The connect timeout and protocol-level handshake failures are still non-retryable Transport errors and a 503 handshake's Retry-After is dropped; TLS failures are not affected (they arrive as Io and are retryable).",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: low (unchanged). The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1238)."
+ },
+ {
+  "id": "D-10",
+  "source": "docs/audits/2026-11-01-triage/d.json",
+  "status": "fixed (part) (section O, 0a8038cb)",
+  "finding": "As reported: a Retry-After longer than max_backoff is cut to 30 s and retried early, without jitter, and the HTTP-date form is ignored. The clamp is documented, so changing it is a policy choice.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: low (unchanged). The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1154)."
+ },
+ {
+  "id": "D-11",
+  "source": "docs/audits/2026-11-01-triage/d.json",
+  "status": "fixed (part) (section O, f532f245)",
+  "finding": "Plain EventStream and follow_task still never resume a cut stream and retries are still off by default; only the Delegation API resumes now.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: low (unchanged). The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1138)."
+ },
+ {
+  "id": "D-12",
+  "source": "docs/audits/2026-11-01-triage/d.json",
+  "status": "fixed (part) (section O, 3ce8d69a)",
+  "finding": "The idle-timeout race is fixed (50 s); connection max-lifetime, a per-host cap and HTTP/2 keepalive are still absent and are the subject of proposed ADR 0032.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: performance or scale (a cost or a limit at scale, not a wrong result). Recorded severity: low (unchanged). The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:265,299,2221)."
+ },
+ {
+  "id": "D-13",
+  "source": "docs/audits/2026-11-01-triage/d.json",
+  "status": "fixed (part) (section O, 2b83f88)",
+  "finding": "The missing reserved ranges and the trailing-dot bypass are fixed and tested at every edge; https webhooks are still not pinned, so a rebinding resolver gets a blind TCP connect + ClientHello to an internal address.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Same remainder as SEC-13. Planned: ROADMAP.md, After 0.16.0, Security, item 3. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1195,2865)."
+ },
+ {
+  "id": "D-21",
+  "source": "docs/audits/2026-11-01-triage/d.json",
+  "status": "fixed (part) (section O, 2497dc9e, aae23d0f, 5ed9505e)",
+  "finding": "A rolling deploy no longer cancels tasks; it fails every turn still running after 5 s as transient and refuses new sends retryably, but the work is still lost and has to be resent as a new task; no hand-off exists.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed in Known Limitations \"Hand-off on shutdown\". Planned: ROADMAP.md, After 0.16.0, Fleet and failure correctness, item 9. The notes: named in Known Limitations (CHANGELOG.md:3240)."
+ },
+ {
+  "id": "D-22",
+  "source": "docs/audits/2026-11-01-triage/d.json",
+  "status": "fixed (part) (section O, 2b83f88)",
+  "finding": "Push DNS lookups still run getaddrinfo on the blocking pool and a timeout does not free the thread; the new delivery gate bounds concurrency but not the leaked threads, so a caller who can register webhooks under a slow-answering domain can fill the blocking pool.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: low (unchanged). The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:2608)."
+ },
+ {
+  "id": "NEW-d-2",
+  "source": "docs/audits/2026-11-01-triage/d.json",
+  "status": "fixed (part) (section O, e2712ec)",
+  "finding": "A WebSocket call enqueues its frame with `write_tx.send(..).await` on a 64-slot channel before any timeout starts; request_timeout/send_timeout bound only the wait for the reply (:818). The writer task's ws_writer.send() is untimed. When the peer stops reading (zero window: a server wedged by D-07, ",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: low. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1215)."
+ },
+ {
+  "id": "E-F8",
+  "source": "docs/audits/2026-11-01-triage/e.json",
+  "status": "fixed (part) (section O, 6355a0c5)",
+  "finding": "The conjecture is read-confirmed: positions are broadcast before they are logged, a takeover numbers from the log end, and both resume paths treat the reused positions as already delivered. Triggers: an owner stalled or partitioned past the TTL (the report's case), a SIGKILL/OOM or a drain that exit",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "A correctness window in a failure mode (a kill during a store stall, then a takeover): reused positions are treated as delivered on resume. Read from the code on 2026-11-01, never reproduced by a test; accepted by the maintainer on 2026-11-03 (book/src/deployment/horizontal-scaling/turn-claims.md:243). Disclosed in the 0.16.0 section, and by this pull request in Known Limitations, \"Event positions after a takeover\", with the workaround. The notes: named in Known Limitations (CHANGELOG.md:3260)."
+ },
+ {
+  "id": "E-F12",
+  "source": "docs/audits/2026-11-01-triage/e.json",
+  "status": "fixed (part) (section O, 10333c48)",
+  "finding": "max_concurrent_tasks is enforced per process, so a fleet of N admits N times the limit, and the docs do not say so.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Documented: max_concurrent_tasks is per replica (10333c48). A limit, not a wrong result. Planned: ROADMAP.md, After 0.16.0, Fleet and failure correctness, item 12. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:2392)."
+ },
+ {
+  "id": "E-F18",
+  "source": "docs/audits/2026-11-01-triage/e.json",
+  "status": "fixed (part) (section O, 021408e7)",
+  "finding": "One optimistic append point per tenant chain for the whole fleet: each append is at least 2 round trips and every success invalidates the other replicas' reads. Back of the envelope (conjecture, not measured): with N saturated contenders a request loses 8 rounds with probability about ((N-1)/N)^8, 0",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: performance or scale (a cost or a limit at scale, not a wrong result). Recorded severity: medium. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:2365)."
+ },
+ {
+  "id": "E-F26",
+  "source": "docs/audits/2026-11-01-triage/e.json",
+  "status": "fixed (part) (section O, 30e017be 004f2ece)",
+  "finding": "SQLite claims use the host wall clock, so a forward step past the TTL (NTP step, VM resume) makes live claims look expired until the next renewal, during which a continuation or the reaper can take them; nothing detects a SQLite file on a network filesystem.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "SQLite claims use the host clock; a forward step past the claim time to live lets a live claim be taken. Part fixed (a warning on Linux). Needs a clock step on a SQLite deployment; not qualified (the qualification matrix lists clock skew as not covered). Planned: ROADMAP.md, After 0.16.0, Fleet and failure correctness, item 4. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:2308)."
+ },
+ {
+  "id": "SEC-13",
+  "source": "docs/audits/2026-11-01-triage/f.json",
+  "status": "fixed (part) (section O, 2b83f88)",
+  "finding": "Unchanged: https webhooks are validated by one lookup and connected by another, so a rebinding name still gets a TCP connection and ClientHello to an internal address:port (blind scan). Since c4404e8 a proxied https delivery is resolved by the proxy, which widens the same gap.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Low, known: behind a proxy an https webhook is resolved by the proxy, so the checked address is not pinned (a blind connect, no data returned). Direct connections are pinned since 2b83f88 (section O). Planned: ROADMAP.md, After 0.16.0, Security, item 3. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1195)."
+ },
+ {
+  "id": "SEC-14",
+  "source": "docs/audits/2026-11-01-triage/f.json",
+  "status": "fixed (part) (section O, b9d4a3e5)",
+  "finding": "Outbound webhook concurrency is now bounded per destination and overall, in front of any sender. There is still no per-caller quota, no per-destination rate, no URL verification, the per-destination key is a name, and one caller can occupy all 512 overall permits (NEW-f-2).",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: security hardening (a hardening remnant recorded as low or info; the guard that exists fails closed). Recorded severity: low (unchanged): bounded, but no per-caller quota or rate, and the bound itself can be monopolised. The notes: named in Known Limitations (CHANGELOG.md:3248)."
+ },
+ {
+  "id": "SEC-17",
+  "source": "docs/audits/2026-11-01-triage/f.json",
+  "status": "fixed (part) (section O, 2b83f88)",
+  "finding": "A custom PushSender (e.g. reqwest, which follows redirects and re-resolves) still gets only the creation-time static check; the requirement is in the book but not on the trait.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Info: a custom PushSender gets only the creation-time check; the requirement is in the book. The bundled sender is not affected. Planned: ROADMAP.md, After 0.16.0, Security, item 3. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "NEW-f-3",
+  "source": "docs/audits/2026-11-01-triage/f.json",
+  "status": "open (the triage verdict; not in section O)",
+  "finding": "Since c4404e8 push delivery honours HTTPS_PROXY, but the SSRF pre-flight still resolves the webhook host with the local resolver (tokio::net::lookup_host) and refuses delivery if that fails. In a proxy-only egress deployment whose DNS resolves only internal names, every webhook to a public host fail",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Fails closed: in a proxy-only egress deployment the SSRF pre-flight refuses a webhook whose name does not resolve locally. An opt-in exists since c5e852ee (HttpPushSender::with_proxy_resolved_names, crates/a2a-protocol-server/src/push/sender.rs:442). No delivery to a wrong address results. Planned: ROADMAP.md, After 0.16.0, Security, item 3. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "NEW-f-4",
+  "source": "docs/audits/2026-11-01-triage/f.json",
+  "status": "fixed (part) (section O, 2b83f88)",
+  "finding": "The deny-list approach cannot see an operator's own address plan. Multi-label names resolved through Kubernetes search domains (ndots:5: kubernetes.default, redis.prod, svc.ns.svc) pass the static check; HttpPushSender's resolve then catches them only if the cluster uses RFC 1918/CGNAT ranges. A clu",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Low: a deny-list cannot see an address plan that uses public ranges privately; the row itself marks its example as recalled, not verified. Planned: ROADMAP.md, After 0.16.0, Security, item 3. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "G-04",
+  "source": "docs/audits/2026-11-01-triage/g-api.json",
+  "status": "fixed (part) (section O, 6d746dd)",
+  "finding": "build_grpc still dials whatever endpoint from_card chose (the card's first interface), so a card listing JSON-RPC before gRPC gets gRPC spoken to the JSON-RPC port with the wrong tenant; it also skips the zero connection_timeout check build() has.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: medium (unchanged). The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1359)."
+ },
+ {
+  "id": "G-06",
+  "source": "docs/audits/2026-11-01-triage/g-api.json",
+  "status": "fixed (part) (section O, 41756f1)",
+  "finding": "Both directions still hold: the SDK's defaults compile the OTLP exporter and tonic for hello-agent (deliberately), and the server crate alone cannot reach any https:// webhook, JWKS/OIDC issuer or model endpoint.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: medium (unchanged; the server-only gap is wider than the report says). The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1056)."
+ },
+ {
+  "id": "G-07",
+  "source": "docs/audits/2026-11-01-triage/g-api.json",
+  "status": "fixed (part) (section O, 41756f1)",
+  "finding": "All three sub-claims hold: new() yields a card build() refuses, validate() names no index, and streaming is opt-in, so the flagship example cannot stream; AgentCard's rustdoc also wrongly calls new() 'valid by construction'.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: medium (unchanged). The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1045)."
+ },
+ {
+  "id": "G-18",
+  "source": "docs/audits/2026-11-01-triage/g-api.json",
+  "status": "fixed (part) (section O, 41756f1)",
+  "finding": "context_id is still a String beside a TaskId, against the types crate's newtype policy.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "The row's defect is closed in code: RequestContext.context_id is a ContextId (git grep \"context_id: ContextId\" -- crates finds 7 files; the Highlights list it as a break). Section O gives its row group \"fixed (part)\" as a whole, which is why it is listed. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1034)."
+ },
+ {
+  "id": "G-20",
+  "source": "docs/audits/2026-11-01-triage/g-api.json",
+  "status": "fixed (part) (section O, 6d746dd)",
+  "finding": "The blocking-send half is fixed for JSON-RPC, HTTP+JSON and WebSocket with tests; other timeouts still say only 'timed out', and the gRPC blocking send is still capped at the request timeout (NEW-g-api-1).",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: low (unchanged) for the row; see NEW-g-api-1 (medium) for a gRPC hole in the fix. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1374,2661)."
+ },
+ {
+  "id": "NEW-g-api-1",
+  "source": "docs/audits/2026-11-01-triage/g-api.json",
+  "status": "fixed (part) (section O, 6d746dd)",
+  "finding": "The gRPC channel is built with Endpoint::timeout(request_timeout) (30 s default, builder transport_factory.rs:208). tonic's client stack wraps every call in GrpcTimeout, which uses the SHORTER of the channel timeout and the request's grpc-timeout header. So the send_timeout (600 s) that grpc.rs:682 ",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: medium. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:2661)."
+ },
+ {
+  "id": "NEW-g-api-2",
+  "source": "docs/audits/2026-11-01-triage/g-api.json",
+  "status": "fixed (part) (section O, 6d746dd)",
+  "finding": "G-02 was fixed for Server only (serve/graceful/mod.rs refuses max_connections 0 and clamps to Semaphore::MAX_PERMITS at :326-327). GrpcDispatcher::with_max_connections and WebSocketDispatcher::with_max_connections still pass the value straight to tokio::sync::Semaphore::new: usize::MAX (or anything ",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: low. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1366)."
+ },
+ {
+  "id": "NEW-g-api-4",
+  "source": "docs/audits/2026-11-01-triage/g-api.json",
+  "status": "fixed (part) (section O, 41756f1)",
+  "finding": "STABILITY.md section 1 says the crates are at 0.15.0, 'the newest release' (0.15.1 shipped 2026-10-26), and promises that sign_agent_card 'is removed in 0.16.0'. It is still public (deprecated since 0.15.0) and its removal is not in CHANGELOG [Unreleased] Breaking Changes or the 0.15-to-0.16 guide. ",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "The STABILITY.md half is closed by this pull request (section 1 names 0.16.0) and sign_agent_card is removed. Whether the other names deprecated in 0.15.0 are removed is ROADMAP.md, After 0.16.0, Developer experience and defaults, item 4. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "G/D-02",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "fixed (part) (section O, 065f0a0)",
+  "finding": "Two READMEs (server crate README, which is its crates.io page, and the root README) still say `serve` has hyper's defaults / no limits / no idle timeout; the code runs it on `Server` with a 30 s header-read and 75 s idle timeout and the loopback Host check.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: medium (unchanged); the crates.io page of the server crate and the root README both say it. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:2636)."
+ },
+ {
+  "id": "G/D-03",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "fixed (part) (section O, 065f0a0)",
+  "finding": "The `with_max_connections` rustdoc still predicts two fields that the struct already has.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low (unchanged). The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:2636)."
+ },
+ {
+  "id": "G/D-04",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "fixed (part) (section O, 065f0a0)",
+  "finding": "packaging/README.md still says no signing key is committed and lists committing one as step 1; a key is committed and two releases passed the gate.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low (was M): only the maintainer's packaging plan reads it; nothing published depends on it. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:2636)."
+ },
+ {
+  "id": "G/D-05",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "fixed (part) (section O, 065f0a0)",
+  "finding": "The README's exit-code table and `--header` row now match the code; the CLI's own rustdoc does not, the header rule is case-sensitive, and `a2a card <URL>` sends no `--header` and ignores `--timeout`.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low (was M). The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:1419)."
+ },
+ {
+  "id": "G/D-06",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "fixed (part) (section O, 065f0a0)",
+  "finding": "The book says both dispatchers return `ServeReport`; gRPC returns `io::Result<ServeReport>`.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low (unchanged). The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:2637)."
+ },
+ {
+  "id": "G/D-07",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "fixed (part) (section O, 065f0a0)",
+  "finding": "The hidden card on the Axum, REST, gRPC and WebSocket dispatcher pages advertises only JSON-RPC while the page serves another binding; a reader who expands and copies it publishes a card that misroutes clients (and a RestDispatcher behind `ServeConfig::production()` refuses to start).",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low (unchanged), wider than reported: six hidden cards on four dispatcher pages. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "G/D-08",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "fixed (part) (section O, 065f0a0)",
+  "finding": "The server crate's rustdoc quick start still tells users to wire a dispatcher into their own hyper server instead of `Server`/`serve`.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low (unchanged). The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "G/D-09",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "fixed (part) (section O, 065f0a0)",
+  "finding": "The rustdoc lists 'HTTP connection/transport errors' as retryable while `ClientError::Transport` is explicitly not; the variant's own doc still calls it a connection error.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low (unchanged). The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "G/D-10",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "fixed (part) (section O, 065f0a0)",
+  "finding": "The example is ~106 lines (52 of code) above its tests, a third of main() is telemetry the README does not mention, and it relies on the SDK's default `otlp` feature, so 'one screen' and 'no feature flags' are overstated.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low (unchanged); measurements changed since the report. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "G/D-11",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "fixed (part) (section O, 065f0a0)",
+  "finding": "Both the prelude rustdoc and the SDK README's 'Prelude Contents' list a subset of what the prelude exports, and `ServeConfig` is not in the prelude although `Server` is.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low (unchanged). The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:2637)."
+ },
+ {
+  "id": "G/C-01",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "fixed (part) (section O, 0b06ec2)",
+  "finding": "The CHANGELOG is 806 KB and growing; [Unreleased] alone is 74 KB with ~100-word bullets, internal notes and lab measurements, and no release has a one-screen summary.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: medium (unchanged; the file grew). The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "G/C-02",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "fixed (part) (section O, 0b06ec2)",
+  "finding": "Nothing stops a breaking behaviour change in a patch: semver-checks sees only API, and the release gate keys on the words '### Breaking Changes', which 0.15.1 avoided by filing its two changes under 'Behaviour Changes'. The docs are honest about 0.15.1 after the fact; STABILITY.md is silent on it.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: medium (unchanged); 0.15.1 is published, the open question is the policy and its gate. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "G/C-03",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "fixed (part) (section O, 065f0a0)",
+  "finding": "Book coverage is near-total, but 14 rustdoc examples (EventEmitter's among them), the slimrpc README's five blocks and three example-README blocks are compiled by nothing, and the book's ignore ratchet misses indented fences.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low (unchanged); one ratchet hole found. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "NEW-g-docs-1",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "open (the triage verdict; not in section O)",
+  "finding": "`without_tls()` is documented as 'plain HTTP only', but only `build()` honours it. `build_grpc()` ignores `config.tls`: an `https://` endpoint gets TLS from transport/grpc.rs:353-370 (apply_tls), and a bare host:port gets TLS under the default `HttpsExceptLoopback` (builder/mod.rs:444).",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "NEW-g-docs-2",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "open (the triage verdict; not in section O)",
+  "finding": "`a2a card <URL>` passes no GlobalOpts: it fetches with `resolve_agent_card(url)` / `fetch_card_from_url(url)`, so `--header`, `--timeout` and `--tenant` are silently ignored, while README:61 says '--header ... Extra header on every request' and the flags are 'Accepted before or after the subcommand'",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "NEW-g-docs-3",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "fixed (part) (section O, 065f0a0)",
+  "finding": "Says '`BIND-EQUIV-004` is graded **structurally only** ... Proving each binding *enforces* those schemes identically needs a target configured to require credentials.' The kit has that half (tck/src/equivalence.rs:769+ 'BIND-EQUIV-004, enforcement half', README:62 `--auth-token`) and CI runs it agai",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:2637)."
+ },
+ {
+  "id": "NEW-g-docs-4",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "open (the triage verdict; not in section O)",
+  "finding": "STABILITY.md §1 says 'The crates are at `0.15.0` (2026-10-25), the newest release' although 0.15.1 shipped 2026-10-26 and every crate's Cargo.toml is now 0.16.0. It, the rustdoc and the 0.15.0 CHANGELOG say deprecated `sign_agent_card` 'is removed in 0.16.0', yet signing.rs:424 still defines it in t",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Closed by this pull request: STABILITY.md section 1 names 0.16.0 as the newest release, and sign_agent_card is gone from the code (git grep sign_agent_card -- \"crates/*/src\" finds nothing) and listed under Breaking Changes. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "NEW-g-docs-5",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "fixed (part) (section O, 065f0a0)",
+  "finding": "The shrink-only ratchet on ignored book blocks matches only fences at column 0. An indented fence (inside a list item, which rustdoc still treats as a code block) escapes both the ignore count and the untagged-block check. audit.md:361 is such a `rust,ignore` block, added 2026-10-29 (44ddf59), compi",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "NEW-g-docs-6",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "fixed (part) (section O, 065f0a0)",
+  "finding": "'TLS verification is the library's, against its bundled roots, with no way to turn it off here.' Since 57f034e the library's default (crates/a2a-protocol-client/src/tls.rs:100, :217-225) also trusts `SSL_CERT_FILE` / `SSL_CERT_DIR` for JSON-RPC, HTTP+JSON and WebSocket; gRPC uses tonic's webpki root",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:2637)."
+ },
+ {
+  "id": "NEW-g-docs-7",
+  "source": "docs/audits/2026-11-01-triage/g-docs.json",
+  "status": "fixed (part) (section O, 065f0a0)",
+  "finding": "When a release section exceeds 120,000 characters the GitHub release body keeps only '### (Known Limitations|Breaking Changes|Deprecated|Security)' and drops the preamble and '### Behaviour Changes' - the section where 0.15.1 put its two upgrade-relevant changes.",
+  "blocker": "no",
+  "basis": "summary",
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low. The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:2655)."
+ },
+ {
+  "id": "H5",
+  "source": "docs/audits/2026-11-01-triage/h-designs.json",
+  "status": "fixed (part) (section O, a6968c33, 8ba25c3e)",
+  "finding": "Unchanged since the audit: per-child renewal tasks doing a full GetTask every ttl/3, a per-turn watcher reading the lease store every second, and unbounded, unthrottled 250 ms polling by idle subscribers with no subscriber cap.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: performance or scale (a cost or a limit at scale, not a wrong result). Recorded severity: S1 (S0 at 10^5-10^6 leased tasks); unchanged. The notes: named in Known Limitations (CHANGELOG.md:3242)."
+ },
+ {
+  "id": "H6",
+  "source": "docs/audits/2026-11-01-triage/h-designs.json",
+  "status": "fixed (part) (section O, 0a8038cb)",
+  "finding": "No retry budget, no circuit breaker, no HTTP in-flight cap and no deadline-aware retries. Retries are off by default; when on, overload refusals are retried up to 3 times following the server's constant 1 s Retry-After without jitter.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: performance or scale (a cost or a limit at scale, not a wrong result). Recorded severity: S1; unchanged (amplification only for clients that opt in to retries). The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:310)."
+ },
+ {
+  "id": "H13",
+  "source": "docs/audits/2026-11-01-triage/h-designs.json",
+  "status": "fixed (part) (section O, d9ec2249, 148fd3ac, b0900aaf, 558be5d3)",
+  "finding": "All four sub-claims hold: count-bounded queues with no byte budget, base64 payloads inside the task row, SQL sends still O(history) twice, and an event log that grows without bound for a long-lived task.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: performance or scale (a cost or a limit at scale, not a wrong result). Recorded severity: S1; unchanged. The notes: named in Known Limitations (CHANGELOG.md:3244)."
+ },
+ {
+  "id": "H19",
+  "source": "docs/audits/2026-11-01-triage/h-designs.json",
+  "status": "fixed (part) (section O, 61b7971a, 73be6b3a, 282b8068, 0d3f5e86, f9b53217, 4e7f0651, a7188466, e1b2eb3f)",
+  "finding": "Trace context crosses non-Rust hops by standard headers; lease, budget, idempotency, failure class and approval are ignored by non-Rust peers; halts never cross a process boundary outside a shared halt store; cancel crosses exactly one hop.",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: S1 for polyglot fleets; unchanged. The notes: named in Known Limitations (CHANGELOG.md:3254)."
+ },
+ {
+  "id": "H2",
+  "source": "docs/audits/2026-11-01-triage/h-s0.json",
+  "status": "fixed (part) (section O, 6d746dd)",
+  "finding": "On main a private CA and mTLS work on JSON-RPC and HTTP+JSON (ClientBuilder::with_tls_config), WebSocket (WebSocketTransportConfig::with_tls_config), gRPC (with_grpc_tls_config, a tonic type), SLIMRPC (slim_config), the card resolver and client JWKS (CardFetchOptions::with_tls_config) and push. The ",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Class: configuration, liveness or ergonomics (an option that is missing or a failure that is slow to surface; no wrong result, no data lost). Recorded severity: S1 (down from S0): every binding can now trust a private CA and present a client certificate, so the S0 part (a private . The notes: named in the 0.16.0 section outside Known Limitations (CHANGELOG.md:415,423,1350)."
+ },
+ {
+  "id": "NEW-h-s0-7",
+  "source": "docs/audits/2026-11-01-triage/h-s0.json",
+  "status": "open (the triage verdict; not in section O)",
+  "finding": "gRPC alone ignores SSL_CERT_FILE/SSL_CERT_DIR. The default ClientTlsConfig::new().with_enabled_roots() with tonic features tls-ring and tls-webpki-roots loads Mozilla roots only, while JSON-RPC, HTTP+JSON, WebSocket, card, JWKS and the token provider all add the env roots (tls.rs:207-216). The featu",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "The gRPC client does not read SSL_CERT_FILE: a connection to a private CA fails closed (no connection), it does not trust the wrong peer. Planned: ROADMAP.md, After 0.16.0, Security, item 6. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "KL-01",
+  "source": "CHANGELOG.md:3201",
+  "status": "DISCLOSED",
+  "finding": "**Steering** (ADR 0036): a replica that has just died keeps its claim until the claim's time to live, and a steering message handed off in that window is acce",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed. Changed by this pull request: \"Linux-only\" was removed, because nothing in scripts/live/steering/ or ADR 0036 says it."
+ },
+ {
+  "id": "KL-02",
+  "source": "CHANGELOG.md:3203",
+  "status": "DISCLOSED",
+  "finding": "**A status written with no event** (audit E-F25): a `CancelTask` of a parked task on one replica writes a status with no event in the log, so a subscriber on ",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed. Corrected by this pull request: the reaper half was stale (Reaper::announce appends the ending, crates/a2a-protocol-server/src/handler/claims/reaper/mod.rs:273-287)."
+ },
+ {
+  "id": "KL-03",
+  "source": "CHANGELOG.md:3205",
+  "status": "DISCLOSED",
+  "finding": "**Throughput against a2a-rs and against 0.14.1** (measured 2026-11-11, `docs/sdk-comparison-2026-11-11.md`; echo executor, blocking `SendMessage` over",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed. Corrected by this pull request: the cause is attributed, not isolated (docs/sdk-comparison-2026-11-11.md:143-145)."
+ },
+ {
+  "id": "KL-04",
+  "source": "CHANGELOG.md:3213",
+  "status": "DISCLOSED",
+  "finding": "**A finished task whose owner died is completed after about three claim lifetimes** (hostile campaign W2-hostile-3, 2026-11-08; the reaper's",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed in the release notes, so it cannot block by the rule in the README."
+ },
+ {
+  "id": "KL-05",
+  "source": "CHANGELOG.md:3219",
+  "status": "DISCLOSED",
+  "finding": "**Authentication runs after method dispatch, body parsing and version negotiation** (hostile campaign W2-hostile-5, 2026-11-08): with a bearer",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed in the release notes, so it cannot block by the rule in the README."
+ },
+ {
+  "id": "KL-06",
+  "source": "CHANGELOG.md:3226",
+  "status": "DISCLOSED",
+  "finding": "**Tool-loop and model-provider edges found by running real models** (live-model campaign, wave 2, 2026-11-08; each reproduced by the agent, not all",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed in the release notes, so it cannot block by the rule in the README."
+ },
+ {
+  "id": "KL-07",
+  "source": "CHANGELOG.md:3234",
+  "status": "DISCLOSED",
+  "finding": "**Parked-task expiry** (audit D-18): a parked task deleted by `parked_max_age` answers `TaskNotFound` afterwards, and a stream open on it ends without a termi",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed in the release notes, so it cannot block by the rule in the README."
+ },
+ {
+  "id": "KL-08",
+  "source": "CHANGELOG.md:3236",
+  "status": "DISCLOSED",
+  "finding": "**Agent Skills** (ADR 0035): the catalog is a snapshot taken at start-up (no hot reload; build a new executor to pick up a change); scripts are never run; on ",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed. Corrected by this pull request: it was run against live models (docs/audits/2026-11-07-campaign-wave2/live/evidence/02-skills-live-qwen.log, \"6 of 6 expectations held\")."
+ },
+ {
+  "id": "KL-09",
+  "source": "CHANGELOG.md:3238",
+  "status": "DISCLOSED",
+  "finding": "**Exemplars** (audit C-05): the stack stores and links them, but the SDK records none until the pinned `opentelemetry_sdk` does; ROADMAP has a *Waiting on ups",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed in the release notes, so it cannot block by the rule in the README."
+ },
+ {
+  "id": "KL-10",
+  "source": "CHANGELOG.md:3240",
+  "status": "DISCLOSED",
+  "finding": "**Hand-off on shutdown** (audit D-21): covers a graceful shutdown with turn claims; it does not cover a crashed replica, a handler without claims, or reattach",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed in the release notes, so it cannot block by the rule in the README."
+ },
+ {
+  "id": "KL-11",
+  "source": "CHANGELOG.md:3242",
+  "status": "DISCLOSED",
+  "finding": "**Control-plane cost** (audit H5): renewals stay one per child per ttl/3; lease groups (a wire change; ADR 0044 lists them as an option not taken) are not bui",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed. Corrected by this pull request: ADR 0044 lists lease groups as an option not taken and does not hold the 10^4 to 10^5 figure."
+ },
+ {
+  "id": "KL-12",
+  "source": "CHANGELOG.md:3244",
+  "status": "DISCLOSED",
+  "finding": "**Memory and payload scaling** (audit H13): blob offload, holds on the SQL stores (a stream owing events below a compaction cut ends with `streamLagged` and r",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed in the release notes, so it cannot block by the rule in the README."
+ },
+ {
+  "id": "KL-13",
+  "source": "CHANGELOG.md:3246",
+  "status": "DISCLOSED",
+  "finding": "**Load and admission** (audit H7, H9, H17): ORCA over gRPC trailers, a queue-cap gauge, priority from the request, preemption, fleet-wide admission, a tool-lo",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed in the release notes, so it cannot block by the rule in the README."
+ },
+ {
+  "id": "KL-14",
+  "source": "CHANGELOG.md:3248",
+  "status": "DISCLOSED",
+  "finding": "**Push** (audit H14, SEC-14): the outbox reserves an event's rows before it is stored (see Fixed), which needs a task store with an event log and an outbox th",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed in the release notes, so it cannot block by the rule in the README."
+ },
+ {
+  "id": "KL-15",
+  "source": "CHANGELOG.md:3250",
+  "status": "DISCLOSED",
+  "finding": "**Dependencies** (cargo-deny, run 43042602728 of 2026-11-11): RUSTSEC-2026-0459 (CVE-2026-119375: the C SQLite bundled by `libsqlite3-sys` 0.6.0 to 0.38.2, be",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed. Corrected by this pull request: rmcp is 3.10.0 in Cargo.lock."
+ },
+ {
+  "id": "KL-16",
+  "source": "CHANGELOG.md:3252",
+  "status": "DISCLOSED",
+  "finding": "**Network** (audit B-25, B-28, B-29): the WebSocket upgrade's same-origin check does not defend against DNS rebinding (on HTTP, a listener bound to a loopback",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed. Corrected by this pull request: a loopback HTTP listener checks Host by default (crates/a2a-protocol-server/src/serve/graceful/config.rs:142-155)."
+ },
+ {
+  "id": "KL-17",
+  "source": "CHANGELOG.md:3254",
+  "status": "DISCLOSED",
+  "finding": "**Swarm contract** (audit H19): schemas and vectors exist for every extension, but middleware and bindings for other SDKs are not built, and the two upstream ",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed in the release notes, so it cannot block by the rule in the README."
+ },
+ {
+  "id": "KL-18",
+  "source": "CHANGELOG.md:3256",
+  "status": "DISCLOSED",
+  "finding": "**Deployment** (audit A15, A26, NEW-a-l-4a): readiness still checks the task pool only (documented); A26's effect on memory is not measured. There is no worka",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed. Corrected by this pull request: deploy.yml's Docker steps ran and passed on main (run 44190122542 at 7ac5b74e: \"Build the image\" and \"Run it, wait for its health check, call it, stop it\")."
+ },
+ {
+  "id": "KL-19",
+  "source": "CHANGELOG.md:3258",
+  "status": "DISCLOSED",
+  "finding": "**`ServeConfig` on gRPC and WebSocket** (audit G-09): `idle_timeout`, `header_read_timeout` and `allowed_hosts` are not applied to a gRPC listener (a quiet se",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Disclosed in the release notes, so it cannot block by the rule in the README."
+ },
+ {
+  "id": "KL-20",
+  "source": "CHANGELOG.md:3259",
+  "status": "DISCLOSED",
+  "finding": "**A store outage longer than `store_write_retry`** (external review X-10): a turn's event writes are retried while the store answers that it is unavailable, f",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Added by this pull request for row X-10; see that row."
+ },
+ {
+  "id": "KL-21",
+  "source": "CHANGELOG.md:3260",
+  "status": "DISCLOSED",
+  "finding": "**Event positions after a takeover** (audit E-F8, F13): events are broadcast before they are logged, and a replica that takes a turn over numbers from the end",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Added by this pull request for row E-F8; see that row."
+ },
+ {
+  "id": "KL-22",
+  "source": "CHANGELOG.md:3261",
+  "status": "DISCLOSED",
+  "finding": "**Regulated use** (reviews X-19, A3 and E1; `docs/audits/2026-11-12-adversarial-review/findings.json`, `docs/audits/2026-11-13-adversarial-review/findings.jso",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "Added by this pull request for rows X-19, A3 and E1; see those rows."
+ }
+]

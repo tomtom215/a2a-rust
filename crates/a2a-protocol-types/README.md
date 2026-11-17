@@ -38,7 +38,7 @@ Part of [a2a-rust](https://github.com/tomtom215/a2a-rust), an independent
 
 | Feature | Default | Purpose |
 |---------|---------|---------|
-| `signing` | No | Agent card signing (JWS with ES256 or EdDSA/Ed25519, RFC 8785 canonicalization). Adds `ring` and `base64`, and turns on serde_json's `float_roundtrip`. |
+| `signing` | No | Agent card signing (JWS with ES256 or EdDSA/Ed25519, RFC 8785 canonicalization). Adds `ring`, `base64` and `x509-parser`, and turns on serde_json's `float_roundtrip`. |
 | `audit` | No | Audit record schema, hash chains, ES256/Ed25519-signed checkpoints and chain verification (`audit::verify_chain`); implies `signing` |
 | `proto` | No | The canonical A2A protobuf messages (`lf.a2a.v1`, prost-generated) and lossless conversions to and from these types. |
 

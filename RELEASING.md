@@ -146,8 +146,9 @@ git checkout -b release/vX.Y.Z main
 #     scripts/release_evidence.py generate --run-gates --out release-evidence.json
 #     scripts/release_evidence.py verify release-evidence.json --head
 # `verify` says the manifest still describes that commit, not that the commit is
-# good. It is not yet a gate in release.yml (that needs the gate inventory and
-# reachability checks to learn it first); run it by hand until it is.
+# good. release.yml's package job runs both on the tagged commit and attaches
+# the manifest to the release (since 2026-11-13); run them by hand first to see
+# what it will see.
 
 # Update CITATION.cff: set `version` and `date-released` to the new release
 # (validated against the tag by the release workflow)

@@ -17,6 +17,215 @@ Items are grouped by whether the work is *already decided* (0.8 removals that
 the code and docs commit to), *decided but unscheduled*, or *open questions*
 that need a maintainer decision before any work starts.
 
+## After 0.16.0
+
+The backlog for 0.16.x and 0.17, written on 2026-11-18 from
+[`docs/audits/0.16.0-release/findings.json`](docs/audits/0.16.0-release/findings.json):
+every register row that was open when 0.16.0 was prepared, and the release's
+Known Limitations, each judged not to block the release. **Nothing in this
+section is done.** Within a group the items are in the order to take them.
+
+`[0.16.x]` is a fix, a test, a measurement or a document that a patch can
+carry (STABILITY.md §3: a patch has no breaking change). `[0.17]` is a feature
+or a break. `[decision]` needs the maintainer's decision before any work. The
+ids are register rows; the register says where each one's evidence is.
+
+### A2A v1.0.1 conformance gaps found by the TCK and ITK
+
+1. `[decision]` The two baselined MUST failures of the official TCK,
+   `CORE-SEND-003` (three bindings) and `HTTP_JSON-ERR-001`: take each to the
+   suite, or change the SDK (`docs/official-tck-findings.md` §22 and §23).
+2. `[0.16.x]` The 4 `PARTIAL` rows of the spec ledger
+   (`python3 scripts/check_spec_ledger.py`): a test for each, or the reason it
+   stays partial.
+3. `[0.16.x]` The 7 MUSTs the official suite marks manual and the 16 it marks
+   not tested: for each, the ledger cites a test of this repository or says
+   there is none.
+4. `[0.16.x]` Run ACTS per binding and record this repository's own counts;
+   the conformance statement quotes a reviewer's. Decide whether `itk.yml`
+   pins a revision (X-22).
+5. `[0.17]` A conformance run for the WebSocket binding, which is outside both
+   external suites.
+6. `[decision]` Whether a field a specification revision adds is a minor or a
+   patch addition: `book/src/reference/upgrading/0.15-to-0.16.md` says minor,
+   `STABILITY.md` §4 and `README.md` say patch.
+7. `[decision]` Send the two upstream drafts in `docs/upstream/` (H19).
+
+### Fleet and failure correctness
+
+The qualification matrix's "Not covered" list is item 4.
+
+1. `[0.16.x]` A store outage longer than `store_write_retry` loses the event
+   being written and can leave a task unfinished (X-10). Until it is fixed it
+   is a Known Limitation of 0.16.0.
+2. `[0.16.x]` A `CancelTask` of a parked task writes a status with no event;
+   announce it from `CancelTask` (E-F25, X-11; ADR 0057 names the step).
+3. `[0.16.x]` `CI1`, the two macOS discovery tests that failed on `main` once:
+   find the cause, or close the row with the count of green macOS runs.
+4. `[0.16.x]` Qualify what `book/src/reference/qualification-matrix.md` lists
+   as not covered: more than one host, so a network between replicas; SQLite
+   under the same faults; a PostgreSQL rollback from 0.16 to 0.15, and the
+   audit and push-config stores across the upgrade (N14); disk full,
+   out-of-memory kills and clock skew (E-F26); 60 replicas at once; a model
+   provider other than llama.cpp.
+5. `[0.16.x]` Measure the rows of `docs/readiness-bar.md` that are not
+   measured, and measure on two replicas and on PostgreSQL (S5, X-15).
+6. `[decision]` Event positions after a takeover (E-F8, F13): accepted on
+   2026-11-03 and documented. Reopen it only with a reproduction.
+7. `[0.17]` A finished task whose owner died is completed sooner than three
+   claim lifetimes (W2-hostile-3, X-09).
+8. `[0.17]` Steering: the dead-replica window, tests over gRPC and WebSocket,
+   and the two-process proof in CI (ADR 0036).
+9. `[0.17]` Hand-off on shutdown for a crashed replica, a handler without
+   claims and a reattached delegation (D-21, ADR 0054).
+10. `[0.17]` Parked-task expiry: the stream that ends without a terminal state
+    and the continuation that races the sweep (D-18, ADR 0056).
+11. `[0.17]` Push: the rest of R3, the outbox cases ADR 0037 lists as not
+    covered, per-destination rate limits, the verification handshake and a
+    per-caller configuration quota (D-05, SEC-14, ADR 0043).
+12. `[0.17]` Load and admission across a fleet: ORCA, a queue-cap gauge,
+    priority, preemption, fleet-wide admission and limits (H7, H9, H17, E-F12;
+    ADRs 0045 to 0048). S3, a fleet-wide inference quota, needs a decision
+    first.
+13. `[0.17]` WebSocket and client liveness that is only part fixed: D-07,
+    D-08, NEW-d-2, D-09 to D-12, B-10, B-12, G-04, G-20.
+14. `[0.17]` Middleware and bindings for the swarm extensions in other SDKs
+    (H19, ADR 0049).
+
+### Security, multi-tenancy, GDPR and EU AI Act controls
+
+1. `[0.16.x]` Remove the RUSTSEC-2026-0459 waiver when `sqlx` allows
+   `libsqlite3-sys` 0.39 or newer (also under *Waiting on upstream*).
+2. `[0.17]` Regulated use (X-19, A3, E1): a durable audit spool; a coverage
+   check of the audit chain against the event log, which X-19 names as the
+   cheapest first step; what `EncryptedTaskStore` leaves in the clear;
+   `Profile::RegulatedData` checking the step journal (a decision first).
+3. `[0.17]` Push SSRF: no pin behind a proxy (SEC-13, D-13, fork F16), a
+   deny-list that cannot see an operator's address plan (NEW-f-4), a
+   delivery-time guard for a custom `PushSender` (SEC-17), proxy-only egress
+   (NEW-f-3).
+4. `[0.16.x]` Run the SSRF corpus against both SDKs (X-07).
+5. `[0.17]` Network: a `Host` check for listeners that are not on loopback and
+   an `Origin` check on HTTP, a DNS cache, a `fips` feature, CRL and OCSP
+   (B-25, B-28, B-29, ADR 0041).
+6. `[0.17]` One set of trust roots on every client path; the gRPC client
+   ignores `SSL_CERT_FILE` (NEW-h-s0-7, B-20, B-03, H2).
+7. `[0.17]` Skill content pinning (S2), and skill names that differ only by
+   look-alike characters (W2-LIVE-11).
+8. `[0.16.x]` The CLI says whether it sends telemetry and that it redacts
+   credentials (X-18).
+9. `[decision]` Protect `main` with reviews (G1, E6; Scorecard alerts #93 and
+   #126). A repository setting, the maintainer's.
+10. Recorded, not planned: authentication runs after method dispatch
+    (W2-hostile-5), a design decision.
+
+### Tool use and parameterization
+
+1. `[0.16.x]` A provider's error body reaches the `invoke_agent` span's events
+   and the log, where the book says spans carry no content (W2-LIVE-8): redact
+   it, or correct the book.
+2. `[0.17]` Mark `finish_reason: content_filter` as `length` is marked
+   (W2-LIVE-12); classify a tool call cut at `max_tokens` (W2-LIVE-13).
+3. `[0.17]` Agent Skills: hot reload, runs on Windows and macOS, the hard-link
+   and FIFO cases (ADR 0035).
+4. `[0.17]` The rest of the durable step journal (S1).
+5. `[0.16.x]` Run the live tool-loop files against a provider other than
+   llama.cpp with Qwen3-1.7B.
+
+### OpenTelemetry
+
+1. `[0.16.x]` Independent visibility of a failed telemetry export, and a
+   collector-outage and cardinality qualification (S4; not examined yet).
+2. `[0.16.x]` The `OTEL_*` remainder: C-08, NEW-c-5 (`OTEL_SDK_DISABLED`
+   accepts only `true`), C-17, NEW-c-2.
+3. `[0.17]` Remove `init_otlp_pipeline*`, deprecated in 0.16.0 and removable
+   no earlier than 0.17.0.
+4. Exemplars wait on `opentelemetry_sdk` (C-05; *Waiting on upstream*).
+
+### Performance
+
+1. `[0.16.x]` The throughput gap to 0.14.1 and to a2a-rs (X-14): a cheaper
+   bound on a header read, and the `timeout` around the `watch` receiver in
+   streaming (`docs/sdk-comparison-2026-11-11.md`).
+2. `[0.16.x]` Measure audit appends at several replicas (E-F18).
+3. `[0.17]` Lease groups, after a measurement at 10^4 to 10^5 leased tasks per
+   replica (H5, ADR 0044).
+4. `[0.17]` Blob offload, holds on the SQL stores and the SQL
+   `save_appending_history` overrides (H13, ADR 0047).
+
+### Developer experience and defaults
+
+1. `[0.16.x]` The documentation and CLI rows the 2026-11-01 triage left part
+   fixed or open: G/D-03 to G/D-11, NEW-g-docs-1, NEW-g-docs-2 (`a2a card`
+   ignores `--header`, `--timeout` and `--tenant`), NEW-g-docs-5, B-15, B-19.
+2. `[0.16.x]` deploy-agent: readiness that checks every pool (A15), the effect
+   of A26 on memory, and A13, A27, NEW-a-l-1, NEW-a-l-3, NEW-a-l-4b.
+3. `[0.17]` `ServeConfig` applied to a gRPC and a WebSocket listener (G-09).
+4. `[0.17]` Remove the names deprecated in 0.15.0 and 0.16.0 that
+   STABILITY.md §3 now allows removing.
+5. `[0.17]` Defaults and ergonomics the triage left part fixed: G-06, G-07,
+   NEW-g-api-2.
+6. `[decision]` MSRV 1.94 against 1.85 (X-13); publishing the SLIMRPC binding
+   (X-16) and the CLI (X-17).
+
+### The book's structure
+
+1. `[0.16.x]` One page that lists the Known Limitations by id, which the
+   changelog links to, so a limitation is corrected in one place. On
+   2026-11-18 five of the 19 entries carried a stale claim and one named a
+   ROADMAP row.
+2. `[0.16.x]` Three documents repeat a sentence the code has outgrown: ADR
+   0057 (the reaper writes no event), ADR 0035 ("not run" against a live
+   model), and the doc comment of `dispatch/websocket/serve_config.rs` on the
+   `Origin` check and DNS rebinding.
+3. `[0.16.x]` The dispatcher pages' hidden cards and return types (G/D-06,
+   G/D-07), and doctest coverage (G/C-03).
+4. `[decision]` The size of a release's changelog section (G/C-01): 0.16.0's
+   is about 290,000 characters, so the GitHub release carries six of its sections
+   and a link.
+
+### Release engineering
+
+1. `[decision]` `scripts/ci_evidence.py` refuses a release when any job of
+   `ci.yml` failed, and `Nightly (informational)` is `continue-on-error` on a
+   floating toolchain. It failed on `main` at `7ac5b74e`, and would have
+   refused the tag. Either the gate skips jobs `ci.yml` marks
+   `continue-on-error`, or the nightly job stops being able to fail.
+2. `[0.16.x]` `docs/compliance/spec-ledger.json` cites `CHANGELOG.md` by line
+   number, so every release preparation breaks `check_spec_ledger.py`. Cite
+   the heading.
+3. `[0.16.x]` The first publish of `a2a-protocol-slimrpc`, and a build of it
+   on its declared MSRV (`RELEASING.md`).
+4. `[decision]` An absolute coverage floor in `codecov.yml`
+   (`RELEASING.md`, *Path to 1.0.0*).
+5. `[0.16.x]` The evidence manifest runs no test suite and is not signed on
+   its own (S6).
+6. `[decision]` Pin the toolchain a session and CI lint with. On 2026-11-18
+   the session image's `stable` was 1.97.0 and CI's 1.100.0, and their clippy
+   disagreed.
+7. Merge Dependabot pull requests #213, #216 and #217 after the tag.
+
+### Antipatterns
+
+Seen while preparing 0.16.0; each is a class to remove, not one site.
+
+1. A citation by line number into a file every release rewrites (item 2 of
+   *Release engineering*).
+2. A sentence that states a moment as the present: "in preparation", "has not
+   run anywhere yet", "at the time of writing CI is red". Eleven were corrected
+   on 2026-11-18. Date the sentence, or derive it.
+3. A count in prose that nothing derives: "six runnable agents", "ten
+   architecture decision records", "26 checks", "88 MUST-level requirements".
+4. An informational job that a gate reads as a failure (item 1 of *Release
+   engineering*).
+5. A status that covers several ids in one table row (section O of
+   `docs/audits/2026-10-29/README.md`), and a register with no status field
+   (`docs/audits/2026-11-01-triage/*.json`): neither can be counted per id.
+6. A limitation restated in an ADR, a doc comment and the changelog, so a fix
+   corrects one and leaves two.
+7. A write that is retried, then logged and dropped, when what it carried was
+   a task's ending (X-10).
+
 ## 0.8 — removals this repository committed to — **DONE 2026-08-13**
 
 All three landed in the 0.8.0 preparation commit, and all four crates were

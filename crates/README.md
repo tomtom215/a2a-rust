@@ -3,7 +3,7 @@
 
 # Crates
 
-The a2a-rust SDK is split into four crates with clear dependency boundaries.
+The a2a-rust SDK is split into four published crates with clear dependency boundaries (a fifth, `a2a-protocol-discovery`, is not published).
 Use the umbrella crate (`a2a-protocol-sdk`) for full applications, or depend
 on individual crates when you only need a subset.
 
@@ -70,7 +70,7 @@ enable them:
 | Feature | Crate(s) | Purpose |
 |---------|----------|---------|
 | `signing` | types, client, server | Agent card signing and verification (JWS with ES256 or EdDSA/Ed25519) |
-| `tls-rustls` | client, server | HTTPS via rustls, no OpenSSL (default in client/sdk; on the server, HTTPS push delivery and TLS on `Server`'s own listener) |
+| `tls-rustls` | client, server | HTTPS via rustls, no OpenSSL (default in client, server and sdk; on the server, HTTPS push delivery and TLS on `Server`'s own listener) |
 | `tracing` | client, server | Structured logging (compiled out when off; default in client, server and sdk; the cost of the default instrumentation with nothing installed is in `docs/readiness-bar.md`) |
 | `sqlite` | server | SQLite-backed task and push config stores |
 | `postgres` | server | PostgreSQL-backed stores |
@@ -95,7 +95,7 @@ enable them:
 ## Design Decisions
 
 See [ADR-0001: Workspace Crate Structure](../docs/adr/0001-workspace-crate-structure.md)
-for the rationale behind splitting into four crates instead of a monolith.
+for the rationale behind splitting into four published crates instead of a monolith.
 
 ## License
 

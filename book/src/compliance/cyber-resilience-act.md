@@ -38,7 +38,7 @@ anyway.
 | **Conformance attestation** | The A2A conformance suite's summary, attested onto each `.crate` |
 | **Signed tags** | Since 2026-10-08 the release workflow refuses a tag not signed by a key in `.github/release-signers/`. `v0.15.0` is the first tag to pass. Check one with `scripts/verify_tag_signature.sh <tag>` |
 | **Publishing** | crates.io over HTTPS with a short-lived token from Trusted Publishing; cargo verifies each download's checksum |
-| **Dependency scanning** | `cargo-deny` on every pull request, push to `main` and release, with no advisory waived; OSV-Scanner over all nine tracked Cargo lockfiles on every pull request and push and daily, blocking |
+| **Dependency scanning** | `cargo-deny` on every pull request, push to `main` and release, with two advisories waived, each with its reason and removal condition in `deny.toml` (RUSTSEC-2026-0459 and RUSTSEC-2026-0543; the changelog's Known Limitations has both); OSV-Scanner over all nine tracked Cargo lockfiles on every pull request and push and daily, blocking |
 | **Testing** | 17 fuzz targets on every pull request and nightly; mutation testing of the lines a pull request changes, and of every crate weekly; CodeQL on every pull request and weekly; the tests on Linux, macOS and Windows with every feature |
 | **Policy** | `SECURITY.md`: two private channels, acknowledgement within three business days, triage within 14 days, a 90-day coordinated-disclosure ceiling, credit to reporters, and a section for manufacturers |
 
@@ -80,7 +80,7 @@ lists them.
 
 | Property | Map status | What the SDK carries, and what is left |
 |---|---|---|
-| (a) No known exploitable vulnerabilities | Partial | `cargo-deny` and OSV-Scanner, so no published manifest admits a dependency version with a RustSec advisory. The one advisory in the crates themselves is not in RustSec or OSV (below) |
+| (a) No known exploitable vulnerabilities | Partial | `cargo-deny` and OSV-Scanner, so no published manifest admits a dependency version with a RustSec advisory, other than the waived RUSTSEC-2026-0459 (`libsqlite3-sys`, through the server's `sqlite` feature). The one advisory in the crates themselves is not in RustSec or OSV (below) |
 | (b) Secure by default | Partial | TLS through rustls is on by default in the client; the server refuses a card whose security requirements no interceptor checks, caps bodies at 4 MiB and streams at 1,024, and refuses a tenant its stores cannot isolate. An agent whose card declares no security requirement serves every caller, and the server's own TLS is off until enabled |
 | (c) Security updates | Yours | A fix ships as a patch release of the current minor line. A library has no update channel of its own |
 | (d) Access control | Partial | API key (constant-time), bearer, JWT (fixed algorithm list; `alg: none` and algorithm confusion refused; HS256 secrets of at least 32 bytes) or client certificate; a per-task authorizer. None applies until you install it |

@@ -94,7 +94,8 @@ has every item in full, and its `Upgrading`, `Highlights` and
   Each turn claims its task in the database, a cancel reaches the executor on
   another replica, a dead replica's tasks are handed over, and a replica that
   stalls past its claim writes nothing more. The task stores add one table,
-  `a2a_task_claims`; [Operations](../deployment/operations.md) has the upgrade
+  `a2a_task_claims` (the claim store creates a second, `a2a_task_steering`,
+  the first time steering is used); [Operations](../deployment/operations.md) has the upgrade
   procedure and its rollback, and the [Support Matrix](./support-matrix.md)
   says what is supported at which schema version.
 - **Breaking changes for code that builds against the SDK**, among them:

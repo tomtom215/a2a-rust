@@ -13,7 +13,7 @@ so it can be checked again. Where something is outside the guarantee, this page 
 | Product | Version | Status | Source |
 |---|---|---|---|
 | `a2a-protocol-types`, `a2a-protocol-client`, `a2a-protocol-server`, `a2a-protocol-sdk` | 0.16.0 | Supported, under `STABILITY.md`'s guarantee | each crate's `Cargo.toml` |
-| `a2a-protocol-discovery` (mDNS discovery) | 0.16.0 | **Not published** (`publish = false`); its macOS CI leg is red (register row `CI1`) | `crates/a2a-protocol-discovery/Cargo.toml` |
+| `a2a-protocol-discovery` (mDNS discovery) | 0.16.0 | **Not published** (`publish = false`); two of its macOS tests failed on `main` on 2026-11-13 and the cause was not found (register row `CI1`, open) | `crates/a2a-protocol-discovery/Cargo.toml` |
 | `a2a-protocol-slimrpc` (SLIMRPC binding) | 0.7.0 | **Preview.** Versioned on its own and outside the stability guarantee; publishable, never yet published | `bindings/a2a-protocol-slimrpc/Cargo.toml`, `STABILITY.md` §6 |
 | `a2a` CLI (`tools/a2a-cli`) | 0.16.0 | **Preview.** Not a published crate; release binaries are built only when the maintainer sets `PUBLISH_CLI_BINARIES` | `tools/a2a-cli/Cargo.toml`, `packaging/README.md` |
 | Examples, benchmarks, `tck/`, `itk/`, `book-tests/` | — | Not products | `STABILITY.md` §6 |
@@ -93,5 +93,5 @@ one is `Aes256GcmCipher` (AES-256-GCM), and a cipher of your own can stand in it
 
 A minor line is supported while it is the newest: security fixes ship as a patch of the current line, and the day the
 next minor line is published the previous one stops receiving fixes. There is no overlap window and no long-term-support
-line. On the day 0.16.0 is published, 0.16.x becomes the supported line and 0.15.x stops; the release workflow refuses a
+line. With 0.16.0 published, 0.16.x is the supported line and 0.15.x has stopped; the release workflow refuses a
 tag whose `SECURITY.md` does not list the line being released. (`SECURITY.md`, "Supported Versions".)
