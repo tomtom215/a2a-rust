@@ -46,14 +46,22 @@ use a2a_protocol_types::task::TaskId;
 use support::*;
 
 /// Another session holds the task row while the turn writes, on a database
-/// whose statements time out after 100 ms, until three writes have timed out
+/// whose statements time out after 1 s, until three writes have timed out
 /// behind it and been made again: every one is stored once it is released.
+///
+/// The timeout applies to every statement, the send's first `INSERT` among
+/// them, before any lock is taken. At 100 ms that `INSERT` timed out on its
+/// own on a runner building mutants beside it, during a checkpoint (mutation
+/// shard 18 at 196b59eb, 2026-11-17), and a send's store failure is
+/// reported as INTERNAL (`ServerError::not_retry_safe`). The lock is held
+/// until three retries are counted, however long they take, so a longer
+/// timeout tests the same thing.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "needs a live PostgreSQL (see the module docs)"]
 async fn writes_that_time_out_behind_a_lock_are_made_again() {
     let db = Scratch::create("lock").await;
     sqlx::query(sqlx::AssertSqlSafe(format!(
-        "ALTER DATABASE {} SET statement_timeout = '100ms'",
+        "ALTER DATABASE {} SET statement_timeout = '1s'",
         db.name
     )))
     .execute(&db.admin)
