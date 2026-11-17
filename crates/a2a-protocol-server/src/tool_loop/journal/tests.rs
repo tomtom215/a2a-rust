@@ -383,4 +383,18 @@ fn a_handle_says_what_it_holds_without_printing_it() {
         format!("{installed:?}"),
         "JournalHandle { store: true, sealed: false, .. }"
     );
+    #[cfg(feature = "encryption")]
+    {
+        use crate::store::encrypted::{AES_256_KEY_LEN, Aes256GcmCipher};
+        let sealed = JournalHandle {
+            cipher: Some(std::sync::Arc::new(
+                Aes256GcmCipher::new("k", [1; AES_256_KEY_LEN]).unwrap(),
+            )),
+            ..Default::default()
+        };
+        assert_eq!(
+            format!("{sealed:?}"),
+            "JournalHandle { store: false, sealed: true, .. }"
+        );
+    }
 }

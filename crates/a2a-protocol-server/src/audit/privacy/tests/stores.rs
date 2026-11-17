@@ -90,7 +90,8 @@ async fn fence_contract(store: &dyn AuditStore) {
 }
 
 /// The key `sid-k1`, named by the record at 1, is kept by a scan through 0
-/// and deleted by one through 1.
+/// and deleted by one through 1, a record at 2 naming another key
+/// notwithstanding.
 async fn fence_deletes_unless_named(store: &dyn AuditStore, chain: &str) {
     assert!(
         !store
@@ -99,6 +100,21 @@ async fn fence_deletes_unless_named(store: &dyn AuditStore, chain: &str) {
             .unwrap()
     );
     assert!(store.subject_key(chain, "h1:k1").await.unwrap().is_some());
+    // A later record naming another key does not keep this one.
+    let other = |head: Option<(u64, String)>, _ms| {
+        let mut r = AuditRecord::new(chain, kind::HALT);
+        r.seq = head.map_or(1, |(seq, _)| seq + 1);
+        r.detail.insert(
+            "requestedBy".to_owned(),
+            format!("{}x", sid_marker("sid-other")).into(),
+        );
+        r.hash = format!("h{}", r.seq);
+        Box::pin(std::future::ready(Ok(r))) as BoxFuture<'_, _>
+    };
+    assert!(matches!(
+        store.append_next_naming(chain, &[], &other).await.unwrap(),
+        NamedAppend::Stored(_)
+    ));
     assert!(
         store
             .delete_subject_key_unless_named(chain, "h1:k1", "sid-k1", 1)
