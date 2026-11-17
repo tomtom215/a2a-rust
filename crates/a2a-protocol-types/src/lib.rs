@@ -403,8 +403,8 @@ const fn secs_to_ymd_hms(epoch: u64) -> (u64, u64, u64, u64, u64, u64) {
 mod tests {
     use super::secs_to_ymd_hms;
 
-    /// Verify known epoch → date conversions to kill arithmetic mutants.
-    /// Each case is chosen to break a specific class of mutations.
+    // Verify known epoch → date conversions to kill arithmetic mutants.
+    // Each case is chosen to break a specific class of mutations.
 
     // Unix epoch itself
     #[test]

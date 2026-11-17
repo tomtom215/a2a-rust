@@ -79,12 +79,12 @@ async fn run_pending_applies_all_builtin_migrations() {
         .await
         .unwrap();
     let columns: Vec<String> = row.iter().map(|r| r.get::<String, _>("name")).collect();
-    assert!(columns.contains(&"id".to_string()));
-    assert!(columns.contains(&"context_id".to_string()));
-    assert!(columns.contains(&"state".to_string()));
-    assert!(columns.contains(&"data".to_string()));
-    assert!(columns.contains(&"updated_at".to_string()));
-    assert!(columns.contains(&"created_at".to_string()));
+    assert!(columns.iter().any(|c| c == "id"));
+    assert!(columns.iter().any(|c| c == "context_id"));
+    assert!(columns.iter().any(|c| c == "state"));
+    assert!(columns.iter().any(|c| c == "data"));
+    assert!(columns.iter().any(|c| c == "updated_at"));
+    assert!(columns.iter().any(|c| c == "created_at"));
 }
 
 #[tokio::test]
