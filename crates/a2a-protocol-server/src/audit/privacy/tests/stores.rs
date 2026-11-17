@@ -85,6 +85,21 @@ async fn fence_contract(store: &dyn AuditStore) {
         panic!("not stored")
     };
     assert_eq!(first.seq, 1);
+    // A record sealed for a position already taken, every key there: a race
+    // lost, not a key gone.
+    let stale = |_head: Option<(u64, String)>, _ms| {
+        let mut r = AuditRecord::new(chain, kind::HALT);
+        r.seq = 1;
+        r.hash = "stale".to_owned();
+        Box::pin(std::future::ready(Ok(r))) as BoxFuture<'_, _>
+    };
+    assert_eq!(
+        store
+            .append_next_naming(chain, &there, &stale)
+            .await
+            .unwrap(),
+        NamedAppend::Lost
+    );
     fence_deletes_unless_named(store, chain).await;
     fence_deletes_unless_held(store, chain).await;
 }
