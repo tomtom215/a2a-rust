@@ -24,6 +24,7 @@ use futures_util::StreamExt as _;
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
+use super::Recorded;
 use super::lanes::{Lanes, ends_turn};
 use crate::metrics::push_outcome;
 use crate::push::outbox::{self, ClaimedDelivery, NewDelivery, PushOutbox};
@@ -102,8 +103,8 @@ pub async fn record(
     outboxed: &Outboxed,
     task_id: &TaskId,
     events: &[StreamResponse],
-) {
-    record_with_ids(lanes, outboxed, task_id, events, &[]).await;
+) -> Recorded {
+    record_with_ids(lanes, outboxed, task_id, events, &[]).await
 }
 
 /// Records `event` again under the delivery ids its rows had: the reservation
@@ -115,8 +116,8 @@ pub async fn record_again(
     task_id: &TaskId,
     event: &StreamResponse,
     ids: &[(String, String)],
-) {
-    record_with_ids(lanes, outboxed, task_id, std::slice::from_ref(event), ids).await;
+) -> Recorded {
+    record_with_ids(lanes, outboxed, task_id, std::slice::from_ref(event), ids).await
 }
 
 /// [`record`], with the delivery id of each `(config id, delivery id)` in `ids`.
@@ -126,15 +127,15 @@ async fn record_with_ids(
     task_id: &TaskId,
     events: &[StreamResponse],
     ids: &[(String, String)],
-) {
+) -> Recorded {
     let Some(configs) =
         super::list_configs(task_id, &*lanes.store, &lanes.limits, &*lanes.metrics).await
     else {
-        return;
+        return Recorded::ConfigsUnread;
     };
     let rows = rows_with_ids(task_id, &configs, events, ids);
     if rows.is_empty() {
-        return;
+        return Recorded::NoSubscribers;
     }
     match outboxed
         .outbox
@@ -146,6 +147,7 @@ async fn record_with_ids(
                 lanes.metrics.on_push_delivery(push_outcome::DROPPED);
             }
             outboxed.wake.notify_one();
+            Recorded::Durable
         }
         Err(_err) => {
             trace_warn!(
@@ -167,6 +169,7 @@ async fn record_with_ids(
                 )
                 .await;
             }
+            Recorded::FromMemory
         }
     }
 }

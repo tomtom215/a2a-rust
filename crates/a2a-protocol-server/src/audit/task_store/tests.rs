@@ -141,6 +141,10 @@ fn the_wrapper_reports_the_wrapped_stores_capabilities() {
     assert!(!bare.isolates_tenants());
     assert!(!bare.supports_idempotency());
     assert!(!bare.supports_event_log());
+    // A store this crate cannot see into is taken to be shared, so a durable
+    // profile accepts it: the default, and the wrapper, answer `false`.
+    assert!(!Bare(InMemoryTaskStore::new()).is_process_local());
+    assert!(!bare.is_process_local());
     let plain = wrap(Arc::new(InMemoryTaskStore::new()));
     assert!(!plain.isolates_tenants());
     assert!(plain.supports_idempotency());

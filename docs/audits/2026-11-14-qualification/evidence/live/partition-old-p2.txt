@@ -1,0 +1,9 @@
+PASS  P1 a 5 s partition of the running replica: the task stays its own and continues
+      N2's continuation during the partition: 'task 4b01b623-10ee-4990-aaf6-c832fd513b69 is already being p' after 5.0 s; tick parts 5 before, 23 4 s after the link came back; state TASK_STATE_WORKING
+PASS  P1b and a cancel on the other replica still stops it
+      stopped 0.81 s after the cancel; state TASK_STATE_CANCELED
+FAIL  P2 a 20 s partition: the other replica takes the task over after the time to live, and the cut-off replica writes nothing more
+      N2 ran the continuation 16.0 s after the cut ({'code': -32004, 'message': "task dddf4758-7013-4c8d-95cf-3fedcfba8959 is in terminal state 'TASK_STATE_FAILED' and cannot accept new messages", 'data': [{'@type': 'type.googleapis.com/google.rpc.ErrorInfo', 'domain': 'a2a-protocol.org', 'reason': 'UNSUPPORTED_OPERATION'}]}); tick parts 4 at takeover, 4 5 s after N1's link came back; final state TASK_STATE_FAILED; N1's executor stopped not within 10 s after its link came back
+PASS  P3 a database restart mid-turn: the turn resumes writing once it is back
+      tick parts 5 before the restart, 15 5 s after it was ready; state TASK_STATE_WORKING
+3 of 4 passed

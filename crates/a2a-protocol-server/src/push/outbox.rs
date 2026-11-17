@@ -123,6 +123,18 @@ pub struct Held {
 /// that stops mid-delivery leaves its rows to the next claim after their
 /// leases.
 pub trait PushOutbox: Send + Sync + 'static {
+    /// Whether this outbox keeps its rows in this process alone, so that a
+    /// delivery owed when the process stops is never made.
+    ///
+    /// The default is `false`, as for the store traits: an outbox this crate
+    /// cannot see into is taken to be durable. [`InMemoryPushOutbox`] answers
+    /// `true`, and so does a `SqlitePushOutbox` over `sqlite::memory:`.
+    /// [`Profile::DurableProduction`](crate::profile::Profile::DurableProduction)
+    /// refuses an outbox that answers `true`.
+    fn is_process_local(&self) -> bool {
+        false
+    }
+
     /// Records `deliveries`, in order. A delivery whose `delivery_id` is already
     /// in the outbox is left as it is (recording the same delivery twice keeps
     /// one row, so a caller can record again what it is unsure was recorded);

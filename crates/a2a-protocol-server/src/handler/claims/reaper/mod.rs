@@ -192,69 +192,104 @@ impl Reaper {
                 return;
             }
         }
-        TenantContext::scope_partition(scope, &token, async {
+        let done = TenantContext::scope_partition(scope, &token, async {
             self.settle_reservations(task_id).await;
-            self.complete_ending(task_id).await;
+            self.complete_ending(task_id).await
         })
         .await;
+        // The claim is the only record that this task's ending is owed: kept
+        // until the ending is durably logged and queued, so the next look
+        // after it expires tries again (adversarial review N05, 2026-11-13).
+        if !done {
+            trace_warn!(
+                task_id,
+                "a finished task's ending is still owed; its claim is kept for the next look"
+            );
+            return;
+        }
         if let Err(_e) = claims.store.release(&token).await {
             trace_warn!(task_id, error = %_e, "reaper's claim not released; it expires");
         }
     }
 
     /// Appends the task's ending to its log and sends it to its webhooks,
-    /// unless the log already ends with it. A store with no log has nothing
-    /// to prove an ending missing by, so nothing is sent: the webhooks of a
-    /// store like that were never promised more than the lanes give.
-    async fn complete_ending(&self, task_id: &str) {
+    /// unless the log already ends with it; whether nothing is owed any more.
+    /// A store with no log has nothing to prove an ending missing by, so
+    /// nothing is sent: the webhooks of a store like that were never promised
+    /// more than the lanes give.
+    ///
+    /// `false` when the task or its log could not be read, the ending's
+    /// deliveries were not durably queued, or the ending was not appended:
+    /// the caller keeps the claim, and the next look repairs again. Until
+    /// 2026-11-13 each of these returned and the claim was released, which
+    /// removed the task from every later look (N05).
+    async fn complete_ending(&self, task_id: &str) -> bool {
         let id = TaskId::new(task_id);
         let task = match self.task_store.get(&id).await {
             Ok(Some(task)) => task,
-            Ok(None) => return,
+            Ok(None) => return true,
             Err(_e) => {
                 trace_warn!(task_id, error = %_e, "finished task not read");
-                return;
+                return false;
             }
         };
-        if !task.status.state.is_terminal() {
-            return;
+        if !task.status.state.is_terminal() || !self.task_store.supports_event_log() {
+            return true;
         }
         match self.log_ends_with(&id, task.status.state).await {
             Some(false) => {}
-            // Logged already, or the log could not be read (a store with no
-            // log answers `last_event_seq` with an error): nothing provably
-            // missing.
-            Some(true) | None => return,
+            Some(true) => return true,
+            None => {
+                trace_warn!(task_id, "finished task's log not read");
+                return false;
+            }
         }
         let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent::new(
             id.clone(),
             task.context_id.clone(),
             task.status.clone(),
         ));
-        // Recorded in the outbox before it is logged, when there is one: a
-        // stop in between leaves the log without the ending, which the next
-        // look finishes, rather than a log that has it and webhooks that were
-        // never told.
-        let recorded = self.push_lanes.record_now(&id, &event).await;
-        crate::handler::event_processing::append_ending(
+        let done = self.announce(&id, &event).await;
+        if done {
+            trace_warn!(
+                task_id,
+                state = %task.status.state,
+                "completed the ending of a finished task its replica left unlogged and unannounced"
+            );
+            self.metrics
+                .on_claim(crate::metrics::control::claim::FINISHED);
+        }
+        done
+    }
+
+    /// Records `event`, a task's ending, for its webhooks and then in its log;
+    /// whether both are durable.
+    ///
+    /// Recorded in the outbox before it is logged, when there is one: a stop
+    /// in between leaves the log without the ending, which the next look
+    /// finishes, rather than a log that has it and webhooks that were never
+    /// told. So a recording that is not durable (the configs unread, the
+    /// outbox refusing) is not followed by the log's append (N06).
+    async fn announce(&self, id: &TaskId, event: &StreamResponse) -> bool {
+        let recorded = self.push_lanes.record_now(id, event).await;
+        if recorded.is_some_and(|r| !r.is_durable()) {
+            return false;
+        }
+        if !crate::handler::event_processing::append_ending(
             &*self.task_store,
-            &id,
-            &event,
+            id,
+            event,
             &*self.metrics,
             self.limits.store_write_retry,
         )
-        .await;
-        trace_warn!(
-            task_id,
-            state = %task.status.state,
-            "completed the ending of a finished task its replica left unlogged and unannounced"
-        );
-        self.metrics
-            .on_claim(crate::metrics::control::claim::FINISHED);
-        if !recorded {
+        .await
+        {
+            return false;
+        }
+        if recorded.is_none() {
             crate::handler::event_processing::deliver_push_bg(
-                &id,
-                &event,
+                id,
+                event,
                 &*self.push_config_store,
                 self.push_sender.as_deref(),
                 &self.limits,
@@ -262,6 +297,7 @@ impl Reaper {
             )
             .await;
         }
+        true
     }
 
     /// Whether the task's log ends with a status update to `state`; `None`
@@ -309,11 +345,16 @@ impl Reaper {
                 return false;
             }
         }
-        let ended = TenantContext::scope_partition(scope, &token, async {
+        let (ended, owed) = TenantContext::scope_partition(scope, &token, async {
             self.settle_reservations(task_id).await;
             self.fail(task_id).await
         })
         .await;
+        // Ended, and its ending not durable: the claim stays, and the next
+        // look completes the ending of the now finished task (N05).
+        if owed {
+            return ended;
+        }
         if let Err(_e) = claims.store.release(&token).await {
             trace_warn!(task_id, error = %_e, "reaper's claim not released; it expires");
         }
@@ -321,19 +362,20 @@ impl Reaper {
     }
 
     /// Ends the task `failed`, if it is still running, and sends its
-    /// webhooks the event.
-    async fn fail(&self, task_id: &str) -> bool {
+    /// webhooks the event: whether it ended it, and whether its ending is
+    /// still owed (not durably logged and queued).
+    async fn fail(&self, task_id: &str) -> (bool, bool) {
         let id = TaskId::new(task_id);
         let mut task = match self.task_store.get(&id).await {
             Ok(Some(task)) => task,
-            Ok(None) => return false,
+            Ok(None) => return (false, false),
             Err(_e) => {
                 trace_warn!(task_id, error = %_e, "abandoned task not read");
-                return false;
+                return (false, false);
             }
         };
         if !matches!(task.status.state, TaskState::Submitted | TaskState::Working) {
-            return false;
+            return (false, false);
         }
         let mut note = Message::agent(uuid::Uuid::new_v4().to_string(), vec![Part::text(REASON)]);
         note.task_id = Some(id.clone());
@@ -346,7 +388,7 @@ impl Reaper {
         // and the fence if a send took the claim over since.
         if let Err(_e) = self.task_store.save_status_delta(&task).await {
             trace_warn!(task_id, error = %_e, "abandoned task not ended");
-            return false;
+            return (false, false);
         }
         trace_warn!(
             task_id,
@@ -360,31 +402,7 @@ impl Reaper {
             task.context_id.clone(),
             status,
         ));
-        // Recorded in the outbox before it is logged, when there is one: a
-        // stop in between leaves the log without the ending, which the next
-        // look finishes, rather than a log that has it and webhooks that were
-        // never told.
-        let recorded = self.push_lanes.record_now(&id, &event).await;
-        crate::handler::event_processing::append_ending(
-            &*self.task_store,
-            &id,
-            &event,
-            &*self.metrics,
-            self.limits.store_write_retry,
-        )
-        .await;
-        if !recorded {
-            crate::handler::event_processing::deliver_push_bg(
-                &id,
-                &event,
-                &*self.push_config_store,
-                self.push_sender.as_deref(),
-                &self.limits,
-                &*self.metrics,
-            )
-            .await;
-        }
-        true
+        (true, !self.announce(&id, &event).await)
     }
 }
 

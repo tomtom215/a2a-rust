@@ -138,7 +138,7 @@ async fn an_approved_call_that_died_in_flight_is_indeterminate_not_rerun() {
         () = entered.notified() => {}
     }
     drop(run);
-    let stored = j.load(KEY).await.unwrap().unwrap();
+    let stored = j.load(KEY).await.unwrap().unwrap().checkpoint().unwrap();
     assert_eq!(
         stored.receipts.iter().map(|r| r.state).collect::<Vec<_>>(),
         [ReceiptState::Started],

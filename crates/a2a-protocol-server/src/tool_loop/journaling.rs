@@ -11,9 +11,12 @@ use ring::digest;
 use super::ToolLoop;
 use super::idempotency::canonical;
 use super::journal::{
-    ActionReceipt, CHECKPOINT_VERSION, JournalError, PendingApproval, Pins, ReceiptState,
-    RunCheckpoint, StepJournal,
+    ActionReceipt, CHECKPOINT_VERSION, FinalAnswer, JournalEntry, JournalError, PendingApproval,
+    Pins, ReceiptState, RunCheckpoint, RunOwner, StepJournal, now_ms,
 };
+use super::journal_codec::JournalHandle;
+
+mod restore;
 use super::loop_error::{ApprovalNeeded, LoopError};
 use super::model::{ChatMessage, ToolCall, ToolSpec};
 use super::policy::TrustedIdentity;
@@ -70,6 +73,9 @@ pub(super) struct Restored {
     /// The requester's identity, when the run is resumed after an approval:
     /// the run is theirs, not the approver's who continued it.
     pub(super) identity: Option<TrustedIdentity>,
+    /// The answer a finished run gave: a run begun again under its key gives
+    /// it again and does nothing else (N04).
+    pub(super) answer: Option<FinalAnswer>,
 }
 
 impl Restored {
@@ -78,7 +84,13 @@ impl Restored {
     pub(super) fn begin(
         self,
         sink: Option<&super::trace::Sink>,
-    ) -> (Progress, usize, Option<Resume>, Option<TrustedIdentity>) {
+    ) -> (
+        Progress,
+        usize,
+        Option<Resume>,
+        Option<TrustedIdentity>,
+        Option<FinalAnswer>,
+    ) {
         let mut progress = Progress {
             messages: self.messages,
             trace: Vec::new(),
@@ -87,88 +99,31 @@ impl Restored {
         for line in self.trace {
             super::trace::record(&mut progress.trace, sink, line);
         }
-        (progress, self.first_turn, self.resume, self.identity)
+        (
+            progress,
+            self.first_turn,
+            self.resume,
+            self.identity,
+            self.answer,
+        )
     }
 }
 
 /// One run's handle on its journal.
 pub(super) struct RunJournal<'a> {
     store: Option<&'a dyn StepJournal>,
+    handle: &'a JournalHandle,
     key: &'a str,
+    /// Whose run it is: from the request that began it, kept on resume.
+    owner: RunOwner,
     pins: Pins,
     revision: u64,
     receipts: Vec<ActionReceipt>,
     pending: Option<PendingApproval>,
 }
 
-fn mismatch(what: &str) -> LoopError {
-    LoopError::PinMismatch(format!(
-        "the run was begun with a different {what}; it is not continued under another"
-    ))
-}
-
 fn journal_error(e: &JournalError) -> LoopError {
     LoopError::Journal(e.to_string())
-}
-
-impl ToolLoop {
-    /// What this loop is, for a checkpoint to pin.
-    fn pins(&self, specs: &[ToolSpec]) -> Pins {
-        let mut tools: Vec<serde_json::Value> = specs
-            .iter()
-            .map(|s| {
-                let read_only = self.tools.get(&s.name).is_some_and(|t| t.read_only());
-                serde_json::json!({
-                    "name": s.name, "description": s.description,
-                    "parameters": s.parameters, "readOnly": read_only,
-                })
-            })
-            .collect();
-        tools.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
-        let mut text = String::new();
-        canonical(&serde_json::Value::Array(tools), &mut text);
-        let modes = format!(
-            "{:?}|{:?}|{:?}|{}|{}",
-            self.text_recovery,
-            self.argument_check,
-            self.trace_content,
-            self.max_turns,
-            self.max_calls_per_turn
-        );
-        Pins {
-            model: self.model.model_name().to_owned(),
-            preamble: sha256_text(self.preamble.as_bytes()),
-            tools: sha256_text(text.as_bytes()),
-            modes: sha256_text(modes.as_bytes()),
-            labels: self.pin_labels.clone(),
-        }
-    }
-}
-
-/// The calls of the last assistant turn that no tool result answers.
-fn unanswered(messages: &[ChatMessage]) -> Vec<ToolCall> {
-    let Some(at) = messages
-        .iter()
-        .rposition(|m| matches!(m, ChatMessage::Assistant { .. }))
-    else {
-        return Vec::new();
-    };
-    let Some((ChatMessage::Assistant { tool_calls, .. }, after)) = messages[at..].split_first()
-    else {
-        return Vec::new();
-    };
-    let answered: Vec<&str> = after
-        .iter()
-        .filter_map(|m| match m {
-            ChatMessage::ToolResult { call_id, .. } => Some(call_id.as_str()),
-            _ => None,
-        })
-        .collect();
-    tool_calls
-        .iter()
-        .filter(|c| !answered.contains(&c.id.as_str()))
-        .cloned()
-        .collect()
 }
 
 impl<'a> RunJournal<'a> {
@@ -188,10 +143,16 @@ impl<'a> RunJournal<'a> {
         verdict: Option<&Verdict>,
         current: Option<&TrustedIdentity>,
     ) -> Result<(Self, Restored), LoopError> {
-        let store = tool_loop.journal.as_deref();
+        let store = tool_loop.journal.store.as_deref();
         let mut journal = Self {
             store,
+            handle: &tool_loop.journal,
             key,
+            owner: RunOwner::new(
+                current.and_then(|i| i.tenant.clone()),
+                current.and_then(|i| i.principal.clone()),
+                current.and_then(|i| i.task.clone()),
+            ),
             pins: tool_loop.pins(specs),
             revision: 0,
             receipts: Vec::new(),
@@ -204,6 +165,7 @@ impl<'a> RunJournal<'a> {
             first_turn: 0,
             resume: None,
             identity: None,
+            answer: None,
         };
         let Some(store) = store else {
             if verdict.is_some() {
@@ -215,7 +177,7 @@ impl<'a> RunJournal<'a> {
             return Ok((journal, fresh()));
         };
         let stored = store.load(key).await.map_err(|e| journal_error(&e))?;
-        let Some(cp) = stored else {
+        let Some(entry) = stored else {
             if verdict.is_some() {
                 return Err(LoopError::Journal(
                     "no run is waiting for this approval".to_owned(),
@@ -223,121 +185,19 @@ impl<'a> RunJournal<'a> {
             }
             return Ok((journal, fresh()));
         };
+        let cp = journal
+            .handle
+            .decode(key, entry.revision, &entry.body)
+            .await
+            .map_err(|e| journal_error(&e))?;
+        if cp.revision != entry.revision {
+            return Err(LoopError::Journal(
+                "a stored checkpoint's revision differs from its entry's".to_owned(),
+            ));
+        }
+        journal.owner = entry.owner;
         let restored = journal.restore(cp, tool_loop, user_text, verdict, current)?;
         Ok((journal, restored))
-    }
-
-    /// The run `cp` recorded, after checking it is the run being asked for.
-    fn restore(
-        &mut self,
-        cp: RunCheckpoint,
-        tool_loop: &ToolLoop,
-        user_text: &str,
-        verdict: Option<&Verdict>,
-        current: Option<&TrustedIdentity>,
-    ) -> Result<Restored, LoopError> {
-        if cp.version != CHECKPOINT_VERSION {
-            return Err(LoopError::Journal(format!(
-                "the checkpoint is version {}, this loop reads {CHECKPOINT_VERSION}",
-                cp.version
-            )));
-        }
-        self.check_pins(&cp, tool_loop)?;
-        if verdict.is_none()
-            && cp.messages.first() != Some(&ChatMessage::User(user_text.to_owned()))
-        {
-            return Err(mismatch("message"));
-        }
-        let identity = match verdict {
-            Some(v) => Some(Self::check_approval(&cp, v, current)?),
-            None => None,
-        };
-        let calls = unanswered(&cp.messages);
-        // A call that may have run is re-run only where its key is the same
-        // on every replica, so the backend can tell it was asked before.
-        if let Some(call) = calls.iter().find(|c| {
-            cp.receipts
-                .iter()
-                .any(|r| r.call_id == c.id && r.state == ReceiptState::Started)
-        }) && !tool_loop.secret_set
-        {
-            return Err(LoopError::Indeterminate {
-                tool: call.name.clone(),
-                call_id: call.id.clone(),
-            });
-        }
-        self.revision = cp.revision;
-        self.receipts = cp.receipts;
-        self.pending = cp.pending_approval;
-        let resume = (!calls.is_empty()).then_some(Resume {
-            calls,
-            recovered: cp.recovered,
-        });
-        let first_turn = if resume.is_some() {
-            cp.turn
-        } else {
-            cp.turn + 1
-        };
-        Ok(Restored {
-            messages: cp.messages,
-            trace: cp.trace,
-            done: cp.done,
-            first_turn,
-            resume,
-            identity,
-        })
-    }
-
-    fn check_pins(&self, cp: &RunCheckpoint, tool_loop: &ToolLoop) -> Result<(), LoopError> {
-        let (a, b) = (&cp.pins, &self.pins);
-        if a.model != b.model {
-            return Err(mismatch("model"));
-        }
-        if a.preamble != b.preamble {
-            return Err(mismatch("preamble"));
-        }
-        if a.tools != b.tools {
-            return Err(mismatch("tool set"));
-        }
-        if a.modes != b.modes {
-            return Err(mismatch("configuration"));
-        }
-        if a.labels != tool_loop.pin_labels {
-            return Err(mismatch("pinned version"));
-        }
-        Ok(())
-    }
-
-    /// Checks a decision against the call that waits for it, and returns the
-    /// identity of the requester the run belongs to.
-    fn check_approval(
-        cp: &RunCheckpoint,
-        verdict: &Verdict,
-        current: Option<&TrustedIdentity>,
-    ) -> Result<TrustedIdentity, LoopError> {
-        let Some(pending) = &cp.pending_approval else {
-            return Err(LoopError::Journal(
-                "no call is waiting for this approval".to_owned(),
-            ));
-        };
-        if pending.digest != verdict.digest {
-            return Err(LoopError::Journal(
-                "the approval answers a different action than the one waiting".to_owned(),
-            ));
-        }
-        // Another tenant's or another task's approval does not release this one.
-        if let Some(now) = current
-            && (now.tenant != pending.tenant || now.task != pending.task)
-        {
-            return Err(LoopError::Journal(
-                "the approval comes from another tenant or task than the run's".to_owned(),
-            ));
-        }
-        let mut identity = TrustedIdentity::default();
-        identity.tenant.clone_from(&pending.tenant);
-        identity.principal.clone_from(&pending.principal);
-        identity.task.clone_from(&pending.task);
-        Ok(identity)
     }
 
     /// Whether there is a journal to write to.
@@ -347,13 +207,14 @@ impl<'a> RunJournal<'a> {
 
     /// Notes that `call` is about to run, to be written with the next
     /// checkpoint.
-    pub(super) fn started(&mut self, call: &ToolCall, arguments: String) {
+    pub(super) fn started(&mut self, turn: usize, call: &ToolCall, arguments: String) {
         if self.store.is_none() {
             return;
         }
-        match self.receipts.iter_mut().find(|r| r.call_id == call.id) {
+        match self.receipts.iter_mut().find(|r| r.is(turn, &call.id)) {
             Some(r) => r.state = ReceiptState::Started,
             None => self.receipts.push(ActionReceipt {
+                turn,
                 call_id: call.id.clone(),
                 tool: call.name.clone(),
                 arguments,
@@ -363,8 +224,8 @@ impl<'a> RunJournal<'a> {
     }
 
     /// Notes how `call` ended.
-    pub(super) fn ended(&mut self, call_id: &str, state: ReceiptState) {
-        if let Some(r) = self.receipts.iter_mut().find(|r| r.call_id == call_id) {
+    pub(super) fn ended(&mut self, turn: usize, call_id: &str, state: ReceiptState) {
+        if let Some(r) = self.receipts.iter_mut().find(|r| r.is(turn, call_id)) {
             r.state = state;
         }
         self.pending = None;
@@ -373,11 +234,12 @@ impl<'a> RunJournal<'a> {
     /// Parks the run on `call`.
     pub(super) fn park(
         &mut self,
+        turn: usize,
         call: &ToolCall,
         needed: &ApprovalNeeded,
         identity: Option<&TrustedIdentity>,
     ) {
-        self.ended(&call.id, ReceiptState::AwaitingApproval);
+        self.ended(turn, &call.id, ReceiptState::AwaitingApproval);
         self.pending = Some(PendingApproval {
             call: call.clone(),
             digest: needed.digest.clone(),
@@ -399,9 +261,54 @@ impl<'a> RunJournal<'a> {
         step: (usize, bool),
         progress: &Progress,
     ) -> Result<(), LoopError> {
+        self.write(step, progress, None)
+            .await
+            .map_err(|e| journal_error(&e))
+    }
+
+    /// Writes the run's final answer as a completed checkpoint, before the
+    /// loop returns it (N04). Nothing is deleted: a run begun again under the
+    /// key gives this answer, and the journal's sweep removes the entry on
+    /// the deployment's schedule.
+    ///
+    /// # Errors
+    ///
+    /// [`LoopError::Journal`] when another writer advanced the run
+    /// ([`JournalError::Conflict`]): this invocation is stale, and must not
+    /// publish an answer for a run another one owns. A store that fails
+    /// otherwise is the operator's to see, not the run's: the answer is
+    /// returned, and a replay asks the model for the last turn again (every
+    /// call before it is answered from the journal, none is run again).
+    pub(super) async fn complete(
+        &mut self,
+        step: (usize, bool),
+        progress: &Progress,
+        answer: &super::Answer,
+    ) -> Result<(), LoopError> {
+        let last = FinalAnswer {
+            text: answer.text.clone(),
+            finish_reason: answer.finish_reason.clone(),
+        };
+        match self.write(step, progress, Some(last)).await {
+            Err(e @ JournalError::Conflict) => Err(journal_error(&e)),
+            Err(_e) => {
+                trace_warn!(error = %_e, "tool loop: a finished run's answer could not be journaled");
+                Ok(())
+            }
+            Ok(()) => Ok(()),
+        }
+    }
+
+    async fn write(
+        &mut self,
+        step: (usize, bool),
+        progress: &Progress,
+        answer: Option<FinalAnswer>,
+    ) -> Result<(), JournalError> {
         let Some(store) = self.store else {
             return Ok(());
         };
+        let completed = answer.is_some();
         let checkpoint = RunCheckpoint {
             version: CHECKPOINT_VERSION,
             revision: self.revision + 1,
@@ -413,22 +320,18 @@ impl<'a> RunJournal<'a> {
             done: progress.done.clone(),
             receipts: self.receipts.clone(),
             pending_approval: self.pending.clone(),
+            answer,
         };
-        store
-            .save(self.key, &checkpoint)
-            .await
-            .map_err(|e| journal_error(&e))?;
+        let body = self.handle.encode(self.key, &checkpoint).await?;
+        let entry = JournalEntry::new(
+            checkpoint.revision,
+            self.owner.clone(),
+            completed,
+            now_ms(),
+            body,
+        );
+        store.save(self.key, &entry).await?;
         self.revision = checkpoint.revision;
         Ok(())
-    }
-
-    /// The run is over: forgets it. A failure is the operator's to see and not
-    /// the run's, which has its answer.
-    pub(super) async fn clear(&self) {
-        if let Some(store) = self.store
-            && let Err(_e) = store.clear(self.key).await
-        {
-            trace_warn!(error = %_e, "tool loop: a finished run's checkpoint could not be cleared");
-        }
     }
 }

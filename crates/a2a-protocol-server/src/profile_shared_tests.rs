@@ -47,6 +47,16 @@ impl LeaseStore for ForeignLeases {
     }
 }
 
+/// A database in a file of its own, as several processes would share: a
+/// `sqlite::memory:` database is process-local, which the profile reads.
+fn shared_db() -> String {
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path =
+        std::env::temp_dir().join(format!("a2a-profile-shared-{}-{n}.db", std::process::id()));
+    format!("sqlite://{}?mode=rwc", path.display())
+}
+
 fn refusal(b: RequestHandlerBuilder) -> String {
     match b.build() {
         Err(crate::error::ServerError::Config(m)) => m,
@@ -60,7 +70,7 @@ async fn shared() -> RequestHandlerBuilder {
     RequestHandlerBuilder::new(Idle)
         .without_agent_card()
         .with_profile(Profile::Production)
-        .with_task_store(SqliteTaskStore::new("sqlite::memory:").await.unwrap())
+        .with_task_store(SqliteTaskStore::new(&shared_db()).await.unwrap())
         .with_interceptor(BearerTokenAuthInterceptor::with_labelled_tokens([(
             "t", "alice",
         )]))
@@ -68,7 +78,7 @@ async fn shared() -> RequestHandlerBuilder {
 }
 
 async fn shared_halt() -> SqliteHaltStore {
-    SqliteHaltStore::new("sqlite::memory:").await.unwrap()
+    SqliteHaltStore::new(&shared_db()).await.unwrap()
 }
 
 #[cfg(feature = "signing")]
@@ -211,7 +221,7 @@ async fn a_push_config_store_that_is_shared_is_accepted() {
     let b = with_stores(shared().await).await;
     accepted(
         b.with_agent_card(pushing_card())
-            .with_push_config_store(SqlitePushConfigStore::new("sqlite::memory:").await.unwrap()),
+            .with_push_config_store(SqlitePushConfigStore::new(&shared_db()).await.unwrap()),
     );
 }
 
@@ -243,7 +253,7 @@ mod audit {
     #[tokio::test]
     async fn an_audit_store_that_is_shared_is_accepted() {
         let b = with_stores(shared().await).await;
-        let store = SqliteAuditStore::new("sqlite::memory:").await.unwrap();
+        let store = SqliteAuditStore::new(&shared_db()).await.unwrap();
         accepted(b.with_audit(Arc::new(AuditLog::new(Arc::new(store)))));
     }
 }

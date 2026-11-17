@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 #
-# The same replica built against v0.15.0, for upgrade_live.py. Needs that tag
+# The replica as it was at 420c3cb3 (main.rs here, copied from
+# scripts/live/replica/src/main.rs at that commit), built against v0.15.0, for
+# upgrade_live.py. The shared main.rs has since used 0.16-only APIs, so the
+# v0.15 build keeps its own copy (2026-11-14). Needs that tag
 # checked out at target/live/v015 first:
 #   git worktree add target/live/v015 v0.15.0
 # Build: cargo build --release --manifest-path scripts/live/replica/v015/Cargo.toml --target-dir target/live/build-v015
@@ -14,7 +17,7 @@ edition = "2024"
 
 [[bin]]
 name = "a2a-live-replica-v015"
-path = "../src/main.rs"
+path = "main.rs"
 
 [dependencies]
 a2a-protocol-server = { path = "../../../../target/live/v015/crates/a2a-protocol-server", features = ["postgres"] }

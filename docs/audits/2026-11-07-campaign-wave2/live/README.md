@@ -28,7 +28,7 @@ budget and the deadline, and every provider misbehaviour I could script (24 of 2
 | W2-LIVE-6 | low | `activate_skill` listed the files of a directory outside the skill when `references/` was a link | PROVEN, **fixed** `3a0f6587` |
 | W2-LIVE-7 | low | A provider's error body forged operator log lines and sent ANSI raw | PROVEN, **fixed** `c4bcab03` |
 | W2-LIVE-8 | low | The provider's error body is on the `invoke_agent` span (two span events) and in log records | PROVEN, not fixed (doc or design) |
-| W2-LIVE-9 | low | `gen_ai.response.model`, chosen by the provider, labels five metrics: 200 names, 1,000 series | PROVEN, not fixed (design) |
+| W2-LIVE-9 | low | `gen_ai.response.model`, chosen by the provider, labels five metrics: 200 names, 1,000 series | PROVEN; FIXED 2026-11-14 (`5250527c`): 16 names, then `_OTHER` |
 | W2-LIVE-10 | low | A `usage` of a float, a negative or a string rejects a whole good completion | PROVEN, not fixed |
 | W2-LIVE-11 | low | A trusted project skill can take an operator's name with a look-alike (Cyrillic а) | PROVEN, not fixed (documented limit, in part) |
 | W2-LIVE-12 | polish | `finish_reason: content_filter` with partial text completes the task unmarked | PROVEN (scripted), not fixed |
@@ -166,7 +166,11 @@ run failed`, each with an `error` attribute holding `the model provider answered
 log"; `telemetry.md` and `spans.md` say the spans record no prompt, argument or result; a provider body can echo the prompt.
 **Options:** say so in both pages, or log the body at a target the span layer does not take. Not done.
 
-### W2-LIVE-9 (low, PROVEN, not fixed): a provider chooses a metric label
+### W2-LIVE-9 (low, PROVEN, fixed 2026-11-14): a provider chooses a metric label
+
+Fixed in `5250527c`: a meter records the first 16 names and any later one, or one over 128 bytes, as `_OTHER`. Re-run
+(`docs/audits/2026-11-14-qualification/evidence/provider/06_provider_cardinality.txt`): 17 series per instrument. The
+finding as recorded:
 
 `06_provider.py cardinality`: 200 replies with 200 different `model` strings make **200 series on each of five metrics**
 (`gen_ai.client.inference.duration`, the two `operation.*_tokens` histograms and the two `usage.*_tokens` counters),

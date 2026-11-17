@@ -1,0 +1,9 @@
+PASS  P1 a 5 s partition of the running replica: the task stays its own and continues
+      N2's continuation during the partition: 'task 36c34105-69b0-42e8-9c21-abdd250cb1ae is already being p' after 5.0 s; tick parts 5 before, 23 4 s after the link came back; state TASK_STATE_WORKING
+PASS  P1b and a cancel on the other replica still stops it
+      stopped 0.86 s after the cancel; state TASK_STATE_CANCELED
+PASS  P2 a 20 s partition: the cut-off replica stops its turn, the task is ended failed (transient), a continuation is refused, and the cut-off replica writes nothing more
+      N1's executor stopped 13.1 s after the cut (watchdog 12 s); the task was failed 16.0 s after it, class 'transient'; N2's continuation: (-32004, "task d3cd8b5e-7b59-4abb-a86a-77f63fd0e959 is in terminal state 'TASK_S"); tick parts 4 when failed, 4 5 s after N1's link came back; final state TASK_STATE_FAILED
+PASS  P3 a database restart mid-turn: the turn resumes writing once it is back
+      tick parts 5 before the restart, 16 5 s after it was ready; state TASK_STATE_WORKING
+4 of 4 passed

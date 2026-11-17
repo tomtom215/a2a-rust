@@ -318,6 +318,35 @@ pub trait TaskStore: Send + Sync + 'static {
         None
     }
 
+    /// Whether this store keeps its tasks in this process alone, so that they
+    /// are gone when it stops and no other process can read them.
+    ///
+    /// The default is `false`: a store this crate cannot see into (yours, over
+    /// Redis, say) is taken to be durable and shared, as the other store traits
+    /// take theirs. The in-memory stores answer `true`, and so do the SQLite
+    /// stores over `sqlite::memory:`.
+    /// [`Profile::DurableProduction`](crate::profile::Profile::DurableProduction)
+    /// refuses a store that answers `true`.
+    ///
+    /// A wrapper that forwards to another store must forward this too.
+    fn is_process_local(&self) -> bool {
+        false
+    }
+
+    /// Whether this store seals the content of every task before it is
+    /// written, so the database, its backups and its replicas hold no message
+    /// or artifact in the clear.
+    ///
+    /// The default is `false`. `EncryptedTaskStore` (feature `encryption`)
+    /// answers `true`. [`Profile::RegulatedData`](crate::profile::Profile::RegulatedData)
+    /// requires it, or a declaration that the storage is encrypted another way
+    /// ([`ExternalControl::EncryptionAtRest`](crate::profile::ExternalControl::EncryptionAtRest)).
+    ///
+    /// A wrapper that forwards to another store must forward this too.
+    fn seals_content(&self) -> bool {
+        false
+    }
+
     /// Atomically claims `key` for `task_id` on behalf of `message_id`.
     ///
     /// Concurrent claims of one key must resolve to exactly one

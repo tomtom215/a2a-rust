@@ -22,6 +22,39 @@ mod reservation;
 mod settling;
 mod verdict;
 pub use lanes::{PushLanes, ends_turn};
+
+/// What recording an event's webhook deliveries in the push outbox came to
+/// (adversarial review N06, 2026-11-13).
+///
+/// Until then the recording returned nothing and [`PushLanes::record_now`]
+/// answered `true` whenever an outbox was installed: a config lookup that
+/// failed past its retries, or an outbox that refused the rows and fell back
+/// to a delivery from memory, read to its caller exactly as rows written. A
+/// task's ending then had its claim released, which was the only thing that
+/// said its notification was still owed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use]
+pub enum Recorded {
+    /// Every delivery is a row in the outbox.
+    Durable,
+    /// The task has no webhook: nothing is owed.
+    NoSubscribers,
+    /// The task's push configs could not be read: nothing was recorded or
+    /// sent.
+    ConfigsUnread,
+    /// The outbox refused the rows: each delivery was attempted once from
+    /// memory, and none is durable.
+    FromMemory,
+}
+
+impl Recorded {
+    /// Whether nothing is owed any more: every delivery is durably queued, or
+    /// there was none to make.
+    #[must_use]
+    pub const fn is_durable(self) -> bool {
+        matches!(self, Self::Durable | Self::NoSubscribers)
+    }
+}
 #[cfg(test)]
 pub(in crate::handler::event_processing) use outbox_worker::hold as reservation_hold;
 pub(in crate::handler::event_processing) use reservation::requested as push_requested;

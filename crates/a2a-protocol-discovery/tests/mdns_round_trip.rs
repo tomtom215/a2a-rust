@@ -58,6 +58,26 @@ fn unique(prefix: &str) -> String {
     format!("{prefix}-{}", std::process::id())
 }
 
+/// For a test that did not see `name` in its window: browses 15 s more and
+/// says whether it appeared late, and when, or not at all. The test still
+/// fails; this only tells a slow announcement from a lost one (register row
+/// CI1: once on macOS, each process found the other's agent and not its own).
+async fn seen_later(name: &str) -> String {
+    let started = tokio::time::Instant::now();
+    let Ok(mut browser) = Browser::start() else {
+        return "could not browse again".to_owned();
+    };
+    let deadline = started + Duration::from_secs(15);
+    while let Ok(Some(event)) = tokio::time::timeout_at(deadline, browser.next()).await {
+        if let DiscoveryEvent::Found(a) = &event
+            && a.instance == name
+        {
+            return format!("found {:.1} s later", started.elapsed().as_secs_f64());
+        }
+    }
+    "not found in a further 15 s".to_owned()
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn an_announced_agent_is_found_and_its_card_fetched() {
     let name = unique("found");
@@ -65,10 +85,9 @@ async fn an_announced_agent_is_found_and_its_card_fetched() {
     let announcer = Announcer::announce(&Advertisement::new(&name, port)).expect("announce");
 
     let found = discover(Duration::from_secs(3)).await.expect("browse");
-    let agent = found
-        .iter()
-        .find(|a| a.instance == name)
-        .unwrap_or_else(|| panic!("{name} not among {found:?}"));
+    let Some(agent) = found.iter().find(|a| a.instance == name) else {
+        panic!("{name} not among {found:?}; {}", seen_later(&name).await);
+    };
     assert_eq!(agent.port, port);
     assert_eq!(agent.fullname, announcer.fullname());
     assert!(!agent.card_urls().is_empty(), "{agent:?}");
@@ -96,7 +115,12 @@ async fn a_withdrawn_announcement_is_seen_lost() {
             break;
         }
     }
-    assert!(found, "{fullname} was never found");
+    if !found {
+        panic!(
+            "{fullname} was never found within 5 s; {}",
+            seen_later(&name).await
+        );
+    }
 
     announcer.shutdown();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);

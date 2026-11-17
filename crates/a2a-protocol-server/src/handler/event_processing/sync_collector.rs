@@ -174,6 +174,47 @@ impl RequestHandler {
     }
 }
 
+/// Awaits `work` while still polling `executor`; returns what `work`
+/// returned, and how the executor ended if it ended meanwhile.
+///
+/// On a single-worker runtime the executor runs inline, in the collecting
+/// task, and is polled only when that task polls it. Folding an event awaits
+/// the store, and the audit log behind it; an executor that holds something
+/// the fold needs (the audit chain's lock, which `AuditedPolicy` holds across
+/// a store read) must be polled meanwhile or neither finishes: until
+/// 2026-11-13 a blocking send then waited out the executor timeout, an hour
+/// by default (`messaging::inline_executor_tests`).
+async fn polling<F: std::future::Future>(
+    executor: &mut crate::handler::messaging::WatchedExecutor,
+    work: F,
+) -> (F::Output, Option<bool>) {
+    let mut work = std::pin::pin!(work);
+    let mut ended = None;
+    loop {
+        tokio::select! {
+            biased;
+            out = &mut work => return (out, ended),
+            returned = &mut *executor, if ended.is_none() => ended = Some(returned),
+        }
+    }
+}
+
+/// [`polling`], for work whose answer does not depend on how the executor
+/// ended: it is polled only while it has not ended (`done`), and a polled
+/// executor that ends is resolved to its end, so the caller's `finish` has
+/// nothing left to run.
+async fn polling_unless<F: std::future::Future<Output = ()>>(
+    done: bool,
+    executor: &mut crate::handler::messaging::WatchedExecutor,
+    work: F,
+) {
+    if done {
+        work.await;
+    } else {
+        let ((), _ended) = polling(executor, work).await;
+    }
+}
+
 impl SyncCollector {
     /// Marks each event stored on `applied` once it is folded.
     #[must_use]
@@ -211,7 +252,8 @@ impl SyncCollector {
         )
         .await?;
         if !state.task.status.state.is_interrupted() {
-            self.close_out(&task_id, &mut state).await;
+            self.closing(&task_id, &mut state, executor, executor_done)
+                .await;
         }
         Ok(self.answer(&task_id, &mut state))
     }
@@ -263,7 +305,8 @@ impl SyncCollector {
         }
         let interrupted = state.task.status.state.is_interrupted();
         if !interrupted {
-            self.close_out(&task_id, &mut state).await;
+            self.closing(&task_id, &mut state, executor, executor_done)
+                .await;
         }
         // The caller may have gone; what was collected is stored either way.
         let _ = answer.send(Ok(self.answer(&task_id, &mut state)));
@@ -287,7 +330,8 @@ impl SyncCollector {
                 "storing a task's events after its interrupted state failed"
             );
         }
-        self.close_out(&task_id, &mut state).await;
+        self.closing(&task_id, &mut state, executor, executor_done)
+            .await;
         self.spawn_push_delivery(task_id, std::mem::take(&mut state.push_events));
     }
 
@@ -350,7 +394,19 @@ impl SyncCollector {
                     biased;
                     event = events.recv() => {
                         if let Some(event) = event.map(crate::streaming::event_queue::unshare) {
-                            self.fold(event, task_id, state).await?;
+                            // Boxed: held beside the executor, the fold
+                            // would sit inline in this loop's state.
+                            let fold = Box::pin(self.fold(event, task_id, state));
+                            let (folded, ended) = polling(executor, fold).await;
+                            if let Some(returned) = ended {
+                                *executor_done = true;
+                                folded?;
+                                let finished =
+                                    self.on_executor_finished(returned, task_id, state).await;
+                                self.unless_superseded(finished, task_id, state).await?;
+                            } else {
+                                folded?;
+                            }
                         } else {
                             self.on_queue_closed(task_id, executor, state, executor_done)
                                 .await?;
@@ -528,6 +584,18 @@ impl SyncCollector {
         }
         state.saw_task_shaped_event = true;
         Ok(())
+    }
+
+    /// [`close_out`](Self::close_out), polling the executor meanwhile
+    /// unless it has ended (`done`): see [`polling`].
+    async fn closing(
+        &self,
+        task_id: &TaskId,
+        state: &mut CollectState,
+        executor: &mut crate::handler::messaging::WatchedExecutor,
+        done: bool,
+    ) {
+        polling_unless(done, executor, self.close_out(task_id, state)).await;
     }
 
     /// The collection is over and no terminal event reached it. A task that

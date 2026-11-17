@@ -1,0 +1,86 @@
+== provider misbehaviour (scripted) (load 1.66)
+-- html: TASK_STATE_FAILED in 0.01s, HTTP 200, body 573 B, RSS 21944->27700 kB, alive True; status: "the model provider's answer could not be read"; failure {'a2a-rust.com/failure': 'internal'}
+  ok    html 200: classified as an unreadable answer (state TASK_STATE_FAILED, 0.01s, status "the model provider's answer could not be read")
+-- sse_never: TASK_STATE_FAILED in 6.01s, HTTP 200, body 572 B, RSS 22648->28020 kB, alive True; status: 'the model provider did not answer within 6s'; failure {'a2a-rust.com/failure': 'transient'}
+  ok    sse never (idle stream, 6 s model timeout): ended by the model timeout (state TASK_STATE_FAILED, 6.01s, status 'the model provider did not answer within 6s')
+-- sse_trickle: TASK_STATE_FAILED in 6.01s, HTTP 200, body 572 B, RSS 22300->28108 kB, alive True; status: 'the model provider did not answer within 6s'; failure {'a2a-rust.com/failure': 'transient'}
+  ok    sse trickle (a keep-alive per second, 6 s model timeout): ended by the model timeout although no read was idle (state TASK_STATE_FAILED, 6.01s, status 'the model provider did not answer within 6s')
+-- json_trickle: TASK_STATE_FAILED in 6.01s, HTTP 200, body 572 B, RSS 22400->27888 kB, alive True; status: 'the model provider did not answer within 6s'; failure {'a2a-rust.com/failure': 'transient'}
+  ok    json trickle (1 byte a second, 6 s timeout): ended by the model timeout (state TASK_STATE_FAILED, 6.01s, status 'the model provider did not answer within 6s')
+-- sse_big: TASK_STATE_FAILED in 1.2s, HTTP 200, body 591 B, RSS 22564->30136 kB, alive True; status: "the model provider's answer is larger than the 8388608-byte cap"; failure {'a2a-rust.com/failure': 'internal'}
+  ok    sse 100 MB data line: bounded memory, classified (state TASK_STATE_FAILED, 1.2s, status "the model provider's answer is larger than the 8388608-byte cap")
+-- json_big: TASK_STATE_FAILED in 0.02s, HTTP 200, body 591 B, RSS 22432->28428 kB, alive True; status: "the model provider's answer is larger than the 8388608-byte cap"; failure {'a2a-rust.com/failure': 'internal'}
+  ok    json 100 MB body: bounded memory, classified (state TASK_STATE_FAILED, 0.02s, status "the model provider's answer is larger than the 8388608-byte cap")
+-- finish_weird: TASK_STATE_COMPLETED in 0.01s, HTTP 200, body 290 B, RSS 22064->28124 kB, alive True; status: ''; failure None
+   answer metadata None; status message metadata None
+  ok    finish_reason='weird': a terminal state, agent alive (TASK_STATE_COMPLETED)
+-- finish_empty: TASK_STATE_COMPLETED in 0.01s, HTTP 200, body 290 B, RSS 22228->27960 kB, alive True; status: ''; failure None
+   answer metadata None; status message metadata None
+  ok    finish_reason='': a terminal state, agent alive (TASK_STATE_COMPLETED)
+-- finish_tool_calls: TASK_STATE_COMPLETED in 0.01s, HTTP 200, body 290 B, RSS 22180->28112 kB, alive True; status: ''; failure None
+   answer metadata None; status message metadata None
+  ok    finish_reason='tool_calls': a terminal state, agent alive (TASK_STATE_COMPLETED)
+-- finish_content_filter: TASK_STATE_COMPLETED in 0.01s, HTTP 200, body 290 B, RSS 22048->28224 kB, alive True; status: ''; failure None
+   answer metadata None; status message metadata None
+  ok    finish_reason='content_filter': a terminal state, agent alive (TASK_STATE_COMPLETED)
+-- finish_FUNCTION_CALL: TASK_STATE_COMPLETED in 0.01s, HTTP 200, body 290 B, RSS 22100->28060 kB, alive True; status: ''; failure None
+   answer metadata None; status message metadata None
+  ok    finish_reason='FUNCTION_CALL': a terminal state, agent alive (TASK_STATE_COMPLETED)
+-- cut_mid_body: TASK_STATE_FAILED in 0.01s, HTTP 200, body 563 B, RSS 22136->28324 kB, alive True; status: 'could not reach the model provider'; failure {'a2a-rust.com/failure': 'transient'}
+  ok    cut mid body: classified (state TASK_STATE_FAILED, 0.01s, status 'could not reach the model provider')
+   status: 'could not reach the model provider'
+-- cut_mid_stream: TASK_STATE_FAILED in 0.01s, HTTP 200, body 563 B, RSS 22172->28116 kB, alive True; status: 'could not reach the model provider'; failure {'a2a-rust.com/failure': 'transient'}
+  ok    cut mid stream: classified (state TASK_STATE_FAILED, 0.01s, status 'could not reach the model provider')
+   status: 'could not reach the model provider'
+-- retry_8308: TASK_STATE_FAILED in 0.01s, HTTP 200, body 565 B, RSS 22368->28148 kB, alive True; status: 'the model provider answered HTTP 429'; failure {'a2a-rust.com/failure': 'transient'}
+  ok    429 Retry-After: 31536000: failed without parking the turn (state TASK_STATE_FAILED, 0.01s, status 'the model provider answered HTTP 429')
+   Retry-After '31536000': TASK_STATE_FAILED in 0.01s; failure {'a2a-rust.com/failure': 'transient'}; requests 1
+-- retry_2407: TASK_STATE_FAILED in 0.14s, HTTP 200, body 565 B, RSS 22052->27760 kB, alive True; status: 'the model provider answered HTTP 429'; failure {'a2a-rust.com/failure': 'transient'}
+  ok    429 Retry-After: Wed, 21 Oct 2015 07:28:00 GMT: failed without parking the turn (state TASK_STATE_FAILED, 0.14s, status 'the model provider answered HTTP 429')
+   Retry-After 'Wed, 21 Oct 2015 07:28:00 GMT': TASK_STATE_FAILED in 0.14s; failure {'a2a-rust.com/failure': 'transient'}; requests 4
+-- retry_282: TASK_STATE_FAILED in 0.14s, HTTP 200, body 565 B, RSS 22276->27956 kB, alive True; status: 'the model provider answered HTTP 429'; failure {'a2a-rust.com/failure': 'transient'}
+  ok    429 Retry-After: 0: failed without parking the turn (state TASK_STATE_FAILED, 0.14s, status 'the model provider answered HTTP 429')
+   Retry-After '0': TASK_STATE_FAILED in 0.14s; failure {'a2a-rust.com/failure': 'transient'}; requests 4
+-- retry_6549: TASK_STATE_FAILED in 2.94s, HTTP 200, body 565 B, RSS 22340->28076 kB, alive True; status: 'the model provider answered HTTP 429'; failure {'a2a-rust.com/failure': 'transient'}
+  ok    429 Retry-After: -5: failed without parking the turn (state TASK_STATE_FAILED, 2.94s, status 'the model provider answered HTTP 429')
+   Retry-After '-5': TASK_STATE_FAILED in 2.94s; failure {'a2a-rust.com/failure': 'transient'}; requests 4
+-- retry_3999: TASK_STATE_FAILED in 2.87s, HTTP 200, body 565 B, RSS 22652->28212 kB, alive True; status: 'the model provider answered HTTP 429'; failure {'a2a-rust.com/failure': 'transient'}
+  ok    429 Retry-After: abc: failed without parking the turn (state TASK_STATE_FAILED, 2.87s, status 'the model provider answered HTTP 429')
+   Retry-After 'abc': TASK_STATE_FAILED in 2.87s; failure {'a2a-rust.com/failure': 'transient'}; requests 4
+-- retry_5930: TASK_STATE_FAILED in 2.22s, HTTP 200, body 565 B, RSS 22384->28404 kB, alive True; status: 'the model provider answered HTTP 429'; failure {'a2a-rust.com/failure': 'transient'}
+  ok    429 Retry-After: 1e10: failed without parking the turn (state TASK_STATE_FAILED, 2.22s, status 'the model provider answered HTTP 429')
+   Retry-After '1e10': TASK_STATE_FAILED in 2.22s; failure {'a2a-rust.com/failure': 'transient'}; requests 4
+-- retry_1833: TASK_STATE_FAILED in 3.08s, HTTP 200, body 565 B, RSS 22324->27892 kB, alive True; status: 'the model provider answered HTTP 429'; failure {'a2a-rust.com/failure': 'transient'}
+  ok    429 Retry-After: 99999999999999999999: failed without parking the turn (state TASK_STATE_FAILED, 3.08s, status 'the model provider answered HTTP 429')
+   Retry-After '99999999999999999999': TASK_STATE_FAILED in 3.08s; failure {'a2a-rust.com/failure': 'transient'}; requests 4
+-- stall: TASK_STATE_FAILED in 6.01s, HTTP 200, body 572 B, RSS 22488->28096 kB, alive True; status: 'the model provider did not answer within 6s'; failure {'a2a-rust.com/failure': 'transient'}
+  ok    chunked body that stalls (6 s timeout): ended by the model timeout (state TASK_STATE_FAILED, 6.01s, status 'the model provider did not answer within 6s')
+-- err_body: TASK_STATE_FAILED in 0.01s, HTTP 200, body 565 B, RSS 24068->28368 kB, alive True; status: 'the model provider answered HTTP 502'; failure {'a2a-rust.com/failure': 'transient'}
+  ok    502 with a canary body: the provider's body is not in the task (state TASK_STATE_FAILED, 0.01s, status 'the model provider answered HTTP 502')
+   operator log: canary present True; a forged line begins a log line: False; raw ESC bytes present: False
+  ok    the operator log has no line a provider could forge
+  ok    the provider's ANSI escapes are not written raw to the operator's log
+   html 200                                                       TASK_STATE_FAILED        0.01s  rss [21944, 27700]
+   sse never (idle stream, 6 s model timeout)                     TASK_STATE_FAILED        6.01s  rss [22648, 28020]
+   sse trickle (a keep-alive per second, 6 s model timeout)       TASK_STATE_FAILED        6.01s  rss [22300, 28108]
+   json trickle (1 byte a second, 6 s timeout)                    TASK_STATE_FAILED        6.01s  rss [22400, 27888]
+   sse 100 MB data line                                           TASK_STATE_FAILED         1.2s  rss [22564, 30136]
+   json 100 MB body                                               TASK_STATE_FAILED        0.02s  rss [22432, 28428]
+   finish_reason='weird'                                          TASK_STATE_COMPLETED     0.01s  rss [22064, 28124]
+   finish_reason=''                                               TASK_STATE_COMPLETED     0.01s  rss [22228, 27960]
+   finish_reason='tool_calls'                                     TASK_STATE_COMPLETED     0.01s  rss [22180, 28112]
+   finish_reason='content_filter'                                 TASK_STATE_COMPLETED     0.01s  rss [22048, 28224]
+   finish_reason='FUNCTION_CALL'                                  TASK_STATE_COMPLETED     0.01s  rss [22100, 28060]
+   cut mid body                                                   TASK_STATE_FAILED        0.01s  rss [22136, 28324]
+   cut mid stream                                                 TASK_STATE_FAILED        0.01s  rss [22172, 28116]
+   429 Retry-After: 31536000                                      TASK_STATE_FAILED        0.01s  rss [22368, 28148]
+   429 Retry-After: Wed, 21 Oct 2015 07:28:00 GMT                 TASK_STATE_FAILED        0.14s  rss [22052, 27760]
+   429 Retry-After: 0                                             TASK_STATE_FAILED        0.14s  rss [22276, 27956]
+   429 Retry-After: -5                                            TASK_STATE_FAILED        2.94s  rss [22340, 28076]
+   429 Retry-After: abc                                           TASK_STATE_FAILED        2.87s  rss [22652, 28212]
+   429 Retry-After: 1e10                                          TASK_STATE_FAILED        2.22s  rss [22384, 28404]
+   429 Retry-After: 99999999999999999999                          TASK_STATE_FAILED        3.08s  rss [22324, 27892]
+   chunked body that stalls (6 s timeout)                         TASK_STATE_FAILED        6.01s  rss [22488, 28096]
+   502 with a canary body                                         TASK_STATE_FAILED        0.01s  rss [24068, 28368]
+
+24 of 24 expectations held

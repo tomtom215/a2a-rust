@@ -64,6 +64,8 @@ pub struct OpenAiChatModel {
     timeout: Duration,
     max_response_bytes: usize,
     extra: Map<String, Value>,
+    /// Whether a streamed turn asks for its connection to be closed after it.
+    close_after_stream: bool,
 }
 
 impl fmt::Debug for OpenAiChatModel {
@@ -74,6 +76,7 @@ impl fmt::Debug for OpenAiChatModel {
             .field("api_key", &self.api_key.as_ref().map(|_| "[redacted]"))
             .field("timeout", &self.timeout)
             .field("max_response_bytes", &self.max_response_bytes)
+            .field("close_after_stream", &self.close_after_stream)
             .finish_non_exhaustive()
     }
 }
@@ -119,6 +122,7 @@ impl OpenAiChatModel {
             api_key: None,
             timeout: DEFAULT_TIMEOUT,
             max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
+            close_after_stream: true,
             extra: Map::new(),
         })
     }
@@ -156,6 +160,25 @@ impl OpenAiChatModel {
     #[must_use]
     pub const fn with_max_response_bytes(mut self, max: usize) -> Self {
         self.max_response_bytes = max;
+        self
+    }
+
+    /// Lets a streamed turn's connection be reused for the next turn.
+    ///
+    /// By default each streamed turn asks for its connection to be closed
+    /// after it (`Connection: close`): llama.cpp's llama-server says
+    /// `keep-alive` and then closes the connection just after a streamed
+    /// answer (seen on llama.cpp `9daa0aa`, 2026-11-13: three of three
+    /// attempts to reuse the connection found it closed), and a pooled
+    /// connection would carry the next turn into that close ("connection
+    /// closed before message completed"). An endpoint that keeps its
+    /// connections (a hosted provider, a proxy) gains a handshake per turn
+    /// from this, which over TLS and a remote network is not free: call
+    /// this for such an endpoint (adversarial review N16, 2026-11-13). The
+    /// cost was not measured here: the only endpoint at hand was a local one.
+    #[must_use]
+    pub const fn with_stream_connection_reuse(mut self) -> Self {
+        self.close_after_stream = false;
         self
     }
 
@@ -209,12 +232,10 @@ impl OpenAiChatModel {
         let mut builder = hyper::Request::post(self.endpoint.clone())
             .header(hyper::header::CONTENT_TYPE, "application/json")
             .header(hyper::header::ACCEPT, accept);
-        if accept == EVENT_STREAM {
-            // llama-server says `keep-alive` yet closes the connection just
-            // after a streamed answer; pooled, it would carry the next turn
-            // into the close ("connection closed before message completed").
-            // One connection per streamed turn costs a handshake, small
-            // beside the turn itself.
+        if accept == EVENT_STREAM && self.close_after_stream {
+            // See `with_stream_connection_reuse`: llama-server closes the
+            // connection after a streamed answer, and a pooled one would
+            // carry the next turn into the close.
             builder = builder.header(hyper::header::CONNECTION, "close");
         }
         if let Some(key) = &self.api_key {
@@ -348,7 +369,9 @@ impl ToolModel for OpenAiChatModel {
 
     /// Asks for the turn as a stream (`"stream": true`, with its usage), and
     /// hands `text` each piece of the answer as it arrives. Each streamed
-    /// turn has a connection of its own (`Connection: close`).
+    /// turn has a connection of its own (`Connection: close`) unless
+    /// [`with_stream_connection_reuse`](Self::with_stream_connection_reuse)
+    /// was called.
     fn complete_streaming<'a>(
         &'a self,
         request: ChatRequest<'a>,

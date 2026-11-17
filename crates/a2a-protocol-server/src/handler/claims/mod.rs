@@ -158,13 +158,26 @@ fn replica_name(host: Option<String>) -> String {
         .unwrap_or_else(|| "replica".to_owned())
 }
 
-/// A claim one turn holds, released when dropped.
+/// A claim one turn holds, released when dropped, unless the turn could not
+/// make its task's ending durable ([`keep_for_repair`](Self::keep_for_repair)).
 pub struct TurnClaim {
     claims: Arc<TurnClaims>,
     token: String,
+    /// Left in the store when dropped, for the reaper to find.
+    keep: AtomicBool,
 }
 
 impl TurnClaim {
+    /// The task's ending is not durably logged or queued for its webhooks: the
+    /// claim is not released when dropped, only no longer renewed. Its row
+    /// goes stale after the time to live, and the reaper, which looks for a
+    /// finished task behind a stale claim, completes the ending then
+    /// (adversarial review N05 and N06, 2026-11-13). Released, the claim was
+    /// the only thing left that said the ending was still owed.
+    pub(crate) fn keep_for_repair(&self) {
+        self.keep.store(true, Ordering::SeqCst);
+    }
+
     /// Hands the renewer the executor's token and turn, so a cancel from
     /// another replica, a lost claim or a lapsed one stops the executor. A
     /// claim that lapsed before the executor existed stops it now.
@@ -204,6 +217,14 @@ impl Drop for TurnClaim {
     fn drop(&mut self) {
         let claims = Arc::clone(&self.claims);
         let token = std::mem::take(&mut self.token);
+        if self.keep.load(Ordering::SeqCst) {
+            claims.held().remove(&token);
+            trace_warn!(
+                "a task's ending is not durable; its turn claim is left to expire so the \
+                 reaper completes the ending"
+            );
+            return;
+        }
         if let Ok(runtime) = tokio::runtime::Handle::try_current() {
             runtime.spawn(async move { release(&claims, &token).await });
         } else {
@@ -400,6 +421,7 @@ fn hold(claims: &Arc<TurnClaims>, task_id: &TaskId, token: String, started: Inst
     TurnClaim {
         claims: Arc::clone(claims),
         token,
+        keep: AtomicBool::new(false),
     }
 }
 

@@ -136,10 +136,17 @@ by `deploy-agent` straight to Prometheus's OTLP receiver, and to the console
 exporter; then by the `deploy-agent` image in Docker, on the stack's network.
 Every dashboard panel returned data (`check_dashboards.py`), a trace opened in
 Tempo and a log line linked to it, and logs carried `trace_id` and `span_id`.
+
 Before that, `hello-agent` and the `a2a` CLI, on one Linux machine on
 2026-10-26, against stand-in receivers on loopback (a small Python OTLP/HTTP
 receiver with TLS and client-certificate options, and this repository's own
 `hyper` and `tonic` test collectors and forward proxy).
+
+On 2026-11-14 the stack moved to Collector 0.164.0, Prometheus 3.16.0, Tempo 3.1.1 and Grafana 13.3.0.
+`scripts/live/adopter/06-observability.sh` ran against it: every service exported metrics, traces and logs,
+Tempo returned each service's traces, and the dashboard checker found the same panels with data, and the same
+without (they need model calls, push deliveries or failures, which that script does not make), as its recorded
+run on the earlier images.
 
 Not run: Kubernetes (the manifest was parsed as YAML and its `$(NAME)`
 references checked, nothing more; a cluster could not be started where this

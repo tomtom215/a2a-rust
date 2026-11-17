@@ -89,7 +89,7 @@ fn a_card_with_no_compatible_version_is_refused_with_what_it_offers() {
 /// `makeTransportKey` adds the `v` when absent).
 #[test]
 fn prefixed_versions_count_as_compatible() {
-    for version in ["v1.0", "V1", "1", "1.0.0", "1.1-rc1"] {
+    for version in ["v1.0", "V1", "1", "1.0.0", "1.0.1"] {
         let card = card(vec![
             iface(BINDING_JSONRPC, "0.3", "http://localhost:1111/v03"),
             iface(BINDING_JSONRPC, version, "http://localhost:1111/ok"),
@@ -275,4 +275,30 @@ fn a_fallback_carries_its_own_tenant() {
         .build()
         .expect("fallback");
     assert_eq!(client.config().tenant.as_deref(), Some("acme"));
+}
+
+/// A card listing a `1.1` interface before its `1.0` one: the client, which
+/// sends `A2A-Version: 1.0`, takes the `1.0` one (adversarial review N11,
+/// 2026-11-13; until then the `1.1` one, listed first, was chosen, and a
+/// server holding `1.1` semantics could refuse every call).
+#[test]
+fn a_one_point_one_interface_is_passed_over_for_the_one_point_zero() {
+    let card = card(vec![
+        iface(BINDING_JSONRPC, "1.1", "http://localhost:1111/v11"),
+        iface(BINDING_JSONRPC, "1.0", "http://localhost:1111/v10"),
+    ]);
+    let builder = ClientBuilder::from_card(&card).expect("from_card");
+    assert_eq!(builder.endpoint, "http://localhost:1111/v10");
+    // A card with only `1.1` offers nothing this client speaks.
+    let only = card_only_11();
+    let err = ClientBuilder::from_card(&only).expect_err("a 1.1-only card");
+    assert!(err.to_string().contains("1.0"), "{err}");
+}
+
+fn card_only_11() -> AgentCard {
+    card(vec![iface(
+        BINDING_JSONRPC,
+        "1.1",
+        "http://localhost:1111/v11",
+    )])
 }

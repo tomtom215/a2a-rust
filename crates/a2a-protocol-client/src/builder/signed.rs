@@ -24,6 +24,11 @@ impl ClientBuilder {
     /// discovery is verified there instead, with
     /// [`CardFetchOptions::with_signature_keys`].
     ///
+    /// The keys are kept: the extended card, if the client fetches it, must
+    /// verify against them too
+    /// ([`with_card_signature_keys`](Self::with_card_signature_keys);
+    /// adversarial review N10, 2026-11-13).
+    ///
     /// # Errors
     ///
     /// [`ClientError::Serialization`] for JSON that is not a card;
@@ -35,10 +40,10 @@ impl ClientBuilder {
             serde_json::from_slice(card).map_err(ClientError::Serialization)?;
         verify_card_signatures(
             &card,
-            &CardFetchOptions::default().with_signature_keys(keys),
+            &CardFetchOptions::default().with_signature_keys(keys.clone()),
         )?;
         crate::legacy_card::read_as_current(&mut card);
         let card: AgentCard = serde_json::from_value(card).map_err(ClientError::Serialization)?;
-        Self::from_card(&card)
+        Ok(Self::from_card(&card)?.with_card_signature_keys(keys))
     }
 }

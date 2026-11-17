@@ -1,0 +1,132 @@
+{
+  "after_200_requests": {
+    "a2a.server.executor.duration": {
+      "labels": {},
+      "series": 1
+    },
+    "a2a.server.pool.active": {
+      "labels": {},
+      "series": 1
+    },
+    "a2a.server.pool.closed": {
+      "labels": {},
+      "series": 1
+    },
+    "a2a.server.pool.created": {
+      "labels": {},
+      "series": 1
+    },
+    "a2a.server.pool.idle": {
+      "labels": {},
+      "series": 1
+    },
+    "a2a.server.queue_depth": {
+      "labels": {},
+      "series": 1
+    },
+    "a2a.server.request.duration": {
+      "labels": {},
+      "series": 1
+    },
+    "a2a.server.requests": {
+      "labels": {},
+      "series": 1
+    },
+    "a2a.server.responses": {
+      "labels": {},
+      "series": 1
+    },
+    "a2a.telemetry.export.failed": {
+      "labels": {
+        "signal": 3
+      },
+      "series": 3
+    },
+    "gen_ai.client.inference.duration": {
+      "labels": {
+        "gen_ai.response.model": 17
+      },
+      "series": 17
+    },
+    "gen_ai.client.inference.operation.input_tokens": {
+      "labels": {
+        "gen_ai.response.model": 17
+      },
+      "series": 17
+    },
+    "gen_ai.client.inference.operation.output_tokens": {
+      "labels": {
+        "gen_ai.response.model": 17
+      },
+      "series": 17
+    },
+    "gen_ai.client.inference.usage.input_tokens": {
+      "labels": {
+        "gen_ai.response.model": 17
+      },
+      "series": 17
+    },
+    "gen_ai.client.inference.usage.output_tokens": {
+      "labels": {
+        "gen_ai.response.model": 17
+      },
+      "series": 17
+    },
+    "gen_ai.invoke_agent.duration": {
+      "labels": {},
+      "series": 1
+    },
+    "gen_ai.invoke_agent.inference_calls": {
+      "labels": {},
+      "series": 1
+    },
+    "gen_ai.invoke_agent.tool_calls": {
+      "labels": {},
+      "series": 1
+    },
+    "process.cpu.time": {
+      "labels": {
+        "cpu.mode": 2
+      },
+      "series": 2
+    },
+    "process.memory.usage": {
+      "labels": {},
+      "series": 1
+    },
+    "process.memory.virtual": {
+      "labels": {},
+      "series": 1
+    },
+    "process.thread.count": {
+      "labels": {},
+      "series": 1
+    },
+    "process.unix.file_descriptor.count": {
+      "labels": {},
+      "series": 1
+    },
+    "rpc.server.call.duration": {
+      "labels": {},
+      "series": 1
+    },
+    "tokio.runtime.global_queue.depth": {
+      "labels": {},
+      "series": 1
+    },
+    "tokio.runtime.task.count": {
+      "labels": {},
+      "series": 1
+    },
+    "tokio.runtime.worker.count": {
+      "labels": {},
+      "series": 1
+    }
+  },
+  "agent_rss_kb": 36936,
+  "header": {
+    "load_at_start": "1.23",
+    "time": "2026-11-14T11:06:53Z",
+    "title": "metric label cardinality: 200 replies, 200 model names"
+  }
+}

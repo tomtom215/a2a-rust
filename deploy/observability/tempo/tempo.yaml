@@ -24,7 +24,9 @@ distributor:
       protocols:
         grpc:
           endpoint: 0.0.0.0:4317
-compactor:
+# Tempo 3 compacts and applies retention in the backend worker; 2.x's
+# `compactor` block is refused at startup (`field compactor not found`).
+backend_worker:
   compaction:
     block_retention: 24h
 metrics_generator:

@@ -84,9 +84,40 @@ async fn sqlite_pool_with_size(
         .await
 }
 
+/// Whether `pool` is an in-memory database, which only this process can see
+/// and which is gone when the pool is.
+///
+/// sqlx names the database of a `sqlite::memory:` URL `file:sqlx-in-memory-N`,
+/// and that is what this reads: `connect_options().get_filename()` is public,
+/// the flag sqlx keeps beside it is not. A named database opened with
+/// `?mode=memory` keeps its own name, so it is **not** recognised here and is
+/// taken for a file.
+pub fn is_in_memory(pool: &SqlitePool) -> bool {
+    pool.connect_options()
+        .get_filename()
+        .to_str()
+        .is_some_and(|name| name.starts_with("file:sqlx-in-memory-"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `sqlite::memory:` is recognised, and a database in a file is not.
+    #[tokio::test]
+    async fn an_in_memory_database_is_told_from_a_file() {
+        let memory = sqlite_pool("sqlite::memory:").await.unwrap();
+        assert!(is_in_memory(&memory));
+        let path = std::env::temp_dir().join(format!("a2a-in-memory-{}.db", std::process::id()));
+        let file = sqlite_pool(&format!("sqlite://{}?mode=rwc", path.display()))
+            .await
+            .unwrap();
+        assert!(!is_in_memory(&file));
+        file.close().await;
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+        }
+    }
 
     /// Centralising the pragmas is only worth anything if they take effect, so
     /// this asks `SQLite` itself rather than asserting the builder was called.

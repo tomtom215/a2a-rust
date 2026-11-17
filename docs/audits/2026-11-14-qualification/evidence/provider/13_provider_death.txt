@@ -1,0 +1,6 @@
+== a real provider down, killed mid-generation, and back (load 0.48)
+  ok    provider down at send: {'state': 'TASK_STATE_FAILED', 'failure': 'transient', 'status_text': 'could not reach the model provider', 'seconds': 0.01}
+  ok    llama-server killed mid-generation: {'state_at_kill': 'TASK_STATE_WORKING', 'state': 'TASK_STATE_FAILED', 'failure': 'transient', 'status_text': 'could not reach the model provider', 'seconds_after_kill': 0.0, 'agent_alive': True}
+  ok    provider back, a new task: {'state': 'TASK_STATE_COMPLETED', 'seconds': 5.2, 'has_answer': True, 'status_text': ''}
+
+3 of 3 expectations held

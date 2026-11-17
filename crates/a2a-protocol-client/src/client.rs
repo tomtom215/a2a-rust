@@ -70,6 +70,21 @@ pub struct A2aClient {
     pub(crate) content: crate::content::ContentKeys,
     /// Whether the agent is known to honour an idempotency key.
     pub(crate) honours_idempotency: bool,
+    /// Whether a request may name only the selected interface's tenant
+    /// (`ClientBuilder::with_strict_interface_tenant`).
+    pub(crate) tenant_policy: TenantPolicy,
+}
+
+/// What a request's `tenant` may be (spec §8.3.2 rule 4; adversarial review
+/// N12, 2026-11-13).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum TenantPolicy {
+    /// The configured tenant fills a request that names none; one the
+    /// request names is sent as named.
+    #[default]
+    Fill,
+    /// Only the configured tenant, or none, may be named.
+    Strict,
 }
 
 impl A2aClient {
@@ -127,7 +142,14 @@ impl A2aClient {
             declared: RwLock::new(None),
             content: crate::content::ContentKeys::default(),
             honours_idempotency: false,
+            tenant_policy: TenantPolicy::Fill,
         }
+    }
+
+    /// What a request's tenant may be.
+    pub(crate) const fn with_tenant_policy(mut self, policy: TenantPolicy) -> Self {
+        self.tenant_policy = policy;
+        self
     }
 
     /// Sets what received content is checked against.

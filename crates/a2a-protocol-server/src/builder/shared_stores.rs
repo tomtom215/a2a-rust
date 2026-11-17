@@ -25,10 +25,12 @@ impl RequestHandlerBuilder {
     /// unless [`allow_process_local_stores`](Self::allow_process_local_stores)
     /// was called.
     pub(super) fn check_stores_are_shared(&self) -> ServerResult<()> {
+        // Turn claims say the store can be shared; one this process alone
+        // holds (`sqlite::memory:`) still cannot be, whatever it claims.
         let shared = self
             .task_store
             .as_ref()
-            .is_some_and(|store| store.turn_claims().is_some());
+            .is_some_and(|store| store.turn_claims().is_some() && !store.is_process_local());
         if !shared || self.allow_process_local_stores {
             return Ok(());
         }

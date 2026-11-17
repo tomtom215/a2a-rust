@@ -86,7 +86,7 @@ async fn a_call_that_needs_approval_waits_and_then_runs_exactly_once() {
     assert_eq!(needed.tool, "transfer");
     let args = json!({"service": "x"});
     assert_eq!(needed.digest, verdict_for(&args, &who, true).digest);
-    let stored = j.load(KEY).await.unwrap().unwrap();
+    let stored = j.load(KEY).await.unwrap().unwrap().checkpoint().unwrap();
     assert_eq!(
         stored.pending_approval.as_ref().map(|p| p.digest.clone()),
         Some(needed.digest.clone())
@@ -112,7 +112,7 @@ async fn a_call_that_needs_approval_waits_and_then_runs_exactly_once() {
     assert_eq!(answer.text, "sent");
     assert_eq!(used.load(Ordering::SeqCst), 1, "the approved call ran once");
     assert_eq!(results(&seen.lock().unwrap().clone(), 0).len(), 1);
-    assert_eq!(j.len(), 0);
+    assert_eq!((j.len(), j.unfinished()), (1, 0), "kept, completed");
 }
 
 #[tokio::test]
@@ -387,7 +387,7 @@ async fn a_decided_call_is_no_longer_pending_in_the_checkpoint() {
     )
     .await;
     assert!(matches!(r, Err(LoopError::Model(_))), "{r:?}");
-    let stored = j.load(KEY).await.unwrap().unwrap();
+    let stored = j.load(KEY).await.unwrap().unwrap().checkpoint().unwrap();
     assert_eq!(stored.pending_approval, None);
     assert_eq!(
         stored.receipts.iter().map(|r| r.state).collect::<Vec<_>>(),

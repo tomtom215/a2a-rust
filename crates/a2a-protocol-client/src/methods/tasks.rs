@@ -49,7 +49,7 @@ impl A2aClient {
     pub async fn list_tasks(&self, mut params: ListTasksParams) -> ClientResult<TaskListResponse> {
         const METHOD: &str = "ListTasks";
 
-        params.tenant = self.tenant_or_default(params.tenant.take());
+        params.tenant = self.tenant_or_default(params.tenant.take())?;
         params.status_timestamp_after = params
             .status_timestamp_after
             .take()
@@ -96,7 +96,7 @@ impl A2aClient {
 
         let params = {
             let mut built = CancelTaskParams::new(id);
-            built.tenant = self.tenant_or_default(tenant);
+            built.tenant = self.tenant_or_default(tenant)?;
             built
         };
         let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;
@@ -196,7 +196,7 @@ impl A2aClient {
 
         let params = {
             let mut built = TaskIdParams::new(id);
-            built.tenant = self.tenant_or_default(tenant);
+            built.tenant = self.tenant_or_default(tenant)?;
             built
         };
         let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;

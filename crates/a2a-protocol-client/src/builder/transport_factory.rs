@@ -121,6 +121,30 @@ impl ClientBuilder {
         }
     }
 
+    /// What both builds refuse before anything is constructed: a zero
+    /// request or send timeout, and a builder made from a card whose tenant
+    /// the caller replaced, which cannot hold requests to the selected
+    /// interface's tenant
+    /// ([`with_strict_interface_tenant`](Self::with_strict_interface_tenant)).
+    fn validate(&self) -> ClientResult<()> {
+        if self.config.request_timeout.is_zero() || self.config.send_timeout.is_zero() {
+            return Err(ClientError::Config(
+                "request_timeout and send_timeout must be non-zero".into(),
+            ));
+        }
+        if self.tenant_policy == crate::client::TenantPolicy::Strict
+            && self.tenant_set
+            && !self.card_interfaces.is_empty()
+        {
+            return Err(ClientError::Config(
+                "with_strict_interface_tenant holds requests to the selected card interface's \
+                 tenant, and with_tenant replaced it; use one or the other"
+                    .to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Validates configuration and constructs the [`A2aClient`].
     ///
     /// Binding names are matched ignoring ASCII case, as card selection
@@ -139,12 +163,8 @@ impl ClientBuilder {
     /// - [`ClientError::Transport`] if the selected transport cannot be
     ///   initialized; after fallbacks, it names every interface tried.
     pub fn build(mut self) -> ClientResult<A2aClient> {
+        self.validate()?;
         crate::otel_baggage::warn_unknown(&self.config.propagators);
-        if self.config.request_timeout.is_zero() || self.config.send_timeout.is_zero() {
-            return Err(ClientError::Config(
-                "request_timeout and send_timeout must be non-zero".into(),
-            ));
-        }
         if self.config.stream_connect_timeout.is_zero() {
             return Err(ClientError::Config(
                 "stream_connect_timeout must be non-zero".into(),
@@ -199,7 +219,8 @@ impl ClientBuilder {
             .with_peer(peer)
             .with_declared(self.declared)
             .with_peer_honouring_idempotency(self.peer_honours_idempotency)
-            .with_content_keys(self.content))
+            .with_content_keys(self.content)
+            .with_tenant_policy(self.tenant_policy))
     }
 
     /// Checks what [`ClientBuilder::with_extensions`] asks for and adds the
@@ -332,9 +353,10 @@ impl ClientBuilder {
                 .map(|i| format!("{} {} at {}", i.protocol_binding, i.protocol_version, i.url))
                 .collect();
             return Err(ClientError::Config(format!(
-                "build_grpc needs a gRPC interface for A2A protocol major {}, and the agent \
+                "build_grpc needs a gRPC interface for A2A protocol {}.{}, and the agent \
                  card offers none; it offers: {}",
                 super::SUPPORTED_PROTOCOL_MAJOR,
+                super::SUPPORTED_PROTOCOL_MINOR,
                 offered.join(", ")
             )));
         };
@@ -364,12 +386,8 @@ impl ClientBuilder {
     #[cfg(feature = "grpc")]
     pub async fn build_grpc(mut self) -> ClientResult<A2aClient> {
         use crate::transport::grpc::GrpcTransport;
+        self.validate()?;
         crate::otel_baggage::warn_unknown(&self.config.propagators);
-        if self.config.request_timeout.is_zero() || self.config.send_timeout.is_zero() {
-            return Err(ClientError::Config(
-                "request_timeout and send_timeout must be non-zero".into(),
-            ));
-        }
         if self.config.connection_timeout.is_zero() {
             return Err(ClientError::Config(
                 "connection_timeout must be non-zero".into(),
@@ -434,7 +452,8 @@ impl ClientBuilder {
             .with_peer(peer)
             .with_declared(self.declared)
             .with_peer_honouring_idempotency(self.peer_honours_idempotency)
-            .with_content_keys(self.content))
+            .with_content_keys(self.content)
+            .with_tenant_policy(self.tenant_policy))
     }
 }
 

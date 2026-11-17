@@ -233,6 +233,43 @@ fn an_unknown_tool_is_one_series() {
     assert_eq!(tool.get("gen_ai.tool.name"), Some("_OTHER"));
 }
 
+/// The model a provider says answered is its own string: 200 different
+/// names made 200 series on each turn metric (live campaign W2-LIVE-9). A
+/// meter keeps the first 16 names, and records any later one, or one over
+/// 128 bytes, as `_OTHER`.
+#[test]
+fn provider_chosen_model_names_are_bounded_on_the_metrics() {
+    let (meter, reader, _provider) = recording_meter();
+    let meter = GenAiMeter::new(&meter);
+    let long = "m".repeat(129);
+    let names: Vec<String> = (0..200).map(|i| format!("model-{i}")).collect();
+    // The long name first, while every slot is free: it is still `_OTHER`.
+    // `model-0` again once the 16 are taken: a name already kept stays kept.
+    for name in std::iter::once(long.as_str())
+        .chain(names.iter().map(String::as_str))
+        .chain(["model-0"])
+    {
+        let span = GenAiSpan::chat("openai", "qwen3:1.7b", None, &meter);
+        span.answered(Reply {
+            response_model: Some(name),
+            ..Reply::default()
+        });
+    }
+    let rm = collect(&reader);
+    let seen: std::collections::BTreeSet<String> = points(&rm, "gen_ai.client.inference.duration")
+        .iter()
+        .filter_map(|p| p.get("gen_ai.response.model").map(str::to_owned))
+        .collect();
+    let mut want: std::collections::BTreeSet<String> = names[..16].iter().cloned().collect();
+    want.insert("_OTHER".to_owned());
+    assert_eq!(seen, want);
+    let model_0 = points(&rm, "gen_ai.client.inference.duration")
+        .into_iter()
+        .find(|p| p.get("gen_ai.response.model") == Some("model-0"))
+        .expect("model-0");
+    assert_eq!(model_0.count, 2, "{model_0:?}");
+}
+
 /// A turn or call dropped before anything ended it — its token fired, or the
 /// future running it was dropped — is recorded, as `cancelled`, on its span
 /// and its metric; a turn also records the `error` finish reason the

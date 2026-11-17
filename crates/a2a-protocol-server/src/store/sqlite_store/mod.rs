@@ -607,6 +607,10 @@ const SAVE_SQL: &str = concat!(
 );
 
 impl TaskStore for SqliteTaskStore {
+    fn is_process_local(&self) -> bool {
+        crate::sqlite_pool::is_in_memory(&self.pool)
+    }
+
     fn supports_idempotency(&self) -> bool {
         true
     }

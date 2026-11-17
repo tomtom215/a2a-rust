@@ -31,8 +31,12 @@ cmake --build "$LLAMA_DIR/build" --target llama-server -j"$JOBS"
 fetch() { # repo file
   local repo=$1 file=$2
   local want
-  want=$(curl -sS "https://huggingface.co/api/models/$repo/tree/main" |
-    python3 -I -c 'import json,sys; f=sys.argv[1]; print(next(x["lfs"]["oid"] for x in json.load(sys.stdin) if x["path"]==f))' "$file")
+  local tree
+  tree=$(mktemp)
+  # Saved, then read: the listing is data, never piped into an interpreter.
+  curl -sS "https://huggingface.co/api/models/$repo/tree/main" -o "$tree"
+  want=$(python3 -I -c 'import json,sys; f=sys.argv[1]; print(next(x["lfs"]["oid"] for x in json.load(open(sys.argv[2])) if x["path"]==f))' "$file" "$tree")
+  rm -f "$tree"
   if [ ! -s "$MODELS_DIR/$file" ]; then
     curl -sS -L -o "$MODELS_DIR/$file" "https://huggingface.co/$repo/resolve/main/$file"
   fi

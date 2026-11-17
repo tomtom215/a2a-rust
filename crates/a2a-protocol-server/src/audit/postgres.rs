@@ -10,12 +10,13 @@ use a2a_protocol_types::error::A2aResult;
 use sqlx::Row;
 use sqlx::postgres::PgPool;
 
-use super::store::{Appended, AuditStore, BoxFuture, LegalHold, Sealer, SubjectKey, record_millis};
-
-mod sql;
-use sql::{
-    HEAD_AND_CLOCK_SQL, INSERT_SQL, LOCK_CHAIN_SQL, SCHEMA, db, i64_of, json, parse, u64_of,
+use super::store::{
+    Appended, AuditStore, BoxFuture, LegalHold, NamedAppend, Sealer, SubjectKey, record_millis,
 };
+
+mod fence;
+mod sql;
+use sql::{INSERT_SQL, LOCK_CHAIN_SQL, SCHEMA, db, i64_of, json, parse, u64_of};
 
 /// An [`AuditStore`] in `PostgreSQL` tables `a2a_audit_records`,
 /// `a2a_audit_checkpoints`, `a2a_audit_holds` and `a2a_audit_subject_keys`,
@@ -113,33 +114,12 @@ impl AuditStore for PostgresAuditStore {
         seal: &'a Sealer<'a>,
     ) -> BoxFuture<'a, A2aResult<Option<AuditRecord>>> {
         Box::pin(async move {
-            let mut tx = self.pool.begin().await.map_err(|e| db(&e))?;
-            sqlx::query(LOCK_CHAIN_SQL)
-                .bind(chain)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| db(&e))?;
-            let row = sqlx::query(HEAD_AND_CLOCK_SQL)
-                .bind(chain)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|e| db(&e))?;
-            let head = row
-                .get::<Option<i64>, _>(0)
-                .zip(row.get::<Option<String>, _>(1))
-                .map(|(seq, hash)| (u64_of(seq), hash));
-            let record = seal(head, Some(row.get::<i64, _>(2))).await?;
-            let done = sqlx::query(INSERT_SQL)
-                .bind(&record.chain)
-                .bind(i64_of(record.seq))
-                .bind(record_millis(&record))
-                .bind(&record.hash)
-                .bind(json(&record)?)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| db(&e))?;
-            tx.commit().await.map_err(|e| db(&e))?;
-            Ok((done.rows_affected() == 1).then_some(record))
+            Ok(
+                match fence::append_next(&self.pool, chain, &[], seal).await? {
+                    NamedAppend::Stored(record) => Some(*record),
+                    _ => None,
+                },
+            )
         })
     }
 
@@ -428,6 +408,40 @@ impl AuditStore for PostgresAuditStore {
             .map_err(|e| db(&e))?;
             Ok(row.map(|r| r.get(0)))
         })
+    }
+
+    /// Under the chain's advisory lock, which the two deletions below take too.
+    fn append_next_naming<'a>(
+        &'a self,
+        chain: &'a str,
+        sids: &'a [String],
+        seal: &'a Sealer<'a>,
+    ) -> BoxFuture<'a, A2aResult<NamedAppend>> {
+        Box::pin(fence::append_next(&self.pool, chain, sids, seal))
+    }
+
+    fn delete_subject_key_unless_named<'a>(
+        &'a self,
+        chain: &'a str,
+        lookup: &'a str,
+        sid: &'a str,
+        scanned_through: u64,
+    ) -> BoxFuture<'a, A2aResult<bool>> {
+        Box::pin(fence::delete_key_unless_named(
+            &self.pool,
+            chain,
+            lookup,
+            sid,
+            scanned_through,
+        ))
+    }
+
+    fn delete_subject_keys_unless_held<'a>(
+        &'a self,
+        chain: &'a str,
+        lookups: &'a [String],
+    ) -> BoxFuture<'a, A2aResult<Option<Vec<String>>>> {
+        Box::pin(fence::delete_keys_unless_held(&self.pool, chain, lookups))
     }
 }
 

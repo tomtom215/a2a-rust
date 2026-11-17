@@ -48,7 +48,7 @@ What the Dockerfile does, and why:
   and the last stage builds the workspace's own crates on top. Docker reuses
   the dependency layer until a manifest or `Cargo.lock` changes: after a
   change to the source only, a rebuild took 221 s against 428 s from nothing.
-- **Pinned bases.** `rust:1.94-bookworm` to build and `debian:bookworm-slim`
+- **Pinned bases.** `rust:1.98-bookworm` to build and `debian:bookworm-slim`
   to run, each pinned by digest. Debian slim rather than scratch, which has
   no glibc, and rather than `distroless/cc`, which has glibc and would run
   the binary too: slim keeps a shell, which `docker exec`, the health check

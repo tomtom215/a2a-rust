@@ -61,6 +61,9 @@ A turn's instruments carry `gen_ai.operation.name` (`chat`),
 `gen_ai.response.model`, `server.address` and `server.port`; the usage
 counters add `gen_ai.token.modality` = `text`. A run's carry
 `gen_ai.request.model` and the name `with_agent_name` gives the loop.
+`gen_ai.response.model` is the provider's string, so on metrics a meter keeps
+the first 16 names it sees and records any later one, or one over 128 bytes,
+as `_OTHER`; the span keeps the name as given.
 
 `error.type` says why a turn, a call or a run failed:
 

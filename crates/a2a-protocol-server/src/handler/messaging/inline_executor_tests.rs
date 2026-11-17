@@ -277,3 +277,109 @@ async fn on_two_workers_the_executor_has_its_own_task() {
     assert_eq!(state_of(answered), TaskState::Completed);
     assert!(eventually(&handler, |h| h.in_flight.executors().is_empty()).await);
 }
+
+// ── An inline executor is polled while its events are folded ────────────────
+
+/// The in-memory store, whose saves take `lock`: a resource the executor
+/// also holds, as the audit chain lock is held by `AuditedPolicy` while the
+/// folding of an event records the event in the same chain.
+struct LockedStore {
+    inner: crate::store::InMemoryTaskStore,
+    lock: Arc<tokio::sync::Mutex<()>>,
+}
+
+impl crate::store::TaskStore for LockedStore {
+    fn save<'a>(&'a self, task: &'a a2a_protocol_types::task::Task) -> ExecFuture<'a> {
+        Box::pin(async move {
+            let _held = self.lock.lock().await;
+            self.inner.save(task).await
+        })
+    }
+    fn get<'a>(
+        &'a self,
+        id: &'a a2a_protocol_types::task::TaskId,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = A2aResult<Option<a2a_protocol_types::task::Task>>>
+                + Send
+                + 'a,
+        >,
+    > {
+        self.inner.get(id)
+    }
+    fn list<'a>(
+        &'a self,
+        params: &'a a2a_protocol_types::params::ListTasksParams,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = A2aResult<a2a_protocol_types::responses::TaskListResponse>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        self.inner.list(params)
+    }
+    fn insert_if_absent<'a>(
+        &'a self,
+        task: &'a a2a_protocol_types::task::Task,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = A2aResult<bool>> + Send + 'a>> {
+        self.inner.insert_if_absent(task)
+    }
+    fn delete<'a>(&'a self, id: &'a a2a_protocol_types::task::TaskId) -> ExecFuture<'a> {
+        self.inner.delete(id)
+    }
+}
+
+/// Holds `lock` while it writes `Working` and waits a moment, then lets it
+/// go and completes.
+struct LockingExec {
+    lock: Arc<tokio::sync::Mutex<()>>,
+}
+
+impl AgentExecutor for LockingExec {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> ExecFuture<'a> {
+        Box::pin(async move {
+            {
+                let _held = self.lock.lock().await;
+                write_state(ctx, queue, TaskState::Working).await;
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            write_state(ctx, queue, TaskState::Completed).await;
+            Ok(())
+        })
+    }
+}
+
+/// The collecting task folds an event while the executor it runs holds a
+/// lock that folding needs. Until 2026-11-13 the executor was not polled
+/// while an event was folded, so it never let the lock go and the send hung
+/// until the executor timeout (an hour by default): found by the live
+/// approval test (`tests/tool_loop_audit_live.rs`), where the lock was the
+/// audit chain's, held by `AuditedPolicy` across a store read.
+#[tokio::test]
+async fn an_executor_holding_what_a_fold_needs_is_still_polled() {
+    let lock = Arc::new(tokio::sync::Mutex::new(()));
+    let handler = RequestHandlerBuilder::new(LockingExec {
+        lock: Arc::clone(&lock),
+    })
+    .with_task_store(LockedStore {
+        inner: crate::store::InMemoryTaskStore::new(),
+        lock: Arc::clone(&lock),
+    })
+    .without_agent_card()
+    .build()
+    .expect("handler builds");
+    let answered = tokio::time::timeout(
+        Duration::from_secs(10),
+        handler.on_send_message(params(), false, None),
+    )
+    .await
+    .expect("the send deadlocked: its executor was not polled while an event was folded")
+    .expect("send succeeds");
+    assert_eq!(state_of(answered), TaskState::Completed);
+}

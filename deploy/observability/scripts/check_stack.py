@@ -17,7 +17,10 @@ Kubernetes manifests generated from it.
 3. Every image in docker-compose.yml is pinned by digest (audit C-19), and
    the Prometheus and Alertmanager tags are the versions install_tools.sh
    installs promtool and amtool from, so CI checks with the tools the stack
-   runs (a Dependabot image bump fails until the tool pins move too).
+   runs (a Dependabot image bump fails until the tool pins move too). No
+   tag names one architecture (`0.164.0-386`): such a tag's digest is a
+   single-platform image, not the multi-platform index, and Dependabot
+   proposed one for the Collector on 2026-11-09 (#205).
 4. deploy/kubernetes/observability/ holds exactly what --write-kubernetes
    generates from the rules and dashboards (audit C-22): a PrometheusRule and
    one dashboard ConfigMap per dashboard.
@@ -60,9 +63,29 @@ HEADER = (
 _ARM = re.compile(r"((?:\|\s*)?Self::\w+(?:\s*\|\s*Self::\w+)*)\s*=>\s*(\d{3})")
 
 
+# A tag that names one architecture: its digest is that platform's image.
+_ARCH_TAG = re.compile(r"-(?:386|amd64|arm64(?:v8)?|armv[5-8]|arm|ppc64le|s390x|riscv64)$")
+
+
+def single_platform_tag(image: str) -> bool:
+    """Whether `repo:tag@digest` pins a tag that names one architecture."""
+    tag = image.split("@")[0].rsplit(":", 1)[-1]
+    return bool(_ARCH_TAG.search(tag))
+
+
 def _self_test() -> list[str]:
-    """Proves _ARM reads the arms it is for and cannot be made to backtrack."""
+    """Proves _ARM reads the arms it is for and cannot be made to backtrack,
+    and that a single-architecture tag is told from a version."""
     problems: list[str] = []
+    for image, want in (
+        ("otel/opentelemetry-collector-contrib:0.164.0-386@sha256:" + "0" * 64, True),
+        ("grafana/grafana:13.3.0-arm64@sha256:" + "0" * 64, True),
+        ("otel/opentelemetry-collector-contrib:0.164.0@sha256:" + "0" * 64, False),
+        ("prom/prometheus:v3.16.0@sha256:" + "0" * 64, False),
+        ("grafana/loki:3.7.9-rc.1@sha256:" + "0" * 64, False),
+    ):
+        if single_platform_tag(image) != want:
+            problems.append(f"self-test: single_platform_tag({image.split('@')[0]}) is not {want}")
     sample = (
         "Self::A | Self::B => 404,\n"
         "            Self::C\n"
@@ -166,6 +189,10 @@ def check_image_pins(problems: list[str]) -> None:
         image = svc.get("image", "")
         if not re.fullmatch(r"[\w./-]+:[\w.-]+@sha256:[0-9a-f]{64}", image):
             problems.append(f"docker-compose.yml: service {name}: image {image!r} is not pinned by tag and digest")
+        if single_platform_tag(image):
+            problems.append(
+                f"docker-compose.yml: service {name}: tag {image.split('@')[0]!r} names one architecture; "
+                "pin the multi-platform tag's index digest instead")
         for repo, key in (("prom/prometheus", "PROMETHEUS"), ("prom/alertmanager", "ALERTMANAGER")):
             if image.startswith(repo + ":") and not image.startswith(f"{repo}:v{pins.get(key)}@"):
                 problems.append(

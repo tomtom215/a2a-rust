@@ -307,7 +307,7 @@ Their attributes:
 
 | Instruments | Attributes |
 |---|---|
-| A turn's duration and token histograms | `gen_ai.operation.name` (`chat`), `gen_ai.provider.name`, `gen_ai.request.model`; when known `gen_ai.response.model`, `server.address`, `server.port`; `error.type` on failure |
+| A turn's duration and token histograms | `gen_ai.operation.name` (`chat`), `gen_ai.provider.name`, `gen_ai.request.model`; when known `gen_ai.response.model` (the first 16 names a process sees, `_OTHER` after, or for one over 128 bytes), `server.address`, `server.port`; `error.type` on failure |
 | The usage counters | The same without `error.type`, plus `gen_ai.token.modality` (`text`) |
 | `gen_ai.execute_tool.duration` | `gen_ai.tool.name`, `gen_ai.tool.type` (`function`); `error.type` on failure |
 | `gen_ai.invoke_agent.duration` | `gen_ai.request.model`, `gen_ai.agent.name` (from `ToolLoop::with_agent_name`, when set); `error.type` on failure |

@@ -104,9 +104,15 @@ pub(crate) enum CallerIsolation {
 
 #[cfg(test)]
 mod dead_webhook_tests;
+mod durable;
+#[cfg(test)]
+mod durable_tests;
 mod multi_tenant;
 #[cfg(test)]
 mod multi_tenant_tests;
+mod regulated;
+#[cfg(test)]
+mod regulated_tests;
 mod shared_stores;
 mod steering;
 
@@ -219,6 +225,8 @@ pub struct RequestHandlerBuilder {
     audit: Option<Arc<crate::audit::AuditLog>>,
     /// The profiles applied; `build()` checks what each needs.
     profiles: Vec<crate::profile::ProfileKind>,
+    /// What the deployment declared about controls outside this process.
+    external_controls: Vec<(crate::profile::ExternalControl, String)>,
 }
 
 impl std::fmt::Debug for TurnClaimsChoice {
@@ -301,6 +309,7 @@ impl RequestHandlerBuilder {
             #[cfg(feature = "audit")]
             audit: None,
             profiles: Vec::new(),
+            external_controls: Vec::new(),
         }
     }
 
@@ -477,6 +486,18 @@ impl RequestHandlerBuilder {
                     self.caller_isolation = Some(CallerIsolation::EveryCaller);
                 }
                 self.require_resolved_tenant = true;
+            }
+            crate::profile::Profile::LocalDevelopment => {
+                self.profiles
+                    .push(crate::profile::ProfileKind::LocalDevelopment);
+            }
+            crate::profile::Profile::DurableProduction => {
+                self.profiles
+                    .push(crate::profile::ProfileKind::DurableProduction);
+            }
+            crate::profile::Profile::RegulatedData => {
+                self.profiles
+                    .push(crate::profile::ProfileKind::RegulatedData);
             }
         }
         self
@@ -1160,6 +1181,27 @@ impl RequestHandlerBuilder {
         self
     }
 
+    /// Declares how a control outside this process is met, for the record:
+    /// `how` says what the deployment does (`"backups: nightly pg_dump to
+    /// another region; restore rehearsed 2026-10-30"`). Nothing checks it. It
+    /// is carried into [`RequestHandler::profile_report`](crate::RequestHandler::profile_report)
+    /// as declared, not verified, so the record of what the handler was built
+    /// to promise says what the deployment said it does, beside what was
+    /// checked. Declaring a control again replaces the earlier declaration.
+    /// `build()` refuses a declaration whose text is blank, and
+    /// [`Profile::RegulatedData`](crate::profile::Profile::RegulatedData)
+    /// refuses to build without the declarations it relies on.
+    #[must_use]
+    pub fn declare_external_control(
+        mut self,
+        control: crate::profile::ExternalControl,
+        how: impl Into<String>,
+    ) -> Self {
+        self.external_controls.retain(|(c, _)| *c != control);
+        self.external_controls.push((control, how.into()));
+        self
+    }
+
     /// Applies per-tenant resource limits.
     ///
     /// The handler enforces `max_concurrent_tasks`, `executor_timeout` and
@@ -1340,6 +1382,10 @@ impl RequestHandlerBuilder {
             ));
         }
 
+        // Two profiles that contradict each other are named before either one's
+        // requirements.
+        self.check_local_and_durable()?;
+        self.check_declarations_and_regulated()?;
         #[cfg(feature = "audit")]
         if self
             .profiles
@@ -1359,6 +1405,8 @@ impl RequestHandlerBuilder {
         {
             self.check_multi_tenant()?;
         }
+        // Read before any field is moved out below.
+        let profile_report = self.profile_report();
 
         // Validate executor timeout is not zero.
         if let Some(timeout) = self.executor_timeout
@@ -1748,6 +1796,7 @@ impl RequestHandlerBuilder {
             }
         };
         let handler = RequestHandler {
+            profile_report,
             executor: self.executor,
             task_store,
             push_config_store,
@@ -1999,6 +2048,7 @@ impl std::fmt::Debug for RequestHandlerBuilder {
         let local = self.allow_process_local_stores;
         d.field("allow_process_local_stores", &local);
         d.field("profiles", &self.profiles);
+        d.field("external_controls", &self.external_controls);
         #[cfg(feature = "audit")]
         d.field("audit", &self.audit.is_some());
         d.finish()

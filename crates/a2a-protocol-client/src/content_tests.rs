@@ -18,7 +18,9 @@ use super::*;
 use crate::error::ClientError;
 
 fn requiring() -> ContentKeys {
-    ContentKeys::new(Jwks::new(Vec::new())).requiring_signatures()
+    ContentKeys::default()
+        .with_keys(Jwks::new(Vec::new()))
+        .requiring_signatures()
 }
 
 fn unsigned() -> Message {

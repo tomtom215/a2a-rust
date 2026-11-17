@@ -1,0 +1,5 @@
+{"attack": "database link paused 8 s mid-turn, resumed", "verdict": "held", "detail": {"replicas_alive": [true, true]}}
+{"attack": "database link cut (all connections reset) 3 s, restored", "verdict": "held", "detail": {}}
+{"attack": "dbpause: invariants", "verdict": "held", "detail": {"problems": [], "invariants": {"tasks": 30, "states": {"TASK_STATE_COMPLETED": 30}, "not_terminal": 0, "tasks_with_2plus_terminal_events": 0, "tasks_with_no_terminal_event": 0, "events_after_terminal": 0, "state_differs_from_terminal_event": 0, "orphan_claims_on_terminal_tasks": 0, "claims_total": 0, "seq_gaps": 0, "sent_but_missing": 0}, "tasks_whose_executor_started_twice": 0, "examples": {}, "settled": true}}
+{"attack": "a send works after the link is back", "verdict": "held", "detail": {}}
+{"tally": {"tried": 4, "held": 4, "deviation": 0}}

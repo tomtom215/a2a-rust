@@ -230,13 +230,19 @@ fn results(seen: &[Seen], turn: usize) -> Vec<(String, String)> {
 mod answers;
 #[cfg(feature = "audit")]
 mod audited;
+#[cfg(feature = "audit")]
+mod audited_approval;
 mod budget;
 mod cancel;
 mod idempotency;
 mod journal;
 mod journal_approval;
 mod journal_binding;
+mod journal_finish;
+#[cfg(feature = "encryption")]
+mod journal_sealed;
 mod journal_writes;
+mod limits_and_ids;
 mod recovery;
 mod retry;
 mod schema;

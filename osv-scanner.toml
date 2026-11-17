@@ -8,8 +8,9 @@
 # mirror of a `deny.toml` ignore, with the evidence and a date on which the
 # entry stops applying and must be re-examined (`osv.yml`).
 #
-# One active waiver, RUSTSEC-2026-0459 below, since 2026-11-11: the mirror of
-# the `deny.toml` ignore of the same id, which carries the full note.
+# Two active waivers, each the mirror of the `deny.toml` ignore of the same
+# id, which carries the full note: RUSTSEC-2026-0459 since 2026-11-11, and
+# RUSTSEC-2026-0543 since 2026-11-17.
 #
 # History: GHSA-qwgh-2vcv-g2f7 (block-buffer 0.10.4) was waived on 2026-10-29
 # and removed on 2026-11-11. OSV narrowed that advisory on 2026-10-30 to
@@ -35,4 +36,13 @@
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0459"
 ignoreUntil = 2027-02-11
-reason = "libsqlite3-sys 0.37 is pinned by sqlx-sqlite 0.9.0, the latest sqlx (checked 2026-11-11); local attack through a crafted database and -wal pair; opt-in `sqlite` feature only; mirrors the deny.toml ignore. Remove when sqlx allows libsqlite3-sys >= 0.39."
+reason = "libsqlite3-sys 0.37 is pinned by sqlx-sqlite 0.9.0, the latest sqlx (checked 2026-11-14); local attack through a crafted database and -wal pair; opt-in `sqlite` feature only; mirrors the deny.toml ignore. Remove when sqlx allows libsqlite3-sys >= 0.39."
+
+# RUSTSEC-2026-0543 (`chrono` unmaintained: no fixed version, no affected
+# function). Locked here: 0.4.45, reached only by the examples through rmcp
+# 3.10.0 and schemars 1.2.3 (the latest, checked 2026-11-17); no published crate
+# depends on it. Upstream: chronotope/chrono#1768.
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0543"
+ignoreUntil = 2027-02-17
+reason = "chrono unmaintained (no fix, not a vulnerability); reached only by the examples through rmcp 3.10.0 and schemars 1.2.3, the latest (checked 2026-11-17); mirrors the deny.toml ignore."

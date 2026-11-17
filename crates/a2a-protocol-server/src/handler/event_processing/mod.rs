@@ -119,6 +119,43 @@ where
     }
 }
 
+tokio::task_local! {
+    /// Set when a task's ending could not be made durable on this turn: not
+    /// appended to its log, or its webhooks' deliveries not durably queued.
+    static ENDING_OWED: std::cell::Cell<bool>;
+}
+
+/// Notes, for the turn running in this task, that its task's ending is still
+/// owed (adversarial review N05, N06). Outside [`owing_ending`] it does
+/// nothing.
+pub fn note_ending_owed() {
+    let _ = ENDING_OWED.try_with(|owed| owed.set(true));
+}
+
+/// Runs `work`, and returns with its output whether it noted an ending owed
+/// ([`note_ending_owed`]); the caller then keeps the turn's claim for the
+/// reaper ([`TurnClaim::keep_for_repair`](crate::handler::claims::TurnClaim::keep_for_repair)).
+pub async fn owing_ending<F: std::future::Future>(work: F) -> (F::Output, bool) {
+    ENDING_OWED
+        .scope(std::cell::Cell::new(false), async {
+            let out = work.await;
+            (out, ENDING_OWED.with(std::cell::Cell::get))
+        })
+        .await
+}
+
+/// Runs `work`, a turn's processing, and keeps `claim` for the reaper if the
+/// turn left its task's ending owed ([`owing_ending`]).
+pub async fn keeping_claim_if_owed(
+    claim: Option<&std::sync::Arc<crate::handler::claims::TurnClaim>>,
+    work: std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>>,
+) {
+    let ((), owed) = owing_ending(work).await;
+    if owed && let Some(claim) = claim {
+        claim.keep_for_repair();
+    }
+}
+
 /// Appends `event`, the ending of a task that no queued event carries, to the
 /// task's event log (audit D-03, E-F9).
 ///
@@ -132,17 +169,20 @@ where
 /// The position is one past the later of the log's end and the position the
 /// stored task reflects, as `admission::resume_after` numbers a turn: past
 /// both, an append that failed earlier leaves a hole the replay reports and no
-/// position names two events. A failure is logged and counted, never raised:
-/// the status is already stored, and the log is a record of the run.
+/// position names two events. A failure is logged and counted, not raised:
+/// the status is already stored, and the log is a record of the run. It is
+/// returned, `false`, so that the caller keeps the task's claim and the reaper
+/// appends the ending later (adversarial review N05, 2026-11-13); `true`
+/// when the ending is appended or the store keeps no log.
 pub async fn append_ending(
     task_store: &dyn crate::store::TaskStore,
     task_id: &a2a_protocol_types::task::TaskId,
     event: &a2a_protocol_types::events::StreamResponse,
     metrics: &dyn crate::metrics::Metrics,
     retry: std::time::Duration,
-) {
+) -> bool {
     if !task_store.supports_event_log() {
-        return;
+        return true;
     }
     let appended = persisting(
         retry,
@@ -171,7 +211,10 @@ pub async fn append_ending(
             crate::metrics::persistence_operation::EVENT_APPEND,
             e.metric_label(),
         );
+        note_ending_owed();
+        return false;
     }
+    true
 }
 
 /// Returns `true` if appending `new_parts` more parts to an artifact that

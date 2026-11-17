@@ -82,9 +82,12 @@ This policy covers **every crate published from this repository**:
   workspace" therefore did not reach it, which is why this section now names
   it. Two things a reporter should know about it: it has **never been
   published to crates.io** (see `RELEASING.md`), so no released artifact is
-  affected today; and its one advisory waiver, RUSTSEC-2026-0459 (`libsqlite3-sys`
-  0.35, 2026-11-11, no fixed release reachable through SLIM's dependencies),
-  is explained in its `deny.toml` and mirrored in its `osv-scanner.toml`;
+  affected today; and its advisory waivers, RUSTSEC-2026-0459 (`libsqlite3-sys`
+  0.35, 2026-11-11, no fixed release reachable through SLIM's dependencies)
+  and, since 2026-11-17, RUSTSEC-2026-0543 and -0555 (`chrono` and `chrono-tz`
+  marked unmaintained, through SLIM's dependencies: notices, not
+  vulnerabilities, with no fixed release), are explained in its `deny.toml`
+  and mirrored in its `osv-scanner.toml`;
   before it, only a `block-buffer` waiver (GHSA-qwgh-2vcv-g2f7,
   2026-10-29 to 2026-11-11, dropped when OSV narrowed the advisory) and, before
   that, none since 2026-10-15.

@@ -28,10 +28,14 @@ impl A2aClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ClientError`] on transport or protocol errors, and
+    /// Returns [`ClientError`] on transport or protocol errors,
     /// [`ClientError::InvalidAgentResponse`] for a card that breaks the rules
-    /// a server publishes one by (`AgentCard::validate`), in which case
-    /// nothing is adopted from it.
+    /// a server publishes one by (`AgentCard::validate`), and
+    /// [`ClientError::Protocol`] for a card with no signature, or none that
+    /// verifies, when the client verifies cards
+    /// (`ClientBuilder::with_card_signature_keys`, set by
+    /// `ClientBuilder::from_signed_card`; both need the `signing` feature).
+    /// In each case nothing is adopted from it.
     pub async fn get_extended_agent_card(&self) -> ClientResult<AuthenticatedExtendedCardResponse> {
         const METHOD: &str = "GetExtendedAgentCard";
         self.require_declared(crate::declared::Capability::ExtendedAgentCard, METHOD)?;
@@ -39,7 +43,7 @@ impl A2aClient {
         // `GetExtendedAgentCardRequest` has exactly one field, `tenant`
         // (§8.3.2 rule 4 applies to it like any other request). Parameterless
         // stays `null` so the wire is unchanged for single-tenant agents.
-        let params = self.tenant_or_default(None).map_or(
+        let params = self.tenant_or_default(None)?.map_or(
             serde_json::Value::Null,
             |tenant| serde_json::json!({ "tenant": tenant }),
         );
@@ -47,6 +51,10 @@ impl A2aClient {
         self.interceptors.run_before(&mut req).await?;
 
         self.send_decoded(METHOD, &mut req, |mut result| {
+            // As received, before any field is read or dropped: the signer
+            // covered the JSON, not the typed card (N10).
+            #[cfg(feature = "signing")]
+            self.content.extended_card(&result)?;
             crate::legacy_card::read_as_current(&mut result);
             let card = serde_json::from_value::<AuthenticatedExtendedCardResponse>(result)
                 .map_err(ClientError::Serialization)?;

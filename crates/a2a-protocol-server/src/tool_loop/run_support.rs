@@ -83,11 +83,42 @@ pub(super) fn limit_calls(
 }
 
 /// Gives each of `calls` that has no id one, `call-<turn>-<position>`, so its
-/// result can be matched to it.
-pub(super) fn give_ids(calls: &mut [ToolCall], turn: usize) {
-    for (i, call) in calls.iter_mut().enumerate() {
-        if call.id.is_empty() {
-            call.id = format!("call-{turn}-{i}");
+/// result can be matched to it: one that no other call of the reply and no
+/// call earlier in the run has (a suffix `-<n>` when a provider already used
+/// that name; adversarial review N08, 2026-11-13).
+pub(super) fn give_ids(calls: &mut [ToolCall], turn: usize, earlier: &[super::model::ChatMessage]) {
+    let mut taken: std::collections::HashSet<String> = calls
+        .iter()
+        .filter(|c| !c.id.is_empty())
+        .map(|c| c.id.clone())
+        .collect();
+    for message in earlier {
+        if let super::model::ChatMessage::Assistant { tool_calls, .. } = message {
+            taken.extend(tool_calls.iter().map(|c| c.id.clone()));
         }
     }
+    for (i, call) in calls.iter_mut().enumerate() {
+        if call.id.is_empty() {
+            let mut id = format!("call-{turn}-{i}");
+            let mut n = 1;
+            while taken.contains(&id) {
+                id = format!("call-{turn}-{i}-{n}");
+                n += 1;
+            }
+            taken.insert(id.clone());
+            call.id = id;
+        }
+    }
+}
+
+/// The first id two of `calls` share. A reply like that is refused before
+/// any of its calls runs: each result goes back under its call's id, and two
+/// results under one id cannot be told apart, by the provider or by the
+/// journal on resume (N08).
+pub(super) fn repeated_id(calls: &[ToolCall]) -> Option<String> {
+    let mut seen = std::collections::HashSet::new();
+    calls
+        .iter()
+        .find(|c| !seen.insert(c.id.as_str()))
+        .map(|c| c.id.clone())
 }

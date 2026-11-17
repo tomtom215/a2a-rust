@@ -219,6 +219,8 @@ pub struct RequestHandler {
     pub(crate) halt_sync: Option<Arc<halt::sync::HaltSync>>,
     /// The leases this handler grants and watches, if any; see [`lease`].
     pub(crate) leases: Option<lease::Leases>,
+    /// What the deployment profiles guarantee, as `build()` left them.
+    pub(crate) profile_report: crate::profile::ProfileReport,
     /// Checks approval decisions on continuations; see [`crate::approval`].
     pub(crate) approval_gate: Option<crate::approval::ApprovalGate>,
     /// The turn claims of a store several replicas share, if any; see
@@ -261,6 +263,16 @@ pub(crate) struct CancellationEntry {
 }
 
 impl RequestHandler {
+    /// What this handler's deployment profiles guarantee: what `build()`
+    /// checked, which escape hatch gave up which guarantee, and what no check
+    /// at startup can establish ([`ProfileReport`](crate::profile::ProfileReport)).
+    /// Log it at startup (it implements `Display`) so the deployment's record
+    /// says what it was built to promise.
+    #[must_use]
+    pub const fn profile_report(&self) -> &crate::profile::ProfileReport {
+        &self.profile_report
+    }
+
     /// Returns the tenant resolver, if configured.
     ///
     /// Use this in dispatchers or middleware to resolve the tenant identity

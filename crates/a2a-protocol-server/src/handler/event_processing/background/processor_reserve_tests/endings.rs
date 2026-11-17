@@ -18,11 +18,12 @@ async fn an_ending_recorded_after_a_crash_is_delivered_behind_the_reserved_event
     parked(&rig).await;
     rig.kill_a(running).await;
 
-    assert!(
+    assert_eq!(
         rig.b
             .record_now(&TaskId::new("t"), &status(2, TaskState::Failed).event)
             .await,
-        "the handler has an outbox"
+        Some(crate::handler::event_processing::background::push_delivery::Recorded::Durable),
+        "the handler has an outbox, and it took the rows"
     );
     rig.wait(Duration::from_secs(30)).await;
     assert!(
@@ -52,10 +53,11 @@ async fn an_ending_recorded_after_a_crash_is_delivered_behind_the_reserved_event
 /// Without an outbox there is nothing to record in: the caller sends it.
 #[tokio::test]
 async fn without_an_outbox_nothing_is_recorded() {
-    assert!(
-        !crate::handler::PushLanes::default()
+    assert_eq!(
+        crate::handler::PushLanes::default()
             .record_now(&TaskId::new("t"), &status(1, TaskState::Failed).event)
-            .await
+            .await,
+        None
     );
 }
 

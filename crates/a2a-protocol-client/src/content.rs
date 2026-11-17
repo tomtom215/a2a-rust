@@ -38,6 +38,11 @@ pub struct ContentKeys {
     keys: Option<std::sync::Arc<a2a_protocol_types::signing::Jwks>>,
     #[cfg(feature = "signing")]
     require_signed: bool,
+    /// What the agent's cards are verified against: the keys the public card
+    /// was verified with, which an extended card must verify against too
+    /// (adversarial review N10, 2026-11-13).
+    #[cfg(feature = "signing")]
+    card: Option<std::sync::Arc<a2a_protocol_types::signing::Jwks>>,
 }
 
 impl std::fmt::Debug for ContentKeys {
@@ -45,19 +50,42 @@ impl std::fmt::Debug for ContentKeys {
         let mut d = f.debug_struct("ContentKeys");
         #[cfg(feature = "signing")]
         d.field("keys", &self.keys.as_ref().map(|k| k.keys.len()))
-            .field("require_signed", &self.require_signed);
+            .field("require_signed", &self.require_signed)
+            .field("card_keys", &self.card.as_ref().map(|k| k.keys.len()));
         d.finish()
     }
 }
 
 impl ContentKeys {
-    /// Checking against `keys`.
+    /// Checking content against `keys`, keeping the rest.
     #[cfg(feature = "signing")]
-    pub fn new(keys: a2a_protocol_types::signing::Jwks) -> Self {
-        Self {
-            keys: Some(std::sync::Arc::new(keys)),
-            require_signed: false,
-        }
+    #[must_use]
+    pub fn with_keys(mut self, keys: a2a_protocol_types::signing::Jwks) -> Self {
+        self.keys = Some(std::sync::Arc::new(keys));
+        self
+    }
+
+    /// Verifying the agent's extended card against `keys`.
+    #[cfg(feature = "signing")]
+    #[must_use]
+    pub fn with_card_keys(mut self, keys: a2a_protocol_types::signing::Jwks) -> Self {
+        self.card = Some(std::sync::Arc::new(keys));
+        self
+    }
+
+    /// Verifies an extended card, as received, before anything is read from
+    /// it: against the keys the client's card was verified with, when it was;
+    /// a card with no signature, or none that verifies, is refused. With no
+    /// card keys there is nothing to verify against, and the card passes.
+    #[cfg(feature = "signing")]
+    pub fn extended_card(&self, raw: &serde_json::Value) -> ClientResult<()> {
+        let Some(keys) = &self.card else {
+            return Ok(());
+        };
+        crate::discovery::verify_card_signatures(
+            raw,
+            &crate::discovery::CardFetchOptions::default().with_signature_keys((**keys).clone()),
+        )
     }
 
     /// Refusing unsigned content as well.

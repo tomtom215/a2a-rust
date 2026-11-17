@@ -1,0 +1,3 @@
+rc-2026-11-14-arm (arm): A died (exit -9) at 0.6 s; receiver so far: ['status:TASK_STATE_WORKING']; outbox rows: 1 1 (rows, unarmed)
+rc-2026-11-14-arm (arm): receiver saw [('status:TASK_STATE_WORKING', 0.5), ('artifact:A-early', 30.4), ('status:TASK_STATE_FAILED', 30.4)]; 0 retry(ies) under an id already seen; outbox rows left 0
+rc-2026-11-14-arm: the artifact in the window was delivered once, 30 s after the kill, by the survivor, before the ending

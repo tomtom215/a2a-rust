@@ -1,0 +1,3 @@
+rc-2026-11-14-reserve (reserve): A died (exit -9) at 0.7 s; receiver so far: ['status:TASK_STATE_WORKING']; outbox rows: 1 1 (rows, unarmed)
+rc-2026-11-14-reserve (reserve): receiver saw [('status:TASK_STATE_WORKING', 0.6), ('status:TASK_STATE_FAILED', 30.5)]; 0 retry(ies) under an id already seen; outbox rows left 0
+rc-2026-11-14-reserve: no delivery for the event the task never stored

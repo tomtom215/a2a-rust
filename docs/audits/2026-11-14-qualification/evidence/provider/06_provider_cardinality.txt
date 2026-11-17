@@ -1,0 +1,32 @@
+== metric label cardinality: 200 replies, 200 model names (load 1.23)
+   a2a.server.executor.duration: 1 series; labels with >1 value: {}
+   a2a.server.pool.active: 1 series; labels with >1 value: {}
+   a2a.server.pool.closed: 1 series; labels with >1 value: {}
+   a2a.server.pool.created: 1 series; labels with >1 value: {}
+   a2a.server.pool.idle: 1 series; labels with >1 value: {}
+   a2a.server.queue_depth: 1 series; labels with >1 value: {}
+   a2a.server.request.duration: 1 series; labels with >1 value: {}
+   a2a.server.requests: 1 series; labels with >1 value: {}
+   a2a.server.responses: 1 series; labels with >1 value: {}
+   a2a.telemetry.export.failed: 3 series; labels with >1 value: {'signal': 3}
+   gen_ai.client.inference.duration: 17 series; labels with >1 value: {'gen_ai.response.model': 17}
+   gen_ai.client.inference.operation.input_tokens: 17 series; labels with >1 value: {'gen_ai.response.model': 17}
+   gen_ai.client.inference.operation.output_tokens: 17 series; labels with >1 value: {'gen_ai.response.model': 17}
+   gen_ai.client.inference.usage.input_tokens: 17 series; labels with >1 value: {'gen_ai.response.model': 17}
+   gen_ai.client.inference.usage.output_tokens: 17 series; labels with >1 value: {'gen_ai.response.model': 17}
+   gen_ai.invoke_agent.duration: 1 series; labels with >1 value: {}
+   gen_ai.invoke_agent.inference_calls: 1 series; labels with >1 value: {}
+   gen_ai.invoke_agent.tool_calls: 1 series; labels with >1 value: {}
+   process.cpu.time: 2 series; labels with >1 value: {'cpu.mode': 2}
+   process.memory.usage: 1 series; labels with >1 value: {}
+   process.memory.virtual: 1 series; labels with >1 value: {}
+   process.thread.count: 1 series; labels with >1 value: {}
+   process.unix.file_descriptor.count: 1 series; labels with >1 value: {}
+   rpc.server.call.duration: 1 series; labels with >1 value: {}
+   tokio.runtime.global_queue.depth: 1 series; labels with >1 value: {}
+   tokio.runtime.task.count: 1 series; labels with >1 value: {}
+   tokio.runtime.worker.count: 1 series; labels with >1 value: {}
+   most distinct gen_ai.response.model values on one metric: (17, 'gen_ai.client.inference.usage.output_tokens')
+  ok    200 provider-chosen model names make 17 distinct gen_ai.response.model label values on gen_ai.client.inference.usage.output_tokens
+
+1 of 1 expectations held

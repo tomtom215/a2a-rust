@@ -107,38 +107,40 @@ pub struct AppliedMarkGate {
     pub open: tokio::sync::Notify,
 }
 
-/// The gates, keyed by the identity of the manager's queue map, so a gate stops
-/// the manager it was made for and no other test's.
+/// The queue map a manager owns.
 #[cfg(test)]
-static GATES: std::sync::Mutex<Vec<(usize, Arc<AppliedMarkGate>)>> =
+type Writers = RwLock<HashMap<TaskId, Arc<InMemoryQueueWriter>>>;
+
+/// The gates, each with a weak handle on the queue map of the manager it was
+/// made for, so it stops that manager and no other test's. The handle keeps
+/// the map's allocation, so no later manager can be given its address: a key
+/// made of the address alone was matched by a later manager allocated where
+/// a dropped one had been, which then waited at a gate nobody would open.
+#[cfg(test)]
+static GATES: std::sync::Mutex<Vec<(std::sync::Weak<Writers>, Arc<AppliedMarkGate>)>> =
     std::sync::Mutex::new(Vec::new());
 
 #[cfg(test)]
 impl EventQueueManager {
-    fn gate_key(&self) -> usize {
-        Arc::as_ptr(&self.writers) as usize
-    }
-
     /// Makes every later `applied_mark` of this manager wait to be let go.
     pub(crate) fn gate_applied_mark(&self) -> Arc<AppliedMarkGate> {
         let gate = Arc::new(AppliedMarkGate {
             reached: tokio::sync::Notify::new(),
             open: tokio::sync::Notify::new(),
         });
-        GATES
-            .lock()
-            .unwrap()
-            .push((self.gate_key(), Arc::clone(&gate)));
+        let mut gates = GATES.lock().unwrap();
+        // A gate whose manager is gone stops nothing; its slot is freed.
+        gates.retain(|(writers, _)| writers.strong_count() > 0);
+        gates.push((Arc::downgrade(&self.writers), Arc::clone(&gate)));
         gate
     }
 
     fn applied_mark_gate(&self) -> Option<Arc<AppliedMarkGate>> {
-        let key = self.gate_key();
         GATES
             .lock()
             .unwrap()
             .iter()
-            .find(|(k, _)| *k == key)
+            .find(|(writers, _)| std::ptr::eq(writers.as_ptr(), Arc::as_ptr(&self.writers)))
             .map(|(_, g)| Arc::clone(g))
     }
 }

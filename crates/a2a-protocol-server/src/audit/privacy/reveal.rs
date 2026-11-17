@@ -11,10 +11,8 @@ use base64::engine::general_purpose::STANDARD;
 use a2a_protocol_types::audit::AuditRecord;
 use a2a_protocol_types::error::A2aResult;
 
-use super::{
-    ACTORS_FIELD, AuditPrivacy, PERSON_FIELDS, Revealed, SEALED_PREFIX, TEXT_FIELDS,
-    actors_element, refused,
-};
+use super::fields::{PERSON_LISTS, Slot, TEXT_FIELDS, people_in};
+use super::{AuditPrivacy, Revealed, SEALED_PREFIX, refused};
 use crate::audit::store::AuditStore;
 
 impl AuditPrivacy {
@@ -57,39 +55,34 @@ impl AuditPrivacy {
                 erased.push("actor".to_owned());
             }
         }
-        for field in PERSON_FIELDS.iter().chain(TEXT_FIELDS.iter()) {
-            let Some(serde_json::Value::String(value)) = record.detail.get(*field) else {
-                continue;
-            };
+        // A list may hold a value that is not a string only if it was never
+        // sealed; refuse it as altered, as the actors list always was.
+        for field in PERSON_LISTS {
+            if let Some(serde_json::Value::Array(items)) = record.detail.get(field)
+                && items.iter().any(|v| !v.is_string())
+            {
+                return Err(refused());
+            }
+        }
+        let text = TEXT_FIELDS.iter().filter_map(|f| {
+            record
+                .detail
+                .get(*f)
+                .and_then(serde_json::Value::as_str)
+                .map(|v| (Slot::Field(f), v.to_owned()))
+        });
+        let slots: Vec<(Slot, String)> =
+            people_in(&record.detail)?.into_iter().chain(text).collect();
+        for (slot, value) in slots {
             if !value.starts_with(SEALED_PREFIX) {
                 continue;
             }
-            let opened = self.open(store, record, field, value).await?;
+            let context = slot.context();
+            let opened = self.open(store, record, &context, &value).await?;
             if opened.is_none() {
-                erased.push((*field).to_owned());
+                erased.push(context);
             }
-            out.detail
-                .insert((*field).to_owned(), opened.unwrap_or_default().into());
-        }
-        if let Some(serde_json::Value::Array(actors)) = record.detail.get(ACTORS_FIELD) {
-            let mut opened_all = Vec::with_capacity(actors.len());
-            for (i, actor) in actors.iter().enumerate() {
-                let value = actor.as_str().ok_or_else(refused)?;
-                if !value.starts_with(SEALED_PREFIX) {
-                    opened_all.push(actor.clone());
-                    continue;
-                }
-                let field = actors_element(i);
-                let opened = self.open(store, record, &field, value).await?;
-                if opened.is_none() {
-                    erased.push(field);
-                }
-                opened_all.push(opened.unwrap_or_default().into());
-            }
-            out.detail.insert(
-                ACTORS_FIELD.to_owned(),
-                serde_json::Value::Array(opened_all),
-            );
+            slot.set(&mut out.detail, opened.unwrap_or_default());
         }
         Ok(Revealed {
             record: out,

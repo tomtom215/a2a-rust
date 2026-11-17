@@ -244,6 +244,10 @@ impl SqlitePushOutbox {
 }
 
 impl PushOutbox for SqlitePushOutbox {
+    fn is_process_local(&self) -> bool {
+        crate::sqlite_pool::is_in_memory(&self.pool)
+    }
+
     fn record(&self, deliveries: Vec<NewDelivery>, per_webhook: usize) -> OutboxFuture<'_, usize> {
         Box::pin(self.insert(deliveries, per_webhook, None))
     }

@@ -21,4 +21,4 @@
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0459"
 ignoreUntil = 2027-02-11
-reason = "libsqlite3-sys 0.37 via sqlx-sqlite 0.9.0, the latest sqlx (checked 2026-11-11); built only with the harness's opt-in `sqlite` feature, which opens the operator's own SQLITE_URL. Remove when sqlx allows libsqlite3-sys >= 0.39."
+reason = "libsqlite3-sys 0.37 via sqlx-sqlite 0.9.0, the latest sqlx (checked 2026-11-14); built only with the harness's opt-in `sqlite` feature, which opens the operator's own SQLITE_URL. Remove when sqlx allows libsqlite3-sys >= 0.39."

@@ -24,12 +24,12 @@ image is pinned by digest as well as tag:
 
 | Service | Image | Published port | Role |
 |---|---|---|---|
-| `otel-collector` | `otel/opentelemetry-collector-contrib:0.163.2` | 4317 (gRPC), 4318 (HTTP) | Receives OTLP; metrics to Prometheus, traces to Tempo, logs to Loki; 1 GiB memory limit; queues on disk; its own metrics on 8888 |
-| `prometheus` | `prom/prometheus:v3.15.1` | 9090 | OTLP and remote-write receivers on, the rules loaded, 7 days' or 5 GB retention, delta conversion, start-time zeros and exemplars |
+| `otel-collector` | `otel/opentelemetry-collector-contrib:0.164.0` | 4317 (gRPC), 4318 (HTTP) | Receives OTLP; metrics to Prometheus, traces to Tempo, logs to Loki; 1 GiB memory limit; queues on disk; its own metrics on 8888 |
+| `prometheus` | `prom/prometheus:v3.16.0` | 9090 | OTLP and remote-write receivers on, the rules loaded, 7 days' or 5 GB retention, delta conversion, start-time zeros and exemplars |
 | `alertmanager` | `prom/alertmanager:v0.34.2` | 9093 | Receives the alerts; notifies nobody until you add a receiver ([Alerts](./alerts.md#where-alerts-go)) |
-| `tempo` | `grafana/tempo:2.9.0` | 3200 | Traces, kept 24 hours; span metrics and the service graph to Prometheus |
+| `tempo` | `grafana/tempo:3.1.1` | 3200 | Traces, kept 24 hours; span metrics and the service graph to Prometheus. While it has nothing to compact, its backend worker logs `error calling scheduler … no jobs found` at error level every few seconds; that is idle, not a fault |
 | `loki` | `grafana/loki:3.7.9` | 3100 | Logs, kept 7 days |
-| `grafana` | `grafana/grafana:13.2.4` | 3001 (host), 3000 (container) | Dashboards in folder "A2A"; Tempo and Loki under Explore; alerts under Alerting |
+| `grafana` | `grafana/grafana:13.3.0` | 3001 (host), 3000 (container) | Dashboards in folder "A2A"; Tempo and Loki under Explore; alerts under Alerting |
 
 Grafana has no login: the anonymous user is an admin, so keep it off any
 network you do not control (see [On a shared host](#on-a-shared-host)).

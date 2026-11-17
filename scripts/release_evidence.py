@@ -15,11 +15,11 @@ at a named commit, so that a stranger can check each claim against that commit's
 `generate` records, for the commit:
   * the commit and tree ids, each published crate's version, the MSRV and the toolchain;
   * the SHA-256 of each input that carries a claim (lockfiles, deny and OSV waivers, the
-    CHANGELOG, the readiness bar, the spec ledger, the findings register, the stability
+    CHANGELOG, the readiness bar, the spec ledger, the findings registers, the stability
     policy), read from the commit's tree and not the working tree;
   * every advisory waiver, with its reason, parsed from `deny.toml` and the OSV configs;
   * the deployment profiles and the Cargo features of each published crate, parsed from source;
-  * the findings register's counts and its open rows;
+  * each findings register's counts and its open rows;
   * the measured limits, from the machine-readable block in `docs/readiness-bar.md`;
   * the number of unreleased breaking changes the CHANGELOG lists;
   * the exit status of each static gate, when `--run-gates` runs them (otherwise `not_run`:
@@ -62,6 +62,7 @@ INPUTS = [
     "docs/readiness-bar.md",
     "docs/compliance/spec-ledger.json",
     "docs/audits/2026-11-12-adversarial-review/findings.json",
+    "docs/audits/2026-11-13-adversarial-review/findings.json",
 ]
 CRATES = [
     "crates/a2a-protocol-types",
@@ -70,7 +71,10 @@ CRATES = [
     "crates/a2a-protocol-server",
     "crates/a2a-protocol-sdk",
 ]
-REGISTER = "docs/audits/2026-11-12-adversarial-review/findings.json"
+REGISTERS = [
+    "docs/audits/2026-11-12-adversarial-review/findings.json",
+    "docs/audits/2026-11-13-adversarial-review/findings.json",
+]
 READINESS = "docs/readiness-bar.md"
 LIMITS_BEGIN = "<!-- measured-limits:begin -->"
 LIMITS_END = "<!-- measured-limits:end -->"
@@ -227,7 +231,7 @@ def build(commit: str, run_gates: bool) -> dict:
         "profiles": profiles(at(sha, "crates/a2a-protocol-server/src/profile.rs")),
         "versions": {c: crate_version(at(sha, f"{c}/Cargo.toml")) for c in CRATES},
         "features": {c: features(at(sha, f"{c}/Cargo.toml")) for c in CRATES},
-        "register": register_summary(texts[REGISTER]),
+        "register": {p: register_summary(texts[p]) for p in REGISTERS},
         "measured_limits": measured_limits(texts[READINESS]),
         "unreleased_breaking_changes": breaking_changes(texts["CHANGELOG.md"]),
         "gates": gates,

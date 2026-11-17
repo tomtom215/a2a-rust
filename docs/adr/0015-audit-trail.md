@@ -273,9 +273,45 @@ overwritten, PostgreSQL's dead tuples until `VACUUM`, replicas, backups);
 the SQLite store overwrites the freed page and truncates its log unless a
 reader holds it, and warns when one does. The key-encryption key unwraps
 any such copy. It finds a person's key only under an HMAC key still in the
-ring. Across replicas, an erasure, a legal hold and an append are not
-serialised. Records keep trace ids, task and message ids, times and states
+ring. Across replicas, an erasure, a legal hold and an append were not
+serialised until 2026-11-13; they are now fenced by the store (amendment
+2026-11-13 below). Records keep trace ids, task and message ids, times and states
 in clear. An independent review on 2026-10-16 found the first version's
 digests deterministic, its erasure lost on a failure part way, its keys
 never purged, its key rows exchangeable and its claims of unlinking
 overstated; each is fixed above or stated here.
+
+## Amendment 2026-11-13: one lifecycle for a key and its records
+
+An adversarial review (N03, and S8 of 2026-11-12) found two cross-replica
+windows the chain lock, which is per process, could not close:
+
+- A key is made before the append that first uses it, since no store read
+  may happen inside an append (A2). Another replica's key cleanup, which
+  every `purge` runs, could find that key named by no record and delete it;
+  the append then stored a record sealed under a key the store no longer
+  had. The chain verified, and the actor could never be revealed.
+- `erase_subject` read the holds and later deleted the keys; a hold another
+  replica placed in between did not stop it.
+
+Both are now fenced by the store, with one statement or one transaction
+under the lock that a hold, a deletion and an append of the chain all take
+(PostgreSQL's per-chain advisory lock; SQLite's single writer; the in-memory
+store's locks, taken in one order):
+
+- `AuditStore::append_next_naming` stores a record only while every key it
+  is sealed under exists, and answers `KeyGone` otherwise; the log resolves
+  the record's people again, which makes a new key, and seals afresh.
+- `delete_subject_key_unless_named` deletes a key only while no record
+  stored after the cleanup's scan references its `sid`
+  (`a2a-sealed:v1:<sid>:`).
+- `delete_subject_keys_unless_held` deletes all of an erasure's keys, or
+  none while a hold is placed. A hold placed after the `subject.erased`
+  record was written is answered with a `subject.erasure_refused` record
+  naming the same `sid`s, and an error.
+
+The trait's defaults for the three are built from the older methods and are
+not atomic across processes; a shared store overrides them, as the SQLite
+and PostgreSQL stores do. Each was reproduced first with two logs over one
+store (memory, two SQLite pools, two PostgreSQL pools), one paused at the
+point of the race (`audit/privacy/tests/key_lifecycle.rs`).

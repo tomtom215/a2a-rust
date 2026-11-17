@@ -33,6 +33,7 @@ use super::super::Held;
 mod backlog;
 mod finish;
 mod outbox;
+mod repair;
 
 /// Records what it was asked to deliver.
 #[derive(Default)]

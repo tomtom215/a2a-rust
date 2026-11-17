@@ -40,6 +40,15 @@ question. This script asks it five ways, one subcommand each:
               had a one-screen summary; audit G/C-01). `self-test` proves the
               rule on text of its own.
 
+  notes       Writes the GitHub release body for a version from its section.
+              GitHub refuses a body over 125,000 characters, and 0.15.0's
+              section was about 289,000. A section over LIMIT is released as
+              the parts an adopter reads before upgrading: the opening
+              paragraph, the Upgrading and Highlights blocks, and the Known
+              Limitations, Breaking Changes, Behaviour Changes, Deprecated and
+              Security sections, with a link to the whole section at the tag.
+              Exit 1 when even those exceed the limit. `self-test` proves it.
+
   vcs         Every packaged `.crate` records, in `.cargo_vcs_info.json`, that
               it was built from the tagged commit, from a clean tree. That is
               the file the N7 investigation had to read by hand to learn what
@@ -80,6 +89,15 @@ PLACEHOLDER = "Nothing yet."
 HIGHLIGHTS = re.compile(r"(?ms)^### Highlights[^\n]*\n(?P<body>.*?)(?=^### |\Z)")
 HIGHLIGHTS_MAX_LINES = 15
 HIGHLIGHTS_FROM = (0, 16, 0)
+# The release body's limit, under GitHub's 125,000 characters, and the
+# sections a body over it keeps. Behaviour Changes is kept because a runtime
+# change that needs no code change is the one an adopter who reads only the
+# release page would otherwise miss. Highlights is kept because it is the
+# summary the `highlights` rule requires.
+RELEASE_BODY_LIMIT = 120_000
+KEPT_SECTIONS = re.compile(
+    r"^### (Upgrading|Highlights[^\n]*|Known Limitations|Breaking Changes|Behaviour Changes|Deprecated|Security)$"
+)
 # `**Cadence exception:** <reason>` in a release's CHANGELOG section. The
 # reason must say something: twenty characters is enough for "critical fix
 # for ..." and too many for a bare "yes" or "n/a".
@@ -269,6 +287,43 @@ def highlights_problems(body: str, version: str) -> list[str]:
     return []
 
 
+def release_body(body: str, version: str, repository: str) -> tuple[str, str | None]:
+    """The release body for `body` (a section without its heading line), and
+    a note when it had to be cut to the upgrade-critical sections."""
+    if len(body) <= RELEASE_BODY_LIMIT:
+        return body, None
+    kept, seen, keep = [], False, False
+    for line in body.splitlines(keepends=True):
+        if line.startswith("### "):
+            seen, keep = True, bool(KEPT_SECTIONS.match(line.rstrip("\n")))
+        if not seen or keep:
+            kept.append(line)
+    link = f"https://github.com/{repository}/blob/v{version}/CHANGELOG.md"
+    cut = (
+        "These are the sections to read before upgrading. The full notes for this release are in "
+        f"[CHANGELOG.md]({link}) at this tag.\n\n" + "".join(kept)
+    )
+    return cut, (
+        f"The {version} section is {len(body)} characters, over the {RELEASE_BODY_LIMIT} a GitHub "
+        "release body can carry; releasing its upgrade-critical sections and a link."
+    )
+
+
+def write_notes(repo: Path, version: str, repository: str, out: Path) -> list[str]:
+    text = (repo / "CHANGELOG.md").read_text(encoding="utf-8")
+    found = section(text, version)
+    if found is None or not found.partition("\n")[2].strip():
+        raise Usage(f"no non-empty ## [{version}] section in CHANGELOG.md")
+    notes, cut = release_body(found.partition("\n")[2], version, repository)
+    if cut:
+        print(f"::warning::{cut}")
+    if len(notes) > RELEASE_BODY_LIMIT:
+        return [f"Even the upgrade-critical sections of {version} are {len(notes)} characters, over {RELEASE_BODY_LIMIT}."]
+    out.write_text(notes, encoding="utf-8")
+    print(f"check_release_tree notes: {len(notes)} characters written to {out}")
+    return []
+
+
 def check_highlights(repo: Path, tag: str, rev: str) -> list[str]:
     version = version_of(tag)
     text = show(repo, rev, "CHANGELOG.md")
@@ -292,14 +347,47 @@ def self_test() -> int:
         ("older release is exempt", "## [0.15.0] - d\n\n### Added\n- x\n", "0.15.0", 0),
         ("a pre-release is held to it", "## [0.16.0-rc.1] - d\n\n### Added\n- x\n", "0.16.0-rc.1", 1),
     ]
-    failed = 0
+    failed = notes_self_test()
     for name, body, version, want in cases:
         got = len(highlights_problems(body, version))
         if got != want:
             print(f"self-test: {name}: {got} problem(s), wanted {want}")
             failed += 1
-    print(f"check_release_tree self-test: {len(cases) - failed} of {len(cases)} cases hold")
+    total = len(cases) + NOTES_CHECKS
+    print(f"check_release_tree self-test: {total - failed} of {total} cases hold")
     return 1 if failed else 0
+
+
+NOTES_CHECKS = 6
+
+
+def notes_self_test() -> int:
+    """The release body keeps a short section whole, and cuts a long one to
+    the opening, Upgrading, Highlights and the upgrade-critical sections."""
+    filler = "x" * (RELEASE_BODY_LIMIT + 1)
+    short = "Opening.\n\n### Highlights\n- h\n\n### Added\n- a\n"
+    long = (
+        "Opening.\n\n### Upgrading\n- u\n\n### Highlights\n- h\n\n### Added\n" + filler
+        + "\n\n### Breaking Changes\n- b\n\n### Fixed\n- f\n\n### Security\n- s\n"
+    )
+    whole, note = release_body(short, "0.16.0", "o/r")
+    cut, cut_note = release_body(long, "0.16.0", "o/r")
+    checks = [
+        ("a short section is released whole", whole == short and note is None),
+        ("a long one is cut, and says so", cut_note is not None and len(cut) < RELEASE_BODY_LIMIT),
+        ("the cut keeps the opening, Upgrading and Highlights",
+         all(x in cut for x in ("Opening.", "### Upgrading\n- u", "### Highlights\n- h"))),
+        ("the cut keeps Breaking Changes and Security", "- b\n" in cut and "- s\n" in cut),
+        ("the cut drops Added and Fixed", "### Added" not in cut and "### Fixed" not in cut),
+        ("the cut links the whole section at the tag", "https://github.com/o/r/blob/v0.16.0/CHANGELOG.md" in cut),
+    ]
+    assert len(checks) == NOTES_CHECKS
+    failed = 0
+    for name, ok in checks:
+        if not ok:
+            print(f"self-test: notes: {name}: does not hold")
+            failed += 1
+    return failed
 
 
 def check_vcs(rev: str, crates: list[Path]) -> list[str]:
@@ -348,7 +436,11 @@ def main() -> int:
         s = sub.add_parser(name)
         s.add_argument("tag")
         s.add_argument("rev")
-    sub.add_parser("self-test", help="prove the highlights rule on text of its own")
+    sub.add_parser("self-test", help="prove the highlights rule and the release body on text of their own")
+    n = sub.add_parser("notes", help="write a version's GitHub release body")
+    n.add_argument("version")
+    n.add_argument("repository", help="owner/name, for the link to the whole section")
+    n.add_argument("out", type=Path)
     v = sub.add_parser("vcs")
     v.add_argument("rev")
     v.add_argument("crates", nargs="*", type=Path)
@@ -361,6 +453,8 @@ def main() -> int:
             return self_test()
         if a.cmd == "vcs":
             problems = check_vcs(a.rev, a.crates)
+        elif a.cmd == "notes":
+            problems = write_notes(a.repo, a.version, a.repository, a.out)
         else:
             rev = git(a.repo, "rev-parse", f"{a.rev}^{{commit}}").strip()
             fn = {

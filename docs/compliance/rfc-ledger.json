@@ -836,7 +836,7 @@
       "crates/a2a-protocol-types/src/signing.rs:666 verify_card_with_jwks",
       "crates/a2a-protocol-types/src/signing.rs:687 verify_card_json_with_jwks",
       "crates/a2a-protocol-client/src/discovery.rs:1031 verify_card_signatures",
-      "crates/a2a-protocol-client/src/builder/signed.rs:33 ClientBuilder::from_signed_card",
+      "crates/a2a-protocol-client/src/builder/signed.rs:38 ClientBuilder::from_signed_card",
       "crates/a2a-protocol-server/src/auth/jwt.rs:596 JwtValidator::validate"
      ],
      "test_evidence": [

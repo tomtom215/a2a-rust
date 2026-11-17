@@ -323,7 +323,7 @@ impl Reservation {
             Fate::Unknown => return Some(self),
         };
         if armed {
-            self.arm_now().await;
+            let _ = self.arm_now().await;
             None
         } else if self.release_now().await {
             None
@@ -356,7 +356,7 @@ impl Reservation {
         }
         match self.stored().await {
             Some(true) => {
-                self.arm_now().await;
+                let _ = self.arm_now().await;
                 true
             }
             Some(false) => self.release_now().await,
@@ -373,14 +373,16 @@ impl Reservation {
     /// settlement had armed it and it was delivered, the receiver sees the same
     /// id twice, which it knows for a retry. With no reservation (the outbox was
     /// down) the event is recorded now, in order.
-    pub(in crate::handler::event_processing) async fn arm_now(&self) {
+    pub(in crate::handler::event_processing) async fn arm_now(&self) -> bool {
         let Some(outboxed) = self.lanes.outbox.as_ref() else {
-            return;
+            return true;
         };
         let lanes = PushLanes(Some(Arc::clone(&self.lanes)));
         let Some(id) = &self.id else {
-            lanes.record_now(&self.task_id, &self.event).await;
-            return;
+            return lanes
+                .record_now(&self.task_id, &self.event)
+                .await
+                .is_none_or(super::Recorded::is_durable);
         };
         match outboxed.outbox.arm(id).await {
             Ok(0) => {
@@ -396,15 +398,22 @@ impl Reservation {
                     &self.event,
                     &self.ids,
                 )
-                .await;
+                .await
+                .is_durable()
             }
-            Ok(_) => outboxed.wake.notify_one(),
+            Ok(_) => {
+                outboxed.wake.notify_one();
+                true
+            }
+            // The reserved rows are still there, and the worker arms them
+            // once it can: the deliveries are owed by a row, not by memory.
             Err(_err) => {
                 trace_warn!(
                     task_id = %self.task_id,
                     error = %_err,
                     "the push outbox did not arm a reservation; the worker will"
                 );
+                true
             }
         }
     }

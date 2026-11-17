@@ -1,0 +1,4 @@
+
+thread 'main' (21073) panicked at src/wiring.rs:104:84:
+pg: Database(PgDatabaseError { severity: Fatal, code: "3D000", message: "database \"a2a_camp_c1_many60\" does not exist", detail: None, hint: None, position: None, where: None, schema: None, table: None, column: None, data_type: None, constraint: None, file: Some("postinit.c"), line: Some(1021), routine: Some("InitPostgres") })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

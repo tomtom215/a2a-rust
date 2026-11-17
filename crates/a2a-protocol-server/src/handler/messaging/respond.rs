@@ -250,19 +250,22 @@ impl RequestHandler {
         // (callgrind, 2026-11-11).
         let collecting: std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> =
             Box::pin(async move {
-                // Held to the collection's last write (`handler::claims`).
-                let _claim = claim;
+                // Held to the collection's last write (`handler::claims`),
+                // and kept for the reaper if the collection leaves the task's
+                // ending owed (N05).
                 // Answers at a terminal or interrupted state, and after an
                 // interrupted one goes on storing the executor's events.
-                collector
-                    .collect_then_follow(
+                crate::handler::event_processing::keeping_claim_if_owed(
+                    claim.as_ref(),
+                    Box::pin(collector.collect_then_follow(
                         events,
                         task.id.clone(),
                         saved_whole.then_some(task),
                         &mut executor,
                         answer,
-                    )
-                    .await;
+                    )),
+                )
+                .await;
                 executor.finish().await;
             });
         self.in_flight

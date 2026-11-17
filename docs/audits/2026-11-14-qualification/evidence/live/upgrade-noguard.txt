@@ -1,0 +1,8 @@
+triggers: task_events.a2a_legacy_write_check, task_events.a2a_legacy_write_record, tasks.a2a_legacy_write_check, tasks.a2a_legacy_write_record
+guard DISABLED (control run)
+FAIL  S1 old replica's turn cannot write a task the new replica runs  old answered ok; stored state TASK_STATE_INPUT_REQUIRED, artifacts ['old-early', 'old-late']
+FAIL  S2 a cancel sent to the old replica stops the new replica's executor  old answered TASK_STATE_CANCELED; executor stopped after None s
+FAIL  S3 the new replica refuses a continuation while the old replica runs the task  after 0.01 s: None
+PASS  S4 a task the old replica parked continues on the new replica, keeping its artifacts  in 0.01 s; state TASK_STATE_COMPLETED, artifacts ['old-early', 'old-late']
+legacy claims left: 0
+1 of 4 passed

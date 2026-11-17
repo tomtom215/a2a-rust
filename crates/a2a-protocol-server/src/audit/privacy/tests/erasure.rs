@@ -79,10 +79,12 @@ async fn an_erasure_names_who_asked_for_it_and_only_the_sids() {
     assert_eq!(shown.detail["sids"], serde_json::json!(erased.sids));
 }
 
-/// An in-memory store whose key deletion can be made to fail.
+/// An in-memory store whose key deletion can be made to fail, and whose
+/// keys can be hidden from the check an append makes before storing.
 struct Flaky {
     inner: InMemoryAuditStore,
     fail_delete: AtomicBool,
+    hide_keys: AtomicBool,
 }
 
 impl AuditStore for Flaky {
@@ -143,6 +145,9 @@ impl AuditStore for Flaky {
         c: &'a str,
         s: &'a str,
     ) -> BoxFuture<'a, A2aResult<Option<SubjectKey>>> {
+        if self.hide_keys.load(Ordering::SeqCst) {
+            return Box::pin(async { Ok(None) });
+        }
         self.inner.subject_key_by_sid(c, s)
     }
     fn subject_keys<'a>(&'a self, c: &'a str) -> BoxFuture<'a, A2aResult<Vec<SubjectKey>>> {
@@ -167,6 +172,39 @@ impl AuditStore for Flaky {
     }
 }
 
+/// A store that keeps subject keys but not the trait's fenced deletion gets
+/// the default, which holds to the same contract: nothing deleted under a
+/// hold on the chain, everything once it is released.
+#[tokio::test]
+async fn the_default_fenced_deletion_keeps_the_contract() {
+    let store = Flaky {
+        inner: InMemoryAuditStore::new(),
+        fail_delete: AtomicBool::new(false),
+        hide_keys: AtomicBool::new(false),
+    };
+    super::stores::fence_deletes_unless_held(&store, "acme").await;
+}
+
+/// A record whose key is gone every time it is about to be stored is given
+/// up after a bounded number of attempts, not tried for ever.
+#[tokio::test]
+async fn an_append_whose_key_keeps_vanishing_gives_up() {
+    let store = Arc::new(Flaky {
+        inner: InMemoryAuditStore::new(),
+        fail_delete: AtomicBool::new(false),
+        hide_keys: AtomicBool::new(true),
+    });
+    let log = log_over(store as Arc<dyn AuditStore>);
+    let appended = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        log.append(record("acme", ALICE)),
+    )
+    .await
+    .expect("the append gives up rather than retrying for ever");
+    let err = appended.expect_err("no record is stored under a missing key");
+    assert!(err.to_string().contains("lost the race"), "{err}");
+}
+
 /// Recorded first, deleted second: a failed delete is retried, and the
 /// erasure is on record both times.
 #[tokio::test]
@@ -174,6 +212,7 @@ async fn an_erasure_that_fails_part_way_is_on_record_and_can_be_retried() {
     let store = Arc::new(Flaky {
         inner: InMemoryAuditStore::new(),
         fail_delete: AtomicBool::new(true),
+        hide_keys: AtomicBool::new(false),
     });
     let log = log_over(Arc::clone(&store) as Arc<dyn AuditStore>);
     let alices = log.append(record("acme", ALICE)).await.unwrap();

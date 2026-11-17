@@ -21,9 +21,9 @@ Read from `findings.json` by the command below, not copied from a summary.
 
 | Status | Rows | IDs |
 |---|---|---|
-| FIXED | 17 | R1, R2, A1, A2, R4, R5, P1, P2, P3, P4, A4, T1, T2, T3, M1, S7, D1 |
+| FIXED | 18 | R1, R2, A1, A2, R4, R5, P1, P2, P3, P4, A4, T1, T2, T3, M1, S7, S8, D1 |
 | PARTIAL | 5 | R3, A3, S1, S5, S6 |
-| OPEN | 4 | S2, S3, S4, S8 |
+| OPEN | 3 | S2, S3, S4 |
 | MAINTAINER | 1 | G1 |
 
 Of the reviewer's own 17 rows: 14 fixed, 2 partial (R3, A3), 0 open, 1 for the maintainer.
@@ -37,8 +37,8 @@ python3 -c "import json,collections;r=json.load(open('docs/audits/2026-11-12-adv
 * A fix that changes a default is not made: T1, T3 and the rest of the tool-loop strictness are **opt-in** (`ToolLoop::strict`, `ArgumentCheck`,
   `AuditedPolicy`), because a release must not change what a deployment relies on without being asked. Their defaults are unchanged and documented.
 * FIXED is for the scope in the row's `note`. R5 is proven for REST and JSON-RPC, P2 for four route families, A1 for one store's atomic hold check.
-* A row is OPEN when nothing was built: S2 skill content pinning, S3 fleet quota, S4 telemetry-failure visibility and S8 `erase_subject` against a hold across
-  replicas. S1 (the durable step journal), S5 (the readiness-bar measurements) and S6 (the release evidence manifest) are PARTIAL, and each row's `note` says what is
+* A row is OPEN when nothing was built: S2 skill content pinning, S3 fleet quota and S4 telemetry-failure visibility. S8 (`erase_subject` against a
+  hold across replicas) was fixed with N03 of the 2026-11-13 review (`../2026-11-13-adversarial-review/`). S1 (the durable step journal), S5 (the readiness-bar measurements) and S6 (the release evidence manifest) are PARTIAL, and each row's `note` says what is
   not built. S7 (an approval bound to a call digest) is FIXED for the built-in loop.
 * G1 (branch protection) is a repository setting. It cannot be changed from a session and is the maintainer's.
 
