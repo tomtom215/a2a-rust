@@ -4,8 +4,9 @@
 # osv-scanner's view of this binding's Cargo.lock. Mirrors the ignores in
 # this directory's deny.toml, whose notes give the full dependency chains.
 #
-# One active waiver, RUSTSEC-2026-0459 below, since 2026-11-11 (the mirror of
-# deny.toml's entry for it). Six entries were removed on 2026-10-15, with the
+# Three active waivers, each the mirror of deny.toml's entry for it:
+# RUSTSEC-2026-0459 since 2026-11-11, and RUSTSEC-2026-0543 and -0555 since
+# 2026-11-17. Six entries were removed on 2026-10-15, with the
 # binding's move to agntcy-slim-rpc 3.4.1 (audit register R13); deny.toml's
 # `[advisories]` note records why each could go:
 #
@@ -35,3 +36,18 @@
 id = "RUSTSEC-2026-0459"
 ignoreUntil = 2027-02-11
 reason = "libsqlite3-sys 0.35 via rusqlite 0.37 via mls-rs-provider-sqlite 0.23.0 (latest, checked 2026-11-14); local attack through a crafted database and -wal pair on a path the operator configures; mirrors the deny.toml ignore. Remove when the SLIM chain moves to rusqlite >= 0.41."
+
+# RUSTSEC-2026-0543 (`chrono` unmaintained) and RUSTSEC-2026-0555 (`chrono-tz`
+# unmaintained): no fixed version, no affected function. Locked here: chrono
+# 0.4.45 via cel, regorus and opentelemetry-stdout, chrono-tz 0.10.4 via
+# regorus 0.12.0, all in the SLIM stack (checked 2026-11-17); the binding's own
+# code uses neither. Upstream: chronotope/chrono#1768.
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0543"
+ignoreUntil = 2027-02-17
+reason = "chrono unmaintained (no fix, not a vulnerability); via cel, regorus and opentelemetry-stdout in the SLIM stack (checked 2026-11-17); mirrors the deny.toml ignore."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0555"
+ignoreUntil = 2027-02-17
+reason = "chrono-tz unmaintained (no fix, not a vulnerability); via regorus 0.12.0 in the SLIM stack (checked 2026-11-17); mirrors the deny.toml ignore."

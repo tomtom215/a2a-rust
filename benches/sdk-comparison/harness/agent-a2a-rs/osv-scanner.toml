@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# osv-scanner reads this file for the Cargo.lock in this directory (`osv.yml`).
+# Each entry carries its evidence and a date on which it stops applying and
+# must be re-examined.
+
+# RUSTSEC-2026-0543 (`chrono` unmaintained: no fixed version, no affected
+# function). This harness drives a different SDK for the benchmark comparison,
+# and that SDK's own types carry chrono timestamps (src/main.rs sets
+# `TaskStatus.timestamp` from `chrono::Utc::now()`), so the harness cannot drop
+# it. Benchmark-only; nothing published depends on it. Upstream:
+# chronotope/chrono#1768.
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0543"
+ignoreUntil = 2027-02-17
+reason = "chrono unmaintained (no fix, not a vulnerability); the compared SDK's types use chrono timestamps; benchmark harness only (checked 2026-11-17)."

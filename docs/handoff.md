@@ -58,8 +58,8 @@ it instead of copying the number. The previous version of this block (pull reque
   this session's fixes of five broken doc links (three from `ac63a18f`, two feature-gated ones from `36d894cd`), which the per-crate default-feature build
   found and the all-features build did not. **`ci.yml`'s jobs run locally with `scripts/run_workflow_job.py`** at `c47b818b` or its content: `static-checks` PASS (47 steps), `doc` PASS (2), `clippy` on `os=ubuntu-latest` PASS (14 feature sets), `features` PASS (cargo-hack, each feature of the four published crates), `package` PASS, `test-postgres` with `--services-ready` against the local PostgreSQL PASS (6 steps) after `c47b818b` fixed a race it found (D3; `statement_count` also needs `ssl = off` locally, under *Facts*). **Not run locally:** the `test` job's nextest legs per feature set (each a build of its own; this disk allowance holds about one; their compilation is covered by `clippy` and `features`, their runtime only by the all-features run above), and the Windows, macOS and MSRV legs. Live: the five live files as listed above. `scripts/ci_evidence.py --self-test` 13 of 13;
   `scripts/release_evidence.py --self-test` 15; `scripts/prove_workflow_gates_fail.py` 34 proven, 0 unproven at `3f6be5f7`.
-- **Corrections to this file the review made, each checked here.** *Advisory waivers:* `deny.toml` has one, RUSTSEC-2026-0459 (`libsqlite3-sys`, since
-  2026-11-11), so "no waivers anywhere" below was stale and is corrected there. *`unsafe`:* the five published crates' library sources carry
+- **Corrections to this file the review made, each checked here.** *Advisory waivers:* `deny.toml` had one, RUSTSEC-2026-0459 (`libsqlite3-sys`, since
+  2026-11-11; a second, RUSTSEC-2026-0543, since 2026-11-17, below), so "no waivers anywhere" below was stale and is corrected there. *`unsafe`:* the five published crates' library sources carry
   `#![forbid(unsafe_code)]`; outside them 18 files hold `unsafe` (`git grep -lE '\bunsafe\b *(\{|fn|impl)' -- '*.rs'`, less `fuzz/`): `set_var("PROTOC")` in five
   build scripts, three counting `GlobalAlloc` impls (two benchmarks, one test) and environment changes in ten test files. Each has a SAFETY note;
   the two benchmark allocators' were added this session. *Spec ledger:* 510 rows for v1.0.1 = 455 TESTED + 32 APPLICATION + 19 NOT_APPLICABLE + 4 PARTIAL
@@ -690,7 +690,13 @@ against the 0.16.0 work: check `CHANGELOG.md`'s `### Fixed` and the register's s
 
 ## Waivers and their removal tests
 
-One waiver, since 2026-11-11: RUSTSEC-2026-0459 (CVE-2026-119375) in the root
+Two waivers in the root `deny.toml`. Since 2026-11-17, RUSTSEC-2026-0543:
+`chrono` marked unmaintained (no fixed version, no affected function), reached
+only by the examples through `rmcp` 3.10.0 and `schemars` 1.2.3; the SLIMRPC
+binding waives it and RUSTSEC-2026-0555 (`chrono-tz`) for the SLIM stack, and
+`benches/sdk-comparison/harness/agent-a2a-rs/osv-scanner.toml` for the compared
+SDK's chrono timestamps. Remove each when its path drops the crate.
+Since 2026-11-11: RUSTSEC-2026-0459 (CVE-2026-119375) in the root
 `deny.toml`, for `libsqlite3-sys` 0.37, which `sqlx-sqlite` 0.9.0 pins: a local
 attack through a crafted database and `-wal` pair, reachable only with the
 opt-in `sqlite` feature. Its removal test is in the entry itself: remove it
