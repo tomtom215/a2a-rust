@@ -95,6 +95,15 @@ pub(super) fn request_bytes(
 mod tests {
     use super::*;
 
+    /// A request's size is the preamble's, the conversation's as JSON and
+    /// each tool's name, description and schema, added.
+    #[test]
+    fn a_request_counts_each_part_once() {
+        let spec = super::super::model::ToolSpec::new("ab", "cde", serde_json::json!({}));
+        // "p" (1) + "[]" (2) + "ab" (2) + "cde" (3) + "{}" (2).
+        assert_eq!(request_bytes("p", &[], &[spec]), 10);
+    }
+
     #[test]
     fn a_result_within_the_limit_is_unchanged() {
         assert_eq!(bound_result("abc".to_owned(), 3), "abc");
