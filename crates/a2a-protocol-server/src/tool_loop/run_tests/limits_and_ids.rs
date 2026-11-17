@@ -153,6 +153,27 @@ async fn a_request_past_the_limit_is_not_sent() {
     );
 }
 
+/// N09: the request limit admits a request of exactly its size and refuses
+/// one byte more.
+#[tokio::test]
+async fn a_request_exactly_at_the_limit_is_sent() {
+    let ask = |limit| async move {
+        let (model, _) = Scripted::new(vec![text("ok")]);
+        ToolLoop::new(model, tools(vec![]))
+            .with_request_limit(limit)
+            .run("go", &tokio_util::sync::CancellationToken::new())
+            .await
+    };
+    let Err(LoopError::TooLarge { bytes, .. }) = ask(1).await else {
+        panic!("a one-byte limit refuses the first request");
+    };
+    assert!(ask(bytes).await.is_ok(), "at the limit");
+    assert!(
+        matches!(ask(bytes - 1).await, Err(LoopError::TooLarge { .. })),
+        "one byte past it"
+    );
+}
+
 /// N09: the default checkpoint limit is 32 MiB, so a checkpoint of a call
 /// whose arguments run to 100 kB is written and the call runs.
 #[tokio::test]
