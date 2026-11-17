@@ -165,6 +165,9 @@ async fn a_plain_outbox_keeps_no_reservations_and_does_not_renew() {
     let outbox = Plain(InMemoryPushOutbox::new());
     assert!(!outbox.supports_reservations());
     assert!(!outbox.supports_renewal());
+    // An outbox this crate cannot see into is taken to be durable, so a
+    // durable profile accepts it.
+    assert!(!outbox.is_process_local());
     let unsupported = |what: &str, refused: bool| assert!(refused, "{what} is refused");
     unsupported(
         "reserve",
