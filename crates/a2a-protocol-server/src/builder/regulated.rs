@@ -25,7 +25,14 @@ fn refuse(why: impl Into<String>) -> ServerResult<()> {
 }
 
 /// Without the features, the audit log the profile needs cannot exist.
+// Skipped for the mutation gate only: it builds with every feature, where this
+// function is compiled out, so a mutant here changes nothing it builds and
+// shows as missed. Where it compiles, the mutant that matters is caught: the
+// body replaced with `Ok(())` fails
+// `without_audit_and_encryption_the_profile_names_the_features` (applied by
+// hand with the default features, 2026-11-17). ADR 0006.
 #[cfg(not(all(feature = "audit", feature = "encryption")))]
+#[mutants::skip]
 fn refuse_without_audit_features() -> ServerResult<()> {
     refuse(
         "needs an audit log that seals what its records say about people, which \
