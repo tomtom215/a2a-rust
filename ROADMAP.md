@@ -194,16 +194,27 @@ The qualification matrix's "Not covered" list is item 4.
 2. `[0.16.x]` `docs/compliance/spec-ledger.json` cites `CHANGELOG.md` by line
    number, so every release preparation breaks `check_spec_ledger.py`. Cite
    the heading.
-3. `[0.16.x]` The first publish of `a2a-protocol-slimrpc`, and a build of it
+3. `[0.16.x]` `scripts/check_provenance_manifest.py`, which `release.yml`
+   runs once per tag, gave a wrong answer once on 2026-11-18: of 17
+   measurements of one commit (`df6852d7`), one counted 2130 passing commits
+   and 17 without a sign-off where the other 16 counted 2131 and 16. Other
+   jobs were running on the machine; 4,500 runs of the classifier's pipeline
+   on single commits reproduced nothing. Suspected, not shown: `classify` in
+   `scripts/provenance_manifest.sh` pipes `git log` into `grep -q` under
+   `pipefail`, so a `git log` cut off by the closed pipe reads as no
+   sign-off. Find the cause. Until then, a failure at the tag that is off by
+   one in `pass` and `nosignoff` is this, and re-running the job is the
+   remedy.
+4. `[0.16.x]` The first publish of `a2a-protocol-slimrpc`, and a build of it
    on its declared MSRV (`RELEASING.md`).
-4. `[decision]` An absolute coverage floor in `codecov.yml`
+5. `[decision]` An absolute coverage floor in `codecov.yml`
    (`RELEASING.md`, *Path to 1.0.0*).
-5. `[0.16.x]` The evidence manifest runs no test suite and is not signed on
+6. `[0.16.x]` The evidence manifest runs no test suite and is not signed on
    its own (S6).
-6. `[decision]` Pin the toolchain a session and CI lint with. On 2026-11-18
+7. `[decision]` Pin the toolchain a session and CI lint with. On 2026-11-18
    the session image's `stable` was 1.97.0 and CI's 1.100.0, and their clippy
    disagreed.
-7. Merge Dependabot pull requests #213, #216 and #217 after the tag.
+8. Merge Dependabot pull requests #213, #216 and #217 after the tag.
 
 ### Antipatterns
 

@@ -105,7 +105,7 @@
   "finding": "Release evidence manifest tying the source tree to tests, waivers, supported profiles and measured limits",
   "blocker": "no",
   "basis": "read",
-  "evidence": "Release governance: the manifest is wired into release.yml (.github/workflows/release.yml:425-434); it runs no test suite and is not signed on its own. Planned: ROADMAP.md, After 0.16.0, Release engineering, item 5. The notes: not named in the 0.16.0 section."
+  "evidence": "Release governance: the manifest is wired into release.yml (.github/workflows/release.yml:425-434); it runs no test suite and is not signed on its own. Planned: ROADMAP.md, After 0.16.0, Release engineering, item 6. The notes: not named in the 0.16.0 section."
  },
  {
   "id": "G1",
@@ -1155,7 +1155,7 @@
   "id": "KL-22",
   "source": "CHANGELOG.md:3261",
   "status": "DISCLOSED",
-  "finding": "**Regulated use** (reviews X-19, A3 and E1; `docs/audits/2026-11-12-adversarial-review/findings.json`, `docs/audits/2026-11-13-adversarial-review/findings.jso",
+  "finding": "**Regulated use** (review rows X-19, A3 and E1, in the `findings.json` of `docs/audits/2026-11-11-external-review/`, `2026-11-12-adversarial-review/` and `202",
   "blocker": "no",
   "basis": "read",
   "evidence": "Added by this pull request for rows X-19, A3 and E1; see those rows."

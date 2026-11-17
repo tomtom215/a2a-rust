@@ -25,7 +25,7 @@ Re-run every command named; copy no figure.
 
 - **Pull request #218** (`claude/awesome-cerf-frngge` into `main`) is the release preparation; `git log --oneline 7ac5b74e..HEAD` lists it.
   It changes no library code. The only files under `crates/*/src` it touches are four test modules
-  (`git diff --stat 7ac5b74e..HEAD -- 'crates/*/src'`), for which `cargo mutants --in-diff` lists no mutant.
+  (`git diff --stat 7ac5b74e..HEAD -- ':(glob)crates/*/src/**'`), for which `cargo mutants --in-diff` lists no mutant.
 - **What it did.** `## [Unreleased]` became `## [0.16.0] - 2026-11-18`; `CITATION.cff`, `SECURITY.md`, `ROADMAP.md`'s release line and the
   book's changelog page name 0.16.0. Eight Known Limitations entries were corrected (seven against the code or the document they cite; one lost a claim nothing supports), every entry now has a workaround and
   a pointer into `ROADMAP.md`, and three were added (a store outage longer than `store_write_retry`, event positions after a takeover,
@@ -51,7 +51,9 @@ Re-run every command named; copy no figure.
   5. `git tag -s v0.16.0 -m "Release v0.16.0"`, `scripts/verify_tag_signature.sh v0.16.0`, `git push origin v0.16.0`.
   6. Afterwards: `RELEASING.md` section 4, the SLIMRPC binding's follow-up release, and Dependabot pull requests #213, #216 and #217.
 - **What else can stop the tag.** `CI1`: the two macOS discovery tests (register row, OPEN, cause unknown); a recurrence on the merge
-  commit turns `ci.yml` red.
+  commit turns `ci.yml` red. And `scripts/check_provenance_manifest.py` answered wrongly once in 17 measurements of one commit in this
+  session (2130 passing commits where 16 runs counted 2131; not reproduced, cause not shown; `ROADMAP.md`, *Release engineering*,
+  item 3): if `release.yml`'s validate job fails on the manifest with `pass` and `nosignoff` each off by one, re-run that job.
 - **Next, after the tag:** `ROADMAP.md`, *After 0.16.0*. Take *Release engineering* items 1 and 2 first (they cost every release),
   then *Fleet and failure correctness* item 1 (`X-10`, the one row that needed a new disclosure).
 - **Facts this session established.** The session image's `stable` was Rust 1.97.0 and CI's 1.100.0; clippy 1.97 fails on a lint
