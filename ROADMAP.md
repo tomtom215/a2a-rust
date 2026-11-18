@@ -205,16 +205,26 @@ The qualification matrix's "Not covered" list is item 4.
    sign-off. Find the cause. Until then, a failure at the tag that is off by
    one in `pass` and `nosignoff` is this, and re-running the job is the
    remedy.
-4. `[0.16.x]` The first publish of `a2a-protocol-slimrpc`, and a build of it
+4. `[0.16.x]` `blocking_over_stream_e2e`'s
+   `a_send_carried_over_a_stream_crosses_the_same_proxy` failed on `main` at
+   `7ac5b74e` (`ci.yml` run 44190122806, `Test (stable, ubuntu-latest)`, step
+   *Test (no default features)*) and passed its 15 other runs in that CI run.
+   The job's log shows the runner completing no test for about six seconds
+   (23:46:05 to 23:46:11 UTC). The test's proxy cuts a connection that is
+   silent for 600 ms while keep-alive comments come every 100 ms, so it
+   tolerates a pause of 500 ms. Make the test independent of a pause of the
+   machine, without widening the window or retrying it (`CI2` in
+   `docs/audits/0.16.0-release/findings.json`).
+5. `[0.16.x]` The first publish of `a2a-protocol-slimrpc`, and a build of it
    on its declared MSRV (`RELEASING.md`).
-5. `[decision]` An absolute coverage floor in `codecov.yml`
+6. `[decision]` An absolute coverage floor in `codecov.yml`
    (`RELEASING.md`, *Path to 1.0.0*).
-6. `[0.16.x]` The evidence manifest runs no test suite and is not signed on
+7. `[0.16.x]` The evidence manifest runs no test suite and is not signed on
    its own (S6).
-7. `[decision]` Pin the toolchain a session and CI lint with. On 2026-11-18
+8. `[decision]` Pin the toolchain a session and CI lint with. On 2026-11-18
    the session image's `stable` was 1.97.0 and CI's 1.100.0, and their clippy
    disagreed.
-8. Merge Dependabot pull requests #213, #216 and #217 after the tag.
+9. Merge Dependabot pull requests #213, #216 and #217 after the tag.
 
 ### Antipatterns
 

@@ -105,7 +105,7 @@
   "finding": "Release evidence manifest tying the source tree to tests, waivers, supported profiles and measured limits",
   "blocker": "no",
   "basis": "read",
-  "evidence": "Release governance: the manifest is wired into release.yml (.github/workflows/release.yml:425-434); it runs no test suite and is not signed on its own. Planned: ROADMAP.md, After 0.16.0, Release engineering, item 6. The notes: not named in the 0.16.0 section."
+  "evidence": "Release governance: the manifest is wired into release.yml (.github/workflows/release.yml:425-434); it runs no test suite and is not signed on its own. Planned: ROADMAP.md, After 0.16.0, Release engineering, item 7. The notes: not named in the 0.16.0 section."
  },
  {
   "id": "G1",
@@ -1159,5 +1159,14 @@
   "blocker": "no",
   "basis": "read",
   "evidence": "Added by this pull request for rows X-19, A3 and E1; see those rows."
+ },
+ {
+  "id": "CI2",
+  "source": "docs/audits/0.16.0-release/README.md (found while this register was written; ci.yml run 44190122806 on main at 7ac5b74e)",
+  "status": "OPEN",
+  "finding": "main's ci.yml went red on Test (stable, ubuntu-latest): blocking_over_stream_e2e a_send_carried_over_a_stream_crosses_the_same_proxy failed once in the step Test (no default features)",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "First error: crates/a2a-protocol-client/tests/blocking_over_stream_e2e.rs:223:37, JSONRPC: HttpClient(\"client error (SendRequest): connection closed before message completed\"). The job's log shows no test completing in the seconds 23:46:06, :07 and :09 UTC (87 to 294 completed in each second from 23:45:58 to 23:46:04), and the four tests of this binary, in flight then, ran 1.6 to 5.1 s longer than in the job's other steps, so the runner paused for about six seconds. The test's proxy cuts a connection silent for 600 ms and the server's keep-alive comments come every 100 ms, so a pause over 500 ms fails it. The same test passed in the job's seven other steps and in all eight steps of Test (1.94, ubuntu-latest). A timing-sensitive test and a paused runner, not a defect a user of 0.16.0 hits; no library or test code was changed for it. A risk to the tag: a recurrence on the merge commit turns ci.yml red until the failed job is re-run. Planned: ROADMAP.md, After 0.16.0, Release engineering, item 4. The notes: not named in the 0.16.0 section."
  }
 ]

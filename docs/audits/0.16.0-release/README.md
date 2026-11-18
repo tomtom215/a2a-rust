@@ -26,9 +26,9 @@ Read them from the file, not from this page:
 python3 -c "import json,collections;r=json.load(open('docs/audits/0.16.0-release/findings.json'));print(len(r),collections.Counter(x['blocker'] for x in r),collections.Counter(x['basis'] for x in r),collections.Counter(x['source'].split('/')[2] if x['source'].startswith('docs/') else 'CHANGELOG.md' for x in r))"
 ```
 
-On 2026-11-18 it printed 129 rows, all `blocker: no`; 91 with basis `read` and 38 with basis `summary`; 81 from the 2026-11-01
-triage, 13 from the 2026-11-11 external review, 9 from the 2026-11-12 review, 4 from the 2026-11-13 review, and the 22 Known
-Limitations of the release.
+On 2026-11-18 it printed 130 rows, all `blocker: no`; 92 with basis `read` and 38 with basis `summary`; 81 from the 2026-11-01
+triage, 13 from the 2026-11-11 external review, 9 from the 2026-11-12 review, 4 from the 2026-11-13 review, the 22 Known
+Limitations of the release, and one row found while the register was written (`CI2`, listed under `0.16.0-release`).
 
 ## What was included
 
@@ -40,6 +40,8 @@ Limitations of the release.
   status since the triage is the table in section O of `docs/audits/2026-10-29/README.md`, which was joined to them by id: the
   ids a table row is about are the ones before its first colon, and the last row that names an id wins. 119 are `fixed`, 3
   `not a defect` and 2 `refuted (live)`; the other 81 are here, 76 as `fixed (part)` and 5 as `open`.
+- **`CI2`**, a test that failed once on `main` while this was written (`ci.yml` run 44190122806). It is a risk to the tag, not to a
+  user, and its row says what the job's log shows.
 - **The Known Limitations of the 0.16.0 section of `CHANGELOG.md`**, as `KL-01` to `KL-22`, in the order they appear. Entries 20
   to 22 were added with this register.
 

@@ -51,7 +51,11 @@ Re-run every command named; copy no figure.
   5. `git tag -s v0.16.0 -m "Release v0.16.0"`, `scripts/verify_tag_signature.sh v0.16.0`, `git push origin v0.16.0`.
   6. Afterwards: `RELEASING.md` section 4, the SLIMRPC binding's follow-up release, and Dependabot pull requests #213, #216 and #217.
 - **What else can stop the tag.** `CI1`: the two macOS discovery tests (register row, OPEN, cause unknown); a recurrence on the merge
-  commit turns `ci.yml` red. And `scripts/check_provenance_manifest.py` answered wrongly once in 17 measurements of one commit in this
+  commit turns `ci.yml` red. `CI2`: `main`'s own `ci.yml` run at `7ac5b74e` (44190122806) went red on
+  `Test (stable, ubuntu-latest)`, where `blocking_over_stream_e2e`'s `a_send_carried_over_a_stream_crosses_the_same_proxy` failed once
+  and passed its 15 other runs; the runner completed no test for about six seconds and the test tolerates a pause of 500 ms
+  (`ROADMAP.md`, *Release engineering*, item 4). If it fails on the merge commit, re-run the failed job once: the release gate reads
+  the run's latest attempt. And `scripts/check_provenance_manifest.py` answered wrongly once in 17 measurements of one commit in this
   session (2130 passing commits where 16 runs counted 2131; not reproduced, cause not shown; `ROADMAP.md`, *Release engineering*,
   item 3): if `release.yml`'s validate job fails on the manifest with `pass` and `nosignoff` each off by one, re-run that job.
 - **Next, after the tag:** `ROADMAP.md`, *After 0.16.0*. Take *Release engineering* items 1 and 2 first (they cost every release),
