@@ -40,16 +40,16 @@ Use the GitHub channels, or `tomf@tomtomtech.net`.
 Most questions are answered by material already in the repository, and it is
 unusually detailed for a project this size:
 
-- **[The book](https://tomtom215.github.io/a2a-rust/)** — `book/src/`, built
+- **[The book](https://a2a-rust.com/)** — `book/src/`, built
   from this repository. Start at "Building Agents".
 - **[`README.md`](README.md)** — what the crates are and which one you want.
-- **[`examples/`](examples/)** — six runnable agents, including the
-  `echo-agent` the conformance suite runs against.
+- **[`examples/`](examples/)** — runnable agents, including the
+  `echo-agent` the in-repository TCK runs against.
 - **[`SPEC_COMPLIANCE.md`](SPEC_COMPLIANCE.md)** — what of the A2A v1.0
   specification is implemented.
 - **[`book/src/reference/configuration.md`](book/src/reference/configuration.md)**
   — every builder option.
-- **[`docs/adr/`](docs/adr/)** — ten architecture decision records, for "why is
+- **[`docs/adr/`](docs/adr/)** — the architecture decision records, for "why is
   it like this?"
 
 If you are asking whether a behaviour is conformant, check
@@ -72,7 +72,7 @@ your case is worth far more than a description:
 5. `RUST_LOG=debug` output if the failure is at runtime.
 
 If you believe the behaviour violates the A2A specification, say which
-requirement. The official TCK grades this SDK against 88 MUST-level
+requirement. The official TCK grades this SDK against 87 MUST-level
 requirements on its full profile, so if your case is covered by one of them,
 that is a strong report and it will be treated as one.
 

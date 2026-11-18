@@ -12,13 +12,13 @@ workflow checks that it covers the version being tagged.)
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.15.x  | :white_check_mark: |
-| < 0.15  | :x:                |
+| 0.16.x  | :white_check_mark: |
+| < 0.16  | :x:                |
 
 ### How long a line is supported
 
 Exactly as long as it is the latest minor line. The day a new minor release
-(`0.15.0`) is published, the previous line (`0.14.x`) stops receiving fixes,
+(`0.16.0`) is published, the previous line (`0.15.x`) stops receiving fixes,
 security fixes included; there is no overlap window and no long-term-support
 line. A fix for a vulnerability ships as a patch release of the current line
 — `0.14.1` for GHSA-hr9h-6jvf-wvg6 is the precedent. Pin and plan

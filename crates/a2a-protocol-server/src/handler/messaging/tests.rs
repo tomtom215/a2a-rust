@@ -2774,7 +2774,7 @@ async fn a_send_asking_for_history_gets_the_whole_conversation() {
         .map(|m| m.id.0.clone())
         .collect();
     assert!(
-        ids.contains(&"user-0".to_string()),
+        ids.iter().any(|id| id == "user-0"),
         "historyLength asked for 10 messages and the response carried {ids:?}; \
          the earlier turns are missing, so the response was shaped from the \
          send path's own one-message task instead of the stored conversation"

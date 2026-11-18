@@ -33,8 +33,8 @@ fn terminal_states_matches_is_terminal_for_every_variant() {
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 fn labels_are_the_stored_spellings() {
     let labels = terminal_state_labels();
-    assert!(labels.contains(&"TASK_STATE_COMPLETED".to_string()));
-    assert!(labels.contains(&"TASK_STATE_REJECTED".to_string()));
+    assert!(labels.iter().any(|l| l == "TASK_STATE_COMPLETED"));
+    assert!(labels.iter().any(|l| l == "TASK_STATE_REJECTED"));
     assert_eq!(labels.len(), terminal_states().len());
     // The store writes `task.status.state.to_string()`; if that ever stops
     // agreeing with what a purge looks for, every sweep silently becomes a

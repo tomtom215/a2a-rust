@@ -76,7 +76,7 @@ a2a-protocol-server = { path = "../a2a-rust/crates/a2a-protocol-server" }
 ### Why two version numbers
 
 `a2a-protocol-slimrpc` is versioned independently of the SDK — it is at `0.7`
-while the SDK is at `0.15`. Numbering it to match would claim eight minor
+while the SDK is at `0.16`. Numbering it to match would claim nine minor
 versions of API stability it has not earned, and would force a bump
 on every SDK release even when nothing here changed.
 

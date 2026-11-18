@@ -19,6 +19,57 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
+State on 2026-11-18 (UTC), written at the end of the release preparation for 0.16.0 and **before the tag**: pull request #218 was open,
+`main` was `7ac5b74e` (the merge of #210) and `v0.15.0` was the newest tag. Every step below marked *the maintainer's* had not happened.
+Re-run every command named; copy no figure.
+
+- **Pull request #218** (`claude/awesome-cerf-frngge` into `main`) is the release preparation; `git log --oneline 7ac5b74e..HEAD` lists it.
+  It changes no library code. The only files under `crates/*/src` it touches are four test modules
+  (`git diff --stat 7ac5b74e..HEAD -- ':(glob)crates/*/src/**'`), for which `cargo mutants --in-diff` lists no mutant.
+- **What it did.** `## [Unreleased]` became `## [0.16.0] - 2026-11-18`; `CITATION.cff`, `SECURITY.md`, `ROADMAP.md`'s release line and the
+  book's changelog page name 0.16.0. Eight Known Limitations entries were corrected (seven against the code or the document they cite; one lost a claim nothing supports), every entry now has a workaround and
+  a pointer into `ROADMAP.md`, and three were added (a store outage longer than `store_write_retry`, event positions after a takeover,
+  regulated use). Stale statements in `STABILITY.md`, `SUPPORT.md`, `SPEC_COMPLIANCE.md`, `RELEASING.md`, four READMEs under `crates/` and six
+  book pages were corrected. `docs/audits/0.16.0-release/` answers, for every open register row, whether it blocks the release (none
+  does; its README has the rule, the method and the command that counts it). `ROADMAP.md`, *After 0.16.0*, is the backlog for 0.16.x
+  and 0.17. `docs/provenance-manifest.md` was regenerated in the last commit.
+- **A tag blocker was found and removed.** `main`'s `Nightly (informational)` job failed at `7ac5b74e` (run 44190122806) on nightly
+  clippy, and `scripts/ci_evidence.py`, which `release.yml` runs on the tagged commit, refuses any failed job, although that job is
+  `continue-on-error`. Ten sites in `#[cfg(test)]` code were rewritten; nightly clippy
+  (`rustc 1.102.0-nightly (5df8c02af 2026-11-16)`) then exited 0. **The nightly toolchain floats:** a later nightly can fail that job
+  again on the merge commit, and the tag would be refused again. The decision is `ROADMAP.md`, *Release engineering*, item 1.
+- **To release (the maintainer's), in this order.**
+  1. Wait for #218's CI. Its `Mutation Testing` check needs the `mutation-test` label, which it has; with no mutant in the diff each
+     shard reports that cargo-mutants selected none.
+  2. Merge with a merge commit, never a squash: the provenance manifest pins a commit that has to stay in `main`'s history.
+  3. Wait for `ci.yml`'s **push** run on the merge commit: `success`, with no failed job, `Nightly (informational)` included.
+     `python3 scripts/ci_evidence.py --repo tomtom215/a2a-rust --sha <merge commit> --out /tmp/ci-evidence.json` is the gate's own
+     question.
+  4. On the merge commit: `for c in unreleased prep cadence highlights; do python3 scripts/check_release_tree.py "$c" v0.16.0 HEAD; done`
+     and `python3 scripts/check_provenance_manifest.py "$(git rev-parse HEAD)"`. Merge nothing else first: any other change on `main`
+     breaks the manifest gate. (`benchmarks.yml` does not push while the in-tree version has no tag.)
+  5. `git tag -s v0.16.0 -m "Release v0.16.0"`, `scripts/verify_tag_signature.sh v0.16.0`, `git push origin v0.16.0`.
+  6. Afterwards: `RELEASING.md` section 4, the SLIMRPC binding's follow-up release, and Dependabot pull requests #213, #216 and #217.
+- **What else can stop the tag.** `CI1`: the two macOS discovery tests (register row, OPEN, cause unknown); a recurrence on the merge
+  commit turns `ci.yml` red. `CI2`: `main`'s own `ci.yml` run at `7ac5b74e` (44190122806) went red on
+  `Test (stable, ubuntu-latest)`, where `blocking_over_stream_e2e`'s `a_send_carried_over_a_stream_crosses_the_same_proxy` failed once
+  and passed its 15 other runs; the runner completed no test for about six seconds and the test tolerates a pause of 500 ms
+  (`ROADMAP.md`, *Release engineering*, item 4). If it fails on the merge commit, re-run the failed job once: the release gate reads
+  the run's latest attempt. And `scripts/check_provenance_manifest.py` answered wrongly once in 17 measurements of one commit in this
+  session (2130 passing commits where 16 runs counted 2131; not reproduced, cause not shown; `ROADMAP.md`, *Release engineering*,
+  item 3): if `release.yml`'s validate job fails on the manifest with `pass` and `nosignoff` each off by one, re-run that job.
+- **Next, after the tag:** `ROADMAP.md`, *After 0.16.0*. Take *Release engineering* items 1 and 2 first (they cost every release),
+  then *Fleet and failure correctness* item 1 (`X-10`, the one row that needed a new disclosure).
+- **Facts this session established.** The session image's `stable` was Rust 1.97.0 and CI's 1.100.0; clippy 1.97 fails on a lint
+  1.100 does not have, so install CI's (`rustup toolchain install 1.100.0 --profile minimal -c clippy -c rustfmt`) and run with
+  `RUSTUP_TOOLCHAIN=1.100.0`. `static-checks` needs `ssh-keygen` (`apt-get install -y openssh-client`).
+  `docs/compliance/spec-ledger.json` cites `CHANGELOG.md` by line, so any line added above the 0.5.0 heading fails
+  `check_spec_ledger.py` until the citation is moved. `scripts/install_cargo_mutants.sh` builds the pinned cargo-mutants in about
+  five minutes. The clone is shallow: `git fetch --unshallow --tags origin` before `scripts/provenance_manifest.sh` or anything that
+  reads a tag.
+
+## Previous state (2026-11-17)
+
 State on 2026-11-17 (UTC), written at the end of the session that drove pull request #210. Re-run every command named; copy no figure.
 
 - **Pull request #210** (`claude/dazzling-wozniak-xp79ii` into `main`; `main` is `70dc3374`, `git rev-parse origin/main`): 56 commits
@@ -116,13 +167,9 @@ it instead of copying the number. The previous version of this block (pull reque
 
 ### First, next
 
-1. **Read the pull request's CI**, every leg, the Windows and macOS ones first: each macOS leg runs the discovery tests seven times, which is
-   CI1's evidence. A failure now says whether the agent was late or lost. Label it `mutation-test` if it is not, and read every shard's log
-   (the aggregate fails on a timeout, N15).
-2. **To release 0.16.0 after the merge** (`STABILITY.md`, `release.yml`): a release-preparation commit that renames `## [Unreleased]` to
-   `## [0.16.0] - <date>` and adds an empty `[Unreleased]`, and moves `SECURITY.md`'s supported line to 0.16.x; `main`'s `ci.yml` run on that
-   commit green (N13's gate reads it); then tag that commit. `scripts/check_release_tree.py` checks the tree (`unreleased`, `prep`, `cadence`,
-   `highlights`) and `notes` writes the release body.
+Items 1 and 2 of this list (read pull request #210's CI; prepare the release) are done: *Now* has the release steps that are left, and
+`ROADMAP.md`, *After 0.16.0*, has everything below in its groups.
+
 3. **CI1**, if it recurs: the failure message now says late or lost; take it from there. If it never recurs, close it with the count of green
    macOS runs.
 4. **N14's rest:** a PostgreSQL 0.15 to 0.16 rehearsal of the audit and push-config stores, and a PostgreSQL rollback.

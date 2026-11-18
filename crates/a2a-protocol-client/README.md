@@ -57,7 +57,7 @@ All 11 A2A v1.0 methods are methods of `A2aClient`:
 - `send_message()` / `stream_message()` -- send, and stream the responses
 - `get_task()` / `list_tasks()` / `cancel_task()` -- task management
 - `subscribe_to_task()` / `subscribe_to_task_from()` -- real-time task updates, the second resuming after a known event
-- `set_push_config()` / `get_push_config()` / `list_push_configs()` / `delete_push_config()` -- push notifications
+- `create_push_config()` / `get_push_config()` / `list_push_configs()` / `delete_push_config()` -- push notifications
 - `get_extended_agent_card()` -- the authenticated extended agent card
 
 ## Features
