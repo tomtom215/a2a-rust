@@ -40,6 +40,15 @@ env:
   RUSTFLAGS: "-D warnings"
   RUSTDOCFLAGS: "-D warnings"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # No debuginfo in the test builds, as ci.yml has had since rig-core joined
+  # the workspace. This file never got the line, and v0.16.0's first two
+  # release runs (44400079339, attempts 1 and 2) died in `CI / test · Linux`
+  # with "No space left on device" eleven minutes into
+  # `cargo test --workspace --all-features`: with full debuginfo that build
+  # no longer fits an ubuntu-latest runner's disk. ci.yml builds the same
+  # tests without it, sixteen feature sets in one target directory, and fits.
+  # Tests need no debuginfo to pass or to report a failure.
+  CARGO_PROFILE_DEV_DEBUG: 0
 
 # ── Job 1: Validate tag & extract metadata ────────────────────────────────────
 jobs:

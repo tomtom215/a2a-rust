@@ -81,7 +81,7 @@ The SLIMRPC binding (`bindings/a2a-protocol-slimrpc`) is versioned
 independently and is not part of the tagged release; `release.yml` does not
 touch it.
 
-## v0.16.0 (2026-11-18)
+## v0.16.0 (2026-11-19)
 
 A minor release with breaking changes. Read
 [Upgrading from 0.15 to 0.16](./upgrading/0.15-to-0.16.md) before you build

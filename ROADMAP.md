@@ -3,7 +3,7 @@
 
 # Roadmap
 
-Current release: **0.16.0** (prepared 2026-11-18; the tag is the maintainer's act). **0.15.0** was published 2026-10-25; a `0.15.1` was prepared on 2026-10-26 and never tagged or published, and what it held ships in 0.16.0. MSRV **1.94** (raised from 1.88 for sqlx 0.9 on 2026-10-23; edition 2024).
+Current release: **0.16.0** (prepared 2026-11-18 and dated 2026-11-19, the day of the tag that released it; the tag is the maintainer's act). **0.15.0** was published 2026-10-25; a `0.15.1` was prepared on 2026-10-26 and never tagged or published, and what it held ships in 0.16.0. MSRV **1.94** (raised from 1.88 for sqlx 0.9 on 2026-10-23; edition 2024).
 
 ## What this file is
 
@@ -225,6 +225,15 @@ The qualification matrix's "Not covered" list is item 4.
    the session image's `stable` was 1.97.0 and CI's 1.100.0, and their clippy
    disagreed.
 9. Merge Dependabot pull requests #213, #216 and #217 after the tag.
+10. `[0.16.x]` `release.yml`'s `ci` job is a reduced copy of `ci.yml`, and
+    nothing compares the two. It lacked `ci.yml`'s
+    `CARGO_PROFILE_DEV_DEBUG: 0`, so the first two release runs of v0.16.0
+    (44400079339, attempts 1 and 2) ran out of disk in `CI / test · Linux`
+    and the tag had to be re-created on a commit with the line. Check that
+    the build environment of the two files agrees, or have the release call
+    `ci.yml`'s test job. The jobs after `ci` (package, publish dry run,
+    GitHub release, CLI binaries, the image) run only on a tag, so a tag is
+    where a defect in them is first seen.
 
 ### Antipatterns
 
