@@ -12,7 +12,7 @@ happen before a `1.0`. [ROADMAP.md](ROADMAP.md) tracks the open items;
 
 ## 1. Where the project is
 
-The crates are at `0.16.0` (2026-11-18), the newest release; `0.15.0`
+The crates are at `0.16.0` (2026-11-19), the newest release; `0.15.0`
 (2026-10-25) is the one before. `0.14.0` (2026-09-26) carried seven breaking
 changes and `0.14.1`, a patch, none. `0.15.0` carries 26, each under "Breaking
 Changes" in `CHANGELOG.md` with its migration (counted 2026-10-23 as that

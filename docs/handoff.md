@@ -19,28 +19,38 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-State on 2026-11-18 (UTC), written at the end of the release preparation for 0.16.0 and **before the tag**: pull request #218 was open,
-`main` was `7ac5b74e` (the merge of #210) and `v0.15.0` was the newest tag. Every step below marked *the maintainer's* had not happened.
-Re-run every command named; copy no figure.
+State on 2026-11-18 at 22:00 UTC, written while the first tag of 0.16.0 was being replaced. Pull request #218, the release preparation,
+is merged (`main` was `89da7cfb`). The maintainer tagged `v0.16.0` there, `release.yml` failed twice before anything was published, and
+this file ships in the pull request that fixes that (branch `claude/awesome-cerf-frngge` again; its number is on the branch's GitHub
+page). Every step below marked *the maintainer's* had not happened. Re-run every command named; copy no figure.
 
-- **Pull request #218** (`claude/awesome-cerf-frngge` into `main`) is the release preparation; `git log --oneline 7ac5b74e..HEAD` lists it.
+- **The first tag failed, and why.** `release.yml` run 44400079339, attempts 1 and 2: `CI / test · Linux` died with
+  `No space left on device` eleven minutes into `cargo test --workspace --all-features`. `release.yml` built the tests with full
+  debuginfo; `ci.yml` sets `CARGO_PROFILE_DEV_DEBUG: 0` and ran the same all-features tests green on `89da7cfb`
+  (run 44260766384, step `Test (all features)`). `release.yml` now has the line. Every job after `ci` was skipped, so nothing was
+  published: crates.io and the GitHub releases ended at 0.15.0 (read at 21:45 UTC). A tag's workflow is read from the tagged
+  commit, so the fix needs a new commit and the tag has to be re-created on it. The release is dated 2026-11-19, the day of
+  that second tag (`CHANGELOG.md`, `CITATION.cff`, `STABILITY.md`, the book's changelog page).
+
+- **Pull request #218** (`claude/awesome-cerf-frngge` into `main`, merged as `89da7cfb`) was the release preparation; `git log --oneline 7ac5b74e..89da7cfb` lists it.
   It changes no library code. The only files under `crates/*/src` it touches are four test modules
-  (`git diff --stat 7ac5b74e..HEAD -- ':(glob)crates/*/src/**'`), for which `cargo mutants --in-diff` lists no mutant.
-- **What it did.** `## [Unreleased]` became `## [0.16.0] - 2026-11-18`; `CITATION.cff`, `SECURITY.md`, `ROADMAP.md`'s release line and the
+  (`git diff --stat 7ac5b74e..89da7cfb -- ':(glob)crates/*/src/**'`), for which `cargo mutants --in-diff` lists no mutant.
+- **What it did.** `## [Unreleased]` became `## [0.16.0] - 2026-11-18` (2026-11-19 since the second tag); `CITATION.cff`, `SECURITY.md`, `ROADMAP.md`'s release line and the
   book's changelog page name 0.16.0. Eight Known Limitations entries were corrected (seven against the code or the document they cite; one lost a claim nothing supports), every entry now has a workaround and
   a pointer into `ROADMAP.md`, and three were added (a store outage longer than `store_write_retry`, event positions after a takeover,
   regulated use). Stale statements in `STABILITY.md`, `SUPPORT.md`, `SPEC_COMPLIANCE.md`, `RELEASING.md`, four READMEs under `crates/` and six
   book pages were corrected. `docs/audits/0.16.0-release/` answers, for every open register row, whether it blocks the release (none
   does; its README has the rule, the method and the command that counts it). `ROADMAP.md`, *After 0.16.0*, is the backlog for 0.16.x
-  and 0.17. `docs/provenance-manifest.md` was regenerated in the last commit.
+  and 0.17. `docs/provenance-manifest.md` was regenerated in its last commit, and again in the last commit of the fix.
 - **A tag blocker was found and removed.** `main`'s `Nightly (informational)` job failed at `7ac5b74e` (run 44190122806) on nightly
   clippy, and `scripts/ci_evidence.py`, which `release.yml` runs on the tagged commit, refuses any failed job, although that job is
   `continue-on-error`. Ten sites in `#[cfg(test)]` code were rewritten; nightly clippy
   (`rustc 1.102.0-nightly (5df8c02af 2026-11-16)`) then exited 0. **The nightly toolchain floats:** a later nightly can fail that job
-  again on the merge commit, and the tag would be refused again. The decision is `ROADMAP.md`, *Release engineering*, item 1.
+  again on a merge commit, and the tag would be refused again (on `89da7cfb` it passed, run 44260766384). The decision is
+  `ROADMAP.md`, *Release engineering*, item 1.
 - **To release (the maintainer's), in this order.**
-  1. Wait for #218's CI. Its `Mutation Testing` check needs the `mutation-test` label, which it has; with no mutant in the diff each
-     shard reports that cargo-mutants selected none.
+  1. Wait for the fix's pull request to pass CI. Its `Mutation Testing` check needs the `mutation-test` label; it changes no
+     file under `crates/*/src`, so every shard has nothing to mutate.
   2. Merge with a merge commit, never a squash: the provenance manifest pins a commit that has to stay in `main`'s history.
   3. Wait for `ci.yml`'s **push** run on the merge commit: `success`, with no failed job, `Nightly (informational)` included.
      `python3 scripts/ci_evidence.py --repo tomtom215/a2a-rust --sha <merge commit> --out /tmp/ci-evidence.json` is the gate's own
@@ -48,9 +58,12 @@ Re-run every command named; copy no figure.
   4. On the merge commit: `for c in unreleased prep cadence highlights; do python3 scripts/check_release_tree.py "$c" v0.16.0 HEAD; done`
      and `python3 scripts/check_provenance_manifest.py "$(git rev-parse HEAD)"`. Merge nothing else first: any other change on `main`
      breaks the manifest gate. (`benchmarks.yml` does not push while the in-tree version has no tag.)
-  5. `git tag -s v0.16.0 -m "Release v0.16.0"`, `scripts/verify_tag_signature.sh v0.16.0`, `git push origin v0.16.0`.
+  5. Replace the tag, which is safe only because nothing was published under the first one (check crates.io and the GitHub
+     releases again first): `git push origin :refs/tags/v0.16.0`, `git tag -d v0.16.0`, then on the new merge commit
+     `git tag -s v0.16.0 -m "Release v0.16.0"`, `scripts/verify_tag_signature.sh v0.16.0`, `git push origin v0.16.0`.
   6. Afterwards: `RELEASING.md` section 4, the SLIMRPC binding's follow-up release, and Dependabot pull requests #213, #216 and #217.
-- **What else can stop the tag.** `CI1`: the two macOS discovery tests (register row, OPEN, cause unknown); a recurrence on the merge
+- **What else can stop the tag.** The jobs of `release.yml` after `ci` (package, publish dry run, GitHub release, CLI binaries,
+  the image) have not run on this tree; a failure there is new. `CI1`: the two macOS discovery tests (register row, OPEN, cause unknown); a recurrence on the merge
   commit turns `ci.yml` red. `CI2`: `main`'s own `ci.yml` run at `7ac5b74e` (44190122806) went red on
   `Test (stable, ubuntu-latest)`, where `blocking_over_stream_e2e`'s `a_send_carried_over_a_stream_crosses_the_same_proxy` failed once
   and passed its 15 other runs; the runner completed no test for about six seconds and the test tolerates a pause of 500 ms
