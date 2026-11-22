@@ -192,7 +192,7 @@ jobs:
     # wrong reason, which is worth knowing before trusting the next one.)
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_PASSWORD: postgres
         options: >-
@@ -1245,7 +1245,7 @@ jobs:
     # be judged against a real database, not against absent tests.
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_PASSWORD: postgres
         options: >-

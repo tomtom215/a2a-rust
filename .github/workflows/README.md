@@ -80,7 +80,7 @@ weekly and on demand, never on a pull request.
 Other jobs also run on pull requests but are not on the list above, and this
 file does not record whether each is meant to stay off it:
 
-- `CI`: `Test (postgres integration)`, `cargo-semver-checks`,
+- `CI`: `Test (postgres integration, PostgreSQL <version>)` (16, 18, 19), `cargo-semver-checks`,
   `SDK dogfood (agent-team, all features)`, `SLIMRPC binding (out-of-workspace)`,
   `Example surface coverage (all methods x all bindings)`,
   `Example surface coverage (durability, scaling, swarm)`,

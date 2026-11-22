@@ -60,7 +60,7 @@ guarantee as the rest of the crate.
 |---|---|---|---|
 | In memory | Yes, for `Profile::LocalDevelopment`; not durable | — | every test run |
 | SQLite, feature `sqlite` | Yes, one process per database file | Task store: version 9 in 0.16 (8 in 0.15), recorded in the file's `schema_versions` table when opened with `with_migrations`; the other SQLite stores create or extend their tables in place | `sqlx` 0.9.0 with `libsqlite3-sys` 0.37.0 (`Cargo.lock`) |
-| PostgreSQL, feature `postgres` | Yes, shared by replicas | Task store: version 9 in 0.16 (7 in 0.15), recorded in `schema_versions` when opened with `with_migrations` | PostgreSQL 16 in CI (`ci.yml`, service `postgres:16`); other major versions are not tested |
+| PostgreSQL, feature `postgres` | Yes, shared by replicas | Task store: version 9 in 0.16 (7 in 0.15), recorded in `schema_versions` when opened with `with_migrations` | PostgreSQL 16, 18 and 19 in CI (`ci.yml`, job `test-postgres`, one run per version); 18 in every other job that needs a database. 15 and 17 are not tested in CI (17 ran in the live scripts of 2026-11-14) |
 
 `deny.toml` carries one advisory waiver that concerns the SQLite stores: RUSTSEC-2026-0459 in `libsqlite3-sys`, which
 `sqlx` 0.9.0 pins. `SECURITY.md` explains it.
