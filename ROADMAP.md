@@ -241,6 +241,14 @@ The qualification matrix's "Not covered" list is item 4.
     `ci.yml`'s test job. The jobs after `ci` (package, publish dry run,
     GitHub release, CLI binaries, the image) run only on a tag, so a tag is
     where a defect in them is first seen.
+11. `[0.16.x]` `crates/a2a-protocol-server/tests/statement_count.rs` counts
+    0 statements when the server has SSL on (sqlx's `sslmode=prefer`
+    encrypts what its counting proxy reads), and its message then says to
+    lower the constants. Refuse a server that accepts the SSLRequest. Found
+    2026-11-22 on a local PostgreSQL 16 with `ssl = on` (`docs/handoff.md`).
+12. `[0.16.x]` `docs/readiness-bar.md` says "F1 is measured" in its
+    2026-11-11 section, while its 2026-11-12 section and its
+    machine-readable block list F1 as not measured. Make them agree.
 
 ### Antipatterns
 
