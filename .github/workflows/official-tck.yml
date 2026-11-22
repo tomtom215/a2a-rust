@@ -55,7 +55,7 @@ env:
   # `tck/scripts/check_conformance.py --update` if the verdicts changed, record
   # why in docs/official-tck-findings.md, and change the SHA here in the same
   # pull request. The `--min-graded` floors below are measured at this pin.
-  A2A_TCK_PIN: 70f6f73c30208e80c889141907e094899e6e9f05
+  A2A_TCK_PIN: 5e6f37c2d38eb3d7684686243c34d365c83df49b
 
 jobs:
   official-tck:
@@ -99,6 +99,10 @@ jobs:
           git -C /tmp/a2a-tck checkout --quiet FETCH_HEAD
           echo "a2a-tck revision graded: $(git -C /tmp/a2a-tck rev-parse HEAD) (requested: $A2A_TCK_REVISION)"
 
+      # Since a2a-tck 104a7b4 (in the pin) the suite requires Python >= 3.15,
+      # so `uv venv` downloads a CPython 3.15 of its own rather than using the
+      # 3.12 above, which the gate scripts of this repository run on (the
+      # nightly of 2026-11-22 used 3.15.1).
       - name: Install the TCK
         id: install_tck
         working-directory: /tmp/a2a-tck
@@ -405,8 +409,8 @@ jobs:
       # required-extension enforcement is per-request (spec §3.3.4), and this
       # SDK implements it that way. The suite does not send `A2A-Extensions`
       # activation on its ordinary positive requests — upstream
-      # a2aproject/a2a-tck#193, still open as of the pin in A2A_TCK_REVISION —
-      # so an unscoped run against this card answers every other CORE-* check
+      # a2aproject/a2a-tck#193; at the pin (5e6f37c) its transport clients in
+      # `tck/transport` still send none — so an unscoped run against this card answers every other CORE-* check
       # with ExtensionSupportRequiredError. Measured, not guessed: the
       # unscoped run produces 72 failures.
       #

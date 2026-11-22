@@ -29,33 +29,30 @@ What this release claims about the A2A specification, what each claim rests on, 
 
 ## External suites
 
-**Official `a2aproject/a2a-tck`**, pinned at `70f6f73c30208e80c889141907e094899e6e9f05`, against `tck/sut`. Run locally with
-`scripts/run_workflow_job.py .github/workflows/official-tck.yml official-tck` (every step passed). The counts come from its
-pytest summaries and from `/tmp/full-compatibility.json`.
+**Official `a2aproject/a2a-tck`**, pinned at `5e6f37c2d38eb3d7684686243c34d365c83df49b`, against `tck/sut`. The counts are those
+of CI's nightly run 44981785033 (2026-11-22, on `334fa45c`, the `v0.16.0` tag), which graded that commit: its pytest summaries and
+its report artifact (`full-compatibility.json`, `minimal-compatibility.json`). Run locally with
+`scripts/run_workflow_job.py .github/workflows/official-tck.yml official-tck`.
 
 | Profile | Passed | Failed | Skipped | MUST graded (floor) | Gate |
 |---|---|---|---|---|---|
-| Full | 240 | 4 | 19 | 87 (87) | Failures exactly the baseline |
-| Minimal capability | 175 | 4 | 84 | 65 (65) | Failures exactly the baseline |
+| Full | 244 | 0 | 19 | 87 (87) | No failure; the baseline is empty |
+| Minimal capability | 179 | 0 | 84 | 65 (65) | No failure; the baseline is empty |
 | Required extension | 2 | 0 | — | 1 (CORE-CAP-004) | Passed |
 
 In the full profile the suite classifies the requirements it knows as follows:
 
 | Level | Pass | Fail | Skipped | Manual | Not tested |
 |---|---|---|---|---|---|
-| MUST | 85 | 2 | 5 | 7 | 16 |
+| MUST | 87 | 0 | 5 | 7 | 16 |
 | SHOULD | 9 | 0 | 1 | 2 | 2 |
 | MAY | 4 | 0 | 0 | 0 | 0 |
 
-The two failing MUSTs are **known and baselined**, with the reasoning in `docs/official-tck-findings.md`:
-
-* `CORE-SEND-003`, on all three bindings. A part whose media type the card does not declare is refused with an error, which
-  is what §3.1.1 requires. The suite's check asserts the send succeeds, so it cannot pass against an agent that does what
-  the requirement's own title says (findings §22).
-* `HTTP_JSON-ERR-001`, on HTTP+JSON. Error responses are sent as `application/a2a+json` (§11.1, the maintainer's decision
-  of 2026-10-15), where the suite expects `application/json` (findings §23).
-
-A green gate here means "no failure beyond the baseline", **not** "no failure".
+No MUST the suite grades fails. The two that failed at the previous pin (`70f6f73`), `CORE-SEND-003` on all three bindings and
+`HTTP_JSON-ERR-001` on HTTP+JSON, were defects of the suite, corrected upstream in a2aproject/a2a-tck#276 with no change here
+(`docs/official-tck-findings.md` §22, §23 and §27). The same change makes the suite accept the A2A v1.0.0 answer for six error
+mappings as well as the v1.0.1 one, so on those rows a pass no longer shows which of the two an agent sends; this SDK sends the
+v1.0.1 mappings (`ErrorCode::http_status` and `grpc_status` in `a2a-protocol-types`; §27).
 
 **ACTS (`a2aproject/a2a-itk`)**, pinned at `bcce1a15fdce343e2d816ee7e7119f68147385de`, over JSON-RPC, gRPC and HTTP+JSON:
 `acts.yml` passed on `main` at `70dc337`

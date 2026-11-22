@@ -10,7 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **The official TCK is pinned at `a2a-tck@5e6f37c`, and its baseline of known
+  failures is empty.** No MUST requirement the suite grades fails: 87 of 115
+  pass on the full profile, with 5 skipped, 7 manual and 16 not tested, the same
+  ungraded set as before. The two that failed at the previous pin,
+  `CORE-SEND-003` on three bindings and `HTTP_JSON-ERR-001`, were defects of the
+  suite and were corrected upstream in a2aproject/a2a-tck#276; nothing in this
+  SDK changed. The nightly run, which grades upstream `main`, had been red since
+  2026-11-19 on that stale baseline (`docs/official-tck-findings.md` §27).
 
 ## [0.16.0] - 2026-11-19
 
