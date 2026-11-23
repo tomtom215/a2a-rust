@@ -757,16 +757,25 @@ jobs:
   #
   # The postgres store implementations only execute against a live server,
   # so the matrix above (which runs `cargo test --features postgres` without
-  # a database) never exercises them. This job provides a real PostgreSQL 16
+  # a database) never exercises them. This job provides a real PostgreSQL
   # service and runs the #[ignore]-gated integration suite in
   # crates/a2a-protocol-server/tests/postgres_store_tests.rs.
+  #
+  # Three major versions, the maintainer's choice of 2026-11-22: 18, the one
+  # every other job here runs; 16, the oldest CI tested until then; and 19,
+  # the newest (released 2026-11-19). All three passed this job's six steps
+  # with the same test counts, run locally on 2026-11-22 (16.15, 18.7, 19.0).
   test-postgres:
-    name: Test (postgres integration)
+    name: Test (postgres integration, PostgreSQL ${{ matrix.postgres }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ["16", "18", "19"]
     services:
       postgres:
-        image: postgres:16
+        image: postgres:${{ matrix.postgres }}
         env:
           POSTGRES_PASSWORD: postgres
         options: >-
@@ -1334,7 +1343,7 @@ jobs:
     # store" and "we ran against Postgres".
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_PASSWORD: postgres
         options: >-
@@ -1406,7 +1415,7 @@ jobs:
     # same service on `example-surface`.
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_PASSWORD: postgres
         options: >-

@@ -62,7 +62,7 @@ jobs:
     # CI job runs, under instrumentation, measures them instead.
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
