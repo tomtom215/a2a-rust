@@ -224,7 +224,9 @@ The qualification matrix's "Not covered" list is item 4.
 8. `[decision]` Pin the toolchain a session and CI lint with. On 2026-11-18
    the session image's `stable` was 1.97.0 and CI's 1.100.0, and their clippy
    disagreed.
-9. Merge Dependabot pull requests #213, #216 and #217 after the tag.
+9. **Taken in 2026-11-22** (branch `claude/admiring-sagan-2yed5v-deps`):
+   Dependabot pull requests #213, #216 and #217, with #216's Alertmanager pin
+   moved in `install_tools.sh` as well.
 10. `[0.16.x]` `release.yml`'s `ci` job is a reduced copy of `ci.yml`, and
     nothing compares the two. It lacked `ci.yml`'s
     `CARGO_PROFILE_DEV_DEBUG: 0`, so the first two release runs of v0.16.0
