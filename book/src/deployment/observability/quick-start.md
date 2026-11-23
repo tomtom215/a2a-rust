@@ -148,6 +148,11 @@ Tempo returned each service's traces, and the dashboard checker found the same p
 without (they need model calls, push deliveries or failures, which that script does not make), as its recorded
 run on the earlier images.
 
+On 2026-11-22 the images moved again, to Collector 0.165.0, Alertmanager 0.35.0, Loki 3.7.10 and Grafana
+13.3.1. CI's `observability.yml` checks the Prometheus rules and the Alertmanager configuration with promtool 3.16.0
+and amtool 0.35.0 and that every image is pinned by digest; it starts no container, and the live script above has
+not been run against these images.
+
 Not run: Kubernetes (the manifest was parsed as YAML and its `$(NAME)`
 references checked, nothing more; a cluster could not be started where this
 was tested), IPv6 on the wire (the host had no IPv6 in its kernel; the
