@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **RUSTSEC-2026-0592: update `url` to 2.5.9.** `url` 2.5.8 and earlier
+  recurses once per nested `blob:` prefix in `Url::origin()`, so one crafted
+  URL overflows the stack and aborts the process. This repository's lockfiles
+  now hold 2.5.9 (#221). Among the published crates, `url` is reached only
+  through `sqlx`, so only by `a2a-protocol-server` (and `a2a-protocol-sdk`)
+  built with the `sqlite` or `postgres` feature (`cargo tree -i url`). An
+  application resolves its own copy: run `cargo update -p url` and check that
+  its `Cargo.lock` holds 2.5.9 or later. No code in this repository calls
+  `Url::origin()`; whether `sqlx` calls it on untrusted input was not checked.
+
 ### Changed
 
 - **The official TCK is pinned at `a2a-tck@5e6f37c`, and its baseline of known

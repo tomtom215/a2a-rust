@@ -33,9 +33,9 @@ State on 2026-11-22 (Europe/Berlin evening), the first session after 0.16.0 ship
   (`docs/official-tck-findings.md` §27 has the measurement). The whole `official-tck` job passed here at the new pin with
   `scripts/run_workflow_job.py`. Since a2a-tck `104a7b4` the suite needs Python >= 3.15, which uv downloads by itself.
 - **Dependabot #213, #216, #217.** The maintainer chose on 2026-11-22 to take all three into a pull request of ours:
-  branch `claude/admiring-sagan-2yed5v-deps`. #216 could not merge as it was: it moved Alertmanager to 0.35.0 in the compose file and
-  not in `deploy/observability/scripts/install_tools.sh`, which `check_stack.py` refuses; the branch moves both. Once it merges, the
-  maintainer closes the three Dependabot pull requests.
+  #221, **merged 2026-11-23** (`2504ff25`). #216 could not merge as it was: it moved Alertmanager to 0.35.0 in the compose file and
+  not in `deploy/observability/scripts/install_tools.sh`, which `check_stack.py` refuses; #221 moves both. The three Dependabot pull
+  requests are superseded and the maintainer closes them.
 - **A2A v1.1 exists as a release candidate.** Upstream `a2aproject/A2A` tagged `v1.1.0-rc` on 2026-10-29 (commit `78e1d6a1`, on
   the `dev-1.1` line; not in `main`). Its `specification/a2a.proto` differs from v1.0.1 by 208 added and 18 removed lines
   (`git diff --stat v1.0.1 v1.1.0-rc -- specification/`): a bidirectional `SendLiveMessage` RPC with `StreamRequest`/`StreamError`,
@@ -51,6 +51,13 @@ State on 2026-11-22 (Europe/Berlin evening), the first session after 0.16.0 ship
   memory and logged (`handler/event_processing/background/state_machine.rs:197-215`); nothing re-queues it. `E-F25`: a
   `CancelTask` of a task with no live queue sends the executor's cancel to a throwaway writer and then writes `Canceled` with
   `save_status_delta` and no event (`handler/lifecycle/cancel_task.rs:112-163`). The other 128 rows were not re-opened.
+- **RUSTSEC-2026-0592, found 2026-11-22 by CI on #220.** `url` 2.5.8 and earlier overflows the stack in `Url::origin()` on nested
+  `blob:` URLs, which aborts the process. `main`'s lockfiles held 2.5.8, so `cargo-deny`, OSV-Scanner's `Rust lockfiles` and the
+  SLIMRPC binding's own `cargo-deny` step failed on every pull request. Fixed by #221 (merged 2026-11-23, `2504ff25`): `url` 2.5.9 and
+  `form_urlencoded` 1.2.3 in the five lockfiles that held 2.5.8. In the published crates `url` comes only through `sqlx` (the server's
+  `sqlite` and `postgres` features). No code here calls `Url::origin()`; whether `sqlx` calls it on untrusted input was **not
+  checked**, so whether 0.16.0's users are exposed is not known. Library users choose their own `url`:
+  `CHANGELOG.md` `[Unreleased]`, *Security*, tells them to run `cargo update -p url`.
 - **Smaller defects found, not fixed:** `docs/readiness-bar.md` says "**F1 is measured**" (its 2026-11-11 section) while its
   2026-11-12 section and the machine-readable block list F1 as not measured (low; documents disagree).
   `book/src/reference/conformance-history/suppressions.md` W9 said "7 requirements, 9 pairs" since 2026-11-06 when the baseline held
@@ -76,8 +83,8 @@ State on 2026-11-22 (Europe/Berlin evening), the first session after 0.16.0 ship
 
 ### First, next
 
-1. Read CI on the three pull requests of this session (TCK pin, dependencies, PostgreSQL versions) and close anything red; after
-   the TCK one merges, the next nightly `Official TCK` run should be green against upstream `main`.
+1. Read CI on #220 (TCK pin) and #222 (PostgreSQL versions), each with #221 merged in, and close anything red; after #220 merges,
+   the next nightly `Official TCK` run should be green against upstream `main`.
 2. Phase 2 of the program: a target sheet (scale, failure detection and recovery, latency, memory, cold start, telemetry
    cardinality) and a plan, both for the maintainer's approval before any building. Start from `docs/readiness-bar.md`; say for
    each target what hardware it needs and whether a session container has it.
