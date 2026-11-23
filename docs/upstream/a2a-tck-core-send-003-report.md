@@ -3,6 +3,8 @@
 
 # Issue for `a2aproject/a2a-tck` — `CORE-SEND-003` passes only when the agent accepts an unsupported media type
 
+**Superseded 2026-11-22: do not send.** Upstream fixed it in a2aproject/a2a-tck#276 (`5e6f37c`, 2026-11-18): `CORE-SEND-003` now declares `ContentTypeNotSupportedError` as its expected error. This repository's pin moved there and the baseline is empty (`docs/official-tck-findings.md` §27). The draft below is kept as the record of the reasoning.
+
 **Status: DRAFT, not sent** (2026-10-23). The maintainer files it. Until
 2026-10-23 this defect was deliberately left unreported
 (`docs/official-tck-findings.md` §22); the maintainer reversed that on

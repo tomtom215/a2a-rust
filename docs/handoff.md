@@ -19,67 +19,90 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-State on 2026-11-18 at 22:00 UTC, written while the first tag of 0.16.0 was being replaced. Pull request #218, the release preparation,
-is merged (`main` was `89da7cfb`). The maintainer tagged `v0.16.0` there, `release.yml` failed twice before anything was published, and
-this file ships in the pull request that fixes that (branch `claude/awesome-cerf-frngge` again; its number is on the branch's GitHub
-page). Every step below marked *the maintainer's* had not happened. Re-run every command named; copy no figure.
+State on 2026-11-22 (Europe/Berlin evening), the first session after 0.16.0 shipped. Re-run every command named; copy no figure.
 
-- **The first tag failed, and why.** `release.yml` run 44400079339, attempts 1 and 2: `CI / test · Linux` died with
-  `No space left on device` eleven minutes into `cargo test --workspace --all-features`. `release.yml` built the tests with full
-  debuginfo; `ci.yml` sets `CARGO_PROFILE_DEV_DEBUG: 0` and ran the same all-features tests green on `89da7cfb`
-  (run 44260766384, step `Test (all features)`). `release.yml` now has the line. Every job after `ci` was skipped, so nothing was
-  published: crates.io and the GitHub releases ended at 0.15.0 (read at 21:45 UTC). A tag's workflow is read from the tagged
-  commit, so the fix needs a new commit and the tag has to be re-created on it. The release is dated 2026-11-19, the day of
-  that second tag (`CHANGELOG.md`, `CITATION.cff`, `STABILITY.md`, the book's changelog page).
+- **Released.** `v0.16.0` points at `334fa45c`, the merge of #219 (`git rev-parse v0.16.0^{commit}`), which is also `main`
+  (`git rev-parse origin/main`). The GitHub release is published (2026-11-19). crates.io serves 0.16.0 of
+  `a2a-protocol-types`, `-client`, `-server` and `-sdk`; `a2a-protocol-slimrpc` has never been published (the crates.io API answers
+  "does not exist"). No issue is open.
+- **CI on `main` since the tag.** Every scheduled workflow (Fuzz, Soak, ITK, ITK nightly, OSV-Scanner) is green on `334fa45c` except
+  `Official TCK`, red every night from 2026-11-19 to 2026-11-22. Cause, read in run 44981785033: the nightly grades upstream a2a-tck
+  `main` (`5e6f37c`), where a2aproject/a2a-tck#276 fixed the suite's two defects this repository had baselined, so the four
+  baselined pairs passed and the gate failed on a stale baseline. **Fixed on this branch** (`claude/admiring-sagan-2yed5v`): the
+  pin moved to `5e6f37c`, the baseline is empty, and the documents that said "2 fail" say 87 of 115 MUSTs pass and none fails
+  (`docs/official-tck-findings.md` §27 has the measurement). The whole `official-tck` job passed here at the new pin with
+  `scripts/run_workflow_job.py`. Since a2a-tck `104a7b4` the suite needs Python >= 3.15, which uv downloads by itself.
+- **Dependabot #213, #216, #217.** The maintainer chose on 2026-11-22 to take all three into a pull request of ours:
+  #221, **merged 2026-11-23** (`2504ff25`). #216 could not merge as it was: it moved Alertmanager to 0.35.0 in the compose file and
+  not in `deploy/observability/scripts/install_tools.sh`, which `check_stack.py` refuses; #221 moves both. The three Dependabot pull
+  requests are superseded and the maintainer closes them.
+- **A2A v1.1 exists as a release candidate.** Upstream `a2aproject/A2A` tagged `v1.1.0-rc` on 2026-10-29 (commit `78e1d6a1`, on
+  the `dev-1.1` line; not in `main`). Its `specification/a2a.proto` differs from v1.0.1 by 208 added and 18 removed lines
+  (`git diff --stat v1.0.1 v1.1.0-rc -- specification/`): a bidirectional `SendLiveMessage` RPC with `StreamRequest`/`StreamError`,
+  a task timeline (`TimelineEntry`, `timeline_length`) with `generation` counters, `TaskMessageUpdateEvent`, and `history_length`
+  and `history` marked deprecated. `scripts/check_a2a_proto_upstream.sh` excludes pre-releases by design, so nothing here reported
+  it; upstream `main`'s proto differs from v1.0.1 only in one comment (5 lines). **Nothing is built against it**: that needs the
+  maintainer's decision (Phase 1 of the program; see *First, next*).
+- **Counts that differ from the session prompt of 2026-11-22.** `find crates/*/src -name '*.rs' | wc -l` gives 1,036 files and
+  302,309 lines (the prompt said 927 and about 264,000); `ls scripts | wc -l` gives 84 (the prompt said 85). ADRs (58), workflows
+  (22) and the register (130 rows: 92 `read`, 38 `summary`) match.
+- **Register rows re-opened this session** (Phase 1 step 5): `X-10` and `E-F25` were confirmed by reading the code, not by a test.
+  `X-10`: when `persisting` gives up after `store_write_retry` (30 s, `handler/limits/mod.rs:48`), a status update is reverted in
+  memory and logged (`handler/event_processing/background/state_machine.rs:197-215`); nothing re-queues it. `E-F25`: a
+  `CancelTask` of a task with no live queue sends the executor's cancel to a throwaway writer and then writes `Canceled` with
+  `save_status_delta` and no event (`handler/lifecycle/cancel_task.rs:112-163`). The other 128 rows were not re-opened.
+- **RUSTSEC-2026-0592, found 2026-11-22 by CI on #220.** `url` 2.5.8 and earlier overflows the stack in `Url::origin()` on nested
+  `blob:` URLs, which aborts the process. `main`'s lockfiles held 2.5.8, so `cargo-deny`, OSV-Scanner's `Rust lockfiles` and the
+  SLIMRPC binding's own `cargo-deny` step failed on every pull request. Fixed by #221 (merged 2026-11-23, `2504ff25`): `url` 2.5.9 and
+  `form_urlencoded` 1.2.3 in the five lockfiles that held 2.5.8. In the published crates `url` comes only through `sqlx` (the server's
+  `sqlite` and `postgres` features). No code here calls `Url::origin()`; whether `sqlx` calls it on untrusted input was **not
+  checked**, so whether 0.16.0's users are exposed is not known. Library users choose their own `url`:
+  `CHANGELOG.md` `[Unreleased]`, *Security*, tells them to run `cargo update -p url`.
+- **Smaller defects found, not fixed:** `docs/readiness-bar.md` says "**F1 is measured**" (its 2026-11-11 section) while its
+  2026-11-12 section and the machine-readable block list F1 as not measured (low; documents disagree).
+  `book/src/reference/conformance-history/suppressions.md` W9 said "7 requirements, 9 pairs" since 2026-11-06 when the baseline held
+  2 and 4 (fixed on this branch, with the row retired).
+- **Baseline of 2026-11-22** (Phase 1 step 4), with `scripts/run_workflow_job.py` and Rust 1.100.0, on `main`'s code plus this
+  branch's documents and workflow comments (no Rust change): `ci.yml` `static-checks` PASS (47 steps; the first run failed
+  `check_doc_versions.py` on this branch's README wording, fixed), `doc` PASS, `clippy --matrix os=ubuntu-latest` PASS (14 steps),
+  `features` PASS (911 s), `test-postgres --services-ready` PASS (6 steps) on PostgreSQL 16.15 **with `PGSSLMODE=disable`**, and the
+  same job PASS on 18.7 and 19.0 (Docker images, SSL off). `official-tck` PASS at the new pin. `test --matrix rust=stable
+  --matrix os=ubuntu-latest`: steps 4 to 18 passed (the default-features run: 3,378 tests passed, 16 skipped); step 19,
+  `Test (all features)`, failed while `rustc` compiled the `multi_lang_team` example, with the message cut from the log, in the
+  window where the session's disk allowance ran out. Re-run alone on an emptied `target/`
+  (`cargo nextest run --profile ci --workspace --all-features`): 8,000 tests passed, 271 skipped, 0 failed. Step 20, `--no-default-features`, the same way: 7,968 passed, 271
+  skipped, 0 failed. The doctest steps (21 to 23) were not run. Not run: the readiness benchmark
+  (`docs/readiness-bar.md`), whose numbers need an idle machine; the 1.94 and macOS/Windows legs; mutation testing (no Rust change).
+- **`statement_count` counts nothing over TLS** (low; a test-harness defect, found by the baseline). On a PostgreSQL with `ssl = on`
+  (Ubuntu's package default; CI's `postgres` image has it off) sqlx's default `sslmode=prefer` encrypts the session, the test's
+  counting proxy sees no plaintext frame, every count is 0, and the failure says to "update the constants", which would be wrong.
+  `PGSSLMODE=disable` makes both its tests pass with (8, 11). Fix: refuse, in the test, a server that answers the SSLRequest `S`.
+- **PostgreSQL versions.** postgresql.org (`versions.json`, read 2026-11-22): 19.0 released 2026-11-19; supported majors 15 to 19.
+  CI ran only 16. The maintainer chose on 2026-11-22: 18 in every job, and `test-postgres` on 16, 18 and 19. Branch
+  `claude/admiring-sagan-2yed5v-pg`.
 
-- **Pull request #218** (`claude/awesome-cerf-frngge` into `main`, merged as `89da7cfb`) was the release preparation; `git log --oneline 7ac5b74e..89da7cfb` lists it.
-  It changes no library code. The only files under `crates/*/src` it touches are four test modules
-  (`git diff --stat 7ac5b74e..89da7cfb -- ':(glob)crates/*/src/**'`), for which `cargo mutants --in-diff` lists no mutant.
-- **What it did.** `## [Unreleased]` became `## [0.16.0] - 2026-11-18` (2026-11-19 since the second tag); `CITATION.cff`, `SECURITY.md`, `ROADMAP.md`'s release line and the
-  book's changelog page name 0.16.0. Eight Known Limitations entries were corrected (seven against the code or the document they cite; one lost a claim nothing supports), every entry now has a workaround and
-  a pointer into `ROADMAP.md`, and three were added (a store outage longer than `store_write_retry`, event positions after a takeover,
-  regulated use). Stale statements in `STABILITY.md`, `SUPPORT.md`, `SPEC_COMPLIANCE.md`, `RELEASING.md`, four READMEs under `crates/` and six
-  book pages were corrected. `docs/audits/0.16.0-release/` answers, for every open register row, whether it blocks the release (none
-  does; its README has the rule, the method and the command that counts it). `ROADMAP.md`, *After 0.16.0*, is the backlog for 0.16.x
-  and 0.17. `docs/provenance-manifest.md` was regenerated in its last commit, and again in the last commit of the fix.
-- **A tag blocker was found and removed.** `main`'s `Nightly (informational)` job failed at `7ac5b74e` (run 44190122806) on nightly
-  clippy, and `scripts/ci_evidence.py`, which `release.yml` runs on the tagged commit, refuses any failed job, although that job is
-  `continue-on-error`. Ten sites in `#[cfg(test)]` code were rewritten; nightly clippy
-  (`rustc 1.102.0-nightly (5df8c02af 2026-11-16)`) then exited 0. **The nightly toolchain floats:** a later nightly can fail that job
-  again on a merge commit, and the tag would be refused again (on `89da7cfb` it passed, run 44260766384). The decision is
-  `ROADMAP.md`, *Release engineering*, item 1.
-- **To release (the maintainer's), in this order.**
-  1. Wait for the fix's pull request to pass CI. Its `Mutation Testing` check needs the `mutation-test` label; it changes no
-     file under `crates/*/src`, so every shard has nothing to mutate.
-  2. Merge with a merge commit, never a squash: the provenance manifest pins a commit that has to stay in `main`'s history.
-  3. Wait for `ci.yml`'s **push** run on the merge commit: `success`, with no failed job, `Nightly (informational)` included.
-     `python3 scripts/ci_evidence.py --repo tomtom215/a2a-rust --sha <merge commit> --out /tmp/ci-evidence.json` is the gate's own
-     question.
-  4. On the merge commit: `for c in unreleased prep cadence highlights; do python3 scripts/check_release_tree.py "$c" v0.16.0 HEAD; done`
-     and `python3 scripts/check_provenance_manifest.py "$(git rev-parse HEAD)"`. Merge nothing else first: any other change on `main`
-     breaks the manifest gate. (`benchmarks.yml` does not push while the in-tree version has no tag.)
-  5. Replace the tag, which is safe only because nothing was published under the first one (check crates.io and the GitHub
-     releases again first): `git push origin :refs/tags/v0.16.0`, `git tag -d v0.16.0`, then on the new merge commit
-     `git tag -s v0.16.0 -m "Release v0.16.0"`, `scripts/verify_tag_signature.sh v0.16.0`, `git push origin v0.16.0`.
-  6. Afterwards: `RELEASING.md` section 4, the SLIMRPC binding's follow-up release, and Dependabot pull requests #213, #216 and #217.
-- **What else can stop the tag.** The jobs of `release.yml` after `ci` (package, publish dry run, GitHub release, CLI binaries,
-  the image) have not run on this tree; a failure there is new. `CI1`: the two macOS discovery tests (register row, OPEN, cause unknown); a recurrence on the merge
-  commit turns `ci.yml` red. `CI2`: `main`'s own `ci.yml` run at `7ac5b74e` (44190122806) went red on
-  `Test (stable, ubuntu-latest)`, where `blocking_over_stream_e2e`'s `a_send_carried_over_a_stream_crosses_the_same_proxy` failed once
-  and passed its 15 other runs; the runner completed no test for about six seconds and the test tolerates a pause of 500 ms
-  (`ROADMAP.md`, *Release engineering*, item 4). If it fails on the merge commit, re-run the failed job once: the release gate reads
-  the run's latest attempt. And `scripts/check_provenance_manifest.py` answered wrongly once in 17 measurements of one commit in this
-  session (2130 passing commits where 16 runs counted 2131; not reproduced, cause not shown; `ROADMAP.md`, *Release engineering*,
-  item 3): if `release.yml`'s validate job fails on the manifest with `pass` and `nosignoff` each off by one, re-run that job.
-- **Next, after the tag:** `ROADMAP.md`, *After 0.16.0*. Take *Release engineering* items 1 and 2 first (they cost every release),
-  then *Fleet and failure correctness* item 1 (`X-10`, the one row that needed a new disclosure).
-- **Facts this session established.** The session image's `stable` was Rust 1.97.0 and CI's 1.100.0; clippy 1.97 fails on a lint
-  1.100 does not have, so install CI's (`rustup toolchain install 1.100.0 --profile minimal -c clippy -c rustfmt`) and run with
-  `RUSTUP_TOOLCHAIN=1.100.0`. `static-checks` needs `ssh-keygen` (`apt-get install -y openssh-client`).
-  `docs/compliance/spec-ledger.json` cites `CHANGELOG.md` by line, so any line added above the 0.5.0 heading fails
-  `check_spec_ledger.py` until the citation is moved. `scripts/install_cargo_mutants.sh` builds the pinned cargo-mutants in about
-  five minutes. The clone is shallow: `git fetch --unshallow --tags origin` before `scripts/provenance_manifest.sh` or anything that
-  reads a tag.
+### First, next
+
+1. Read CI on #220 (TCK pin) and #222 (PostgreSQL versions), each with #221 merged in, and close anything red; after #220 merges,
+   the next nightly `Official TCK` run should be green against upstream `main`.
+2. Phase 2 of the program: a target sheet (scale, failure detection and recovery, latency, memory, cold start, telemetry
+   cardinality) and a plan, both for the maintainer's approval before any building. Start from `docs/readiness-bar.md`; say for
+   each target what hardware it needs and whether a session container has it.
+3. The A2A v1.1.0-rc question for the maintainer: track it (a diff of the rc proto and specification against the ledger, no code),
+   or wait for a release.
+
+### Environment facts that still hold
+
+The session image's `stable` was Rust 1.97.0; CI's is 1.100.0 (read from the 2026-11-22 Official TCK log). Install it with
+`rustup toolchain install 1.100.0 --profile minimal -c clippy -c rustfmt` and run with `RUSTUP_TOOLCHAIN=1.100.0`. `static-checks`
+needs `ssh-keygen` (`apt-get install -y openssh-client`). The clone is shallow: `git fetch --unshallow --tags origin` first.
+PostgreSQL 16 starts with `pg_ctlcluster 16 main start`. Build with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0
+CARGO_PROFILE_TEST_DEBUG=0`. `docs/compliance/spec-ledger.json` cites `CHANGELOG.md` by line: any line added above the 0.5.0 heading
+fails `check_spec_ledger.py` until the citation moves (it moved from 13290 to 13299 on this branch).
+The disk allowance ended this session once (2026-11-22, during a full workspace `test` job after the other jobs' builds): delete
+`target/debug/{deps,build,incremental}` between big jobs, and never build two worktrees at once. A local PostgreSQL with SSL on
+needs `PGSSLMODE=disable` for `statement_count`. `scripts/check_doc_versions.py` requires the README's TCK sentence to read "**N of M MUST requirements pass and F fail**" and to
+agree with the badge.
 
 ## Previous state (2026-11-17)
 

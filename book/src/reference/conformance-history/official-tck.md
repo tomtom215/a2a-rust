@@ -313,3 +313,21 @@ vendored specification to A2A v1.0.1): `CORE-CANCEL-002`, `GRPC-ERR-002`,
 and the floors (88 and 66) were still those of `d4d6fae`; the commit that
 follows sets them from this measurement (floors 87 and 65). Whether that
 commit's own run passes is not recorded here.
+
+## The measurement of 2026-11-22, at `a2a-tck@5e6f37c`
+
+The nightly run that floats on upstream `main`, Official TCK run `44981785033`
+on `334fa45c` (the `v0.16.0` tag), graded `5e6f37c` and failed its full and
+minimal gates on a stale baseline: the four baselined pairs passed. Read from
+the job's log and its `official-tck-reports` artifact
+(`docs/official-tck-findings.md` §27). The pin then moved to that commit.
+
+* **Full profile:** 87 `PASS`, 0 `FAIL`, 5 `SKIPPED`, 7 manual, 16
+  `NOT TESTED` of 115 MUST; 87 graded.
+* **Minimal profile:** 65 `PASS`, 0 `FAIL`, 26 `SKIPPED`, 7 manual, 17
+  `NOT TESTED` of 115; 65 graded.
+* **Required-extension profile:** 1 graded, `CORE-CAP-004` `PASS`.
+
+`CORE-SEND-003` (three bindings) and `HTTP_JSON-ERR-001` (`http_json`) pass
+since a2aproject/a2a-tck#276. The baseline is empty and the floors stay 87 and
+65.

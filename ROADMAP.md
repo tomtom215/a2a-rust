@@ -32,9 +32,10 @@ ids are register rows; the register says where each one's evidence is.
 
 ### A2A v1.0.1 conformance gaps found by the TCK and ITK
 
-1. `[decision]` The two baselined MUST failures of the official TCK,
-   `CORE-SEND-003` (three bindings) and `HTTP_JSON-ERR-001`: take each to the
-   suite, or change the SDK (`docs/official-tck-findings.md` §22 and §23).
+1. **Done 2026-11-22, upstream.** The two baselined MUST failures of the
+   official TCK, `CORE-SEND-003` (three bindings) and `HTTP_JSON-ERR-001`,
+   were corrected in the suite (a2aproject/a2a-tck#276); the pin moved to
+   `5e6f37c` and the baseline is empty (`docs/official-tck-findings.md` §27).
 2. `[0.16.x]` The 4 `PARTIAL` rows of the spec ledger
    (`python3 scripts/check_spec_ledger.py`): a test for each, or the reason it
    stays partial.
@@ -50,6 +51,12 @@ ids are register rows; the register says where each one's evidence is.
    patch addition: `book/src/reference/upgrading/0.15-to-0.16.md` says minor,
    `STABILITY.md` §4 and `README.md` say patch.
 7. `[decision]` Send the two upstream drafts in `docs/upstream/` (H19).
+8. `[decision]` A2A v1.1: upstream tagged `v1.1.0-rc` on 2026-10-29 (on its
+   `dev-1.1` line). Its proto adds a bidirectional `SendLiveMessage`, a task
+   timeline with `generation` counters and `TaskMessageUpdateEvent`, and
+   deprecates `history_length` and `history` (`docs/handoff.md`, *Now*).
+   Whether to diff it against the spec ledger now or wait for a release;
+   nothing is built against a release candidate without that decision.
 
 ### Fleet and failure correctness
 
@@ -236,6 +243,14 @@ The qualification matrix's "Not covered" list is item 4.
     `ci.yml`'s test job. The jobs after `ci` (package, publish dry run,
     GitHub release, CLI binaries, the image) run only on a tag, so a tag is
     where a defect in them is first seen.
+11. `[0.16.x]` `crates/a2a-protocol-server/tests/statement_count.rs` counts
+    0 statements when the server has SSL on (sqlx's `sslmode=prefer`
+    encrypts what its counting proxy reads), and its message then says to
+    lower the constants. Refuse a server that accepts the SSLRequest. Found
+    2026-11-22 on a local PostgreSQL 16 with `ssl = on` (`docs/handoff.md`).
+12. `[0.16.x]` `docs/readiness-bar.md` says "F1 is measured" in its
+    2026-11-11 section, while its 2026-11-12 section and its
+    machine-readable block list F1 as not measured. Make them agree.
 
 ### Antipatterns
 
@@ -1261,22 +1276,17 @@ This is the category most worth clearing before any external review.
 
 ## Conformance
 
-Measured against the official `a2a-tck` suite on 2026-11-06 (CI at `ffd72299`,
-against `a2a-tck@70f6f73`, the commit CI pins for pull requests): **85 of 115
-MUST requirements passing, 2 failing, 5 skipped, 7 manual, 16 not tested**; 87
-graded (`docs/official-tck-findings.md` §26; §1 has the earlier measurements).
-Both failures are defects in the suite, as read from its source. `CORE-SEND-003`
-declares no expected error, so it demands that a send with an unsupported media
-type succeed, and it began failing when 0.14.0 started answering the
-`ContentTypeNotSupportedError` that §3.1.1 requires (§22). `HTTP_JSON-ERR-001`
-fails an error response whose Content-Type is `application/a2a+json`, which the
-suite's own vendored v1.0.1 section 11.6 example shows, because its test accepts
-only a type containing `application/json` (§26). Four requirements that failed
-against the previous revision (`CORE-CANCEL-002`, `GRPC-ERR-002`,
-`HTTP_JSON-STATUS-001`, `STREAM-SUB-003`) pass at this one: that revision graded
-§5.4 against the A2A v1.0.0 copy it vendored, v1.0.1 rewrote six of that table's
-nine rows, and upstream refreshed the copy in a2aproject/a2a-tck#258 (§20, §21,
-§25). `HTTP_JSON-SVC-001` is a SHOULD at the pin and no longer gated. (Before
+Measured against the official `a2a-tck` suite on 2026-11-22 (CI's nightly run
+44981785033 on `334fa45c`, against `a2a-tck@5e6f37c`, the commit CI pins for
+pull requests since then): **87 of 115 MUST requirements passing, 0 failing, 5
+skipped, 7 manual, 16 not tested**; 87 graded (`docs/official-tck-findings.md`
+§27; §26 and §1 have the earlier measurements). The two that failed at the
+previous pin, `CORE-SEND-003` and `HTTP_JSON-ERR-001`, were defects in the
+suite, as read from its source (§22, §23, §26), and upstream corrected both in
+a2aproject/a2a-tck#276. Four requirements that failed against an older revision
+(`CORE-CANCEL-002`, `GRPC-ERR-002`, `HTTP_JSON-STATUS-001`, `STREAM-SUB-003`)
+pass since a2aproject/a2a-tck#258 refreshed the suite's vendored v1.0.1 copy
+(§20, §21, §25). `HTTP_JSON-SVC-001` is a SHOULD and not gated. (Before
 2026-08-30 this section read 92 passing, 0 failing; the four moved out of the
 passing column as upstream tightened its assertions onto the stale rows, not as
 anything here changed.) Of the rest, the 5 skipped need a differently configured

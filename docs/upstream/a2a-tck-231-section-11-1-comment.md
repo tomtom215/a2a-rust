@@ -3,6 +3,8 @@
 
 # Comment for `a2aproject/a2a-tck#231` — the stale copy also fixes §11.1's media type as a MUST
 
+**Superseded 2026-11-22: do not send.** Upstream fixed it in a2aproject/a2a-tck#276 (`5e6f37c`, 2026-11-18): HTTP+JSON responses, errors included, may carry `application/a2a+json`, and `HTTP_JSON-SVC-001` is a SHOULD. This repository's pin moved there and the baseline is empty (`docs/official-tck-findings.md` §27). The draft below is kept as the record of the reasoning.
+
 **Status: DRAFT, not sent** (2026-10-23). A comment on the existing issue
 (filed 2026-09-01, open, no maintainer response when checked on 2026-10-23),
 not a new issue: the cause is the same pin. The maintainer posts it.

@@ -2343,3 +2343,72 @@ it. The ungraded MUSTs the map does not carry are the other two manual ones (`CA
 **Moving the pin.** Take the commit the nightly run reported, run the suite
 against it, re-baseline if any verdict changed, record why here, and change
 `A2A_TCK_PIN` in the same pull request.
+
+## 27. The pin moves to `5e6f37c`; the baseline is empty (2026-11-22)
+
+**What happened.** Every nightly run from 2026-11-19 to 2026-11-22 failed
+(runs 44453218729, 44669433757, 44862439896, 44981785033) while the push and
+pull-request runs at the pin passed. The newest one (44981785033, job
+137083647853, on `334fa45c`, the `v0.16.0` tag) graded upstream `main` at
+`5e6f37c2d38eb3d7684686243c34d365c83df49b` and failed its two gate steps, full
+and minimal, each with `STALE BASELINE — 4 baselined check(s) now pass`:
+`CORE-SEND-003` on `grpc`, `http_json` and `jsonrpc`, and `HTTP_JSON-ERR-001` on
+`http_json`. Observed failing pairs: 0 on both. The required-extension gate
+passed. Nothing in this SDK changed: the suite did.
+
+**What upstream changed.** `git log 70f6f73..5e6f37c` in a2a-tck lists two
+commits:
+
+- `5e6f37c`, *fix(tck): correct media type validation (#276)*, 2026-11-18. It
+  sets `expected_error=CONTENT_TYPE_NOT_SUPPORTED_ERROR` on `CORE-SEND-003`
+  (`tck/requirements/core_operations.py`), so a `ContentTypeNotSupportedError`
+  is now graded as the expected outcome, which is what §22 asked for; and it
+  accepts `application/a2a+json` as well as `application/json` in HTTP+JSON
+  responses, errors included (`tck/validators/http_json/content_type.py`,
+  `error_validator.py`), which is what §23 and §26 asked for. It also adds
+  alternate mappings that accept the A2A v1.0.0 answer for six errors
+  (HTTP `TaskNotCancelable` 409, `ContentTypeNotSupported` 415 and
+  `InvalidAgentResponse` 502; gRPC `UNIMPLEMENTED` for
+  `PushNotificationNotSupported`, `UnsupportedOperation` and
+  `VersionNotSupported`, in `tck/requirements/base.py`), so on those rows the suite is now
+  more permissive than §5.4 of v1.0.1; this SDK answers the v1.0.1 mappings
+  (`ErrorCode::http_status` and `grpc_status`,
+  `crates/a2a-protocol-types/src/error.rs`), and this pin no longer tells the
+  two apart.
+- `104a7b4`, *build: require Python 3.15+ and update dependencies (#266)*. The
+  workflow sets up Python 3.12; `uv venv` now downloads a CPython 3.15 for the
+  suite's own environment (3.15.1 in the nightly's log).
+
+**Measured at `5e6f37c`.** CI's nightly run 44981785033 on `334fa45c`, read from
+its `official-tck-reports` artifact (`full-compatibility.json`,
+`minimal-compatibility.json`, `extension-compatibility.json`) and its log:
+
+| Profile | pytest | MUST passed | failed | skipped | manual | not tested | total | graded | floor |
+|---|---|---|---|---|---|---|---|---|---|
+| full | 244 passed, 19 skipped | 87 | 0 | 5 | 7 | 16 | 115 | 87 | 87 |
+| minimal | 179 passed, 84 skipped | 65 | 0 | 26 | 7 | 17 | 115 | 65 | 65 |
+| required-extension | 2 passed, 261 deselected | `CORE-CAP-004` PASS (`--require-pass`) | | | | | | 1 | |
+
+At the old pin the same profiles were 240 passed, 4 failed, 19 skipped and 175
+passed, 4 failed, 84 skipped (`book/src/reference/conformance-statement.md`, as
+it read before this change). The four failing tests became the four passes; the
+graded counts did not move, so the floors stay. The suite's ungraded MUST
+requirements are the same 28 as at `70f6f73` (16 not tested, 7 manual, 5
+skipped, listed by id in §26), so `tck/untested-musts.toml` needs no change.
+
+**The change.** `A2A_TCK_PIN` is `5e6f37c`, and `tck/conformance-baseline.json`
+has no entry. With CI's two reports, `tck/scripts/check_conformance.py` exits 0
+against the empty baseline and the floors 87 and 65, and exits 1 against the
+same full report with `CORE-SEND-003` set to `FAIL` on `grpc`. The whole job was
+then run here at the new pin
+(`python3 scripts/run_workflow_job.py .github/workflows/official-tck.yml official-tck`
+with Rust 1.100.0, on this change's tree; it printed `a2a-tck revision graded:
+5e6f37c…`): every step passed, with the same pytest counts as the nightly
+(244 passed and 19 skipped; 179 and 84; 2 passed) and 0 observed failures in
+each gate. uv here resolved CPython 3.15.0b4, not CI's 3.15.1.
+
+**What this closes.** §22 and §23's two open findings are resolved upstream,
+with no change to this SDK, as both sections argued. ROADMAP.md's *After 0.16.0*
+conformance item 1 (take each to the suite, or change the SDK) needs no
+decision. A green gate now means "no failing MUST", where it meant "no failure
+beyond the four baselined pairs".
