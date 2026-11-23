@@ -19,16 +19,18 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-State on 2026-11-22 (Europe/Berlin evening), the first session after 0.16.0 shipped. Re-run every command named; copy no figure.
+State on 2026-11-23, at the end of the first session after 0.16.0 shipped (it began 2026-11-22). Re-run every command named; copy
+no figure. This session's three pull requests are merged: #221 (dependencies, `2504ff25`), #220 (TCK pin, `ad1758da`) and #222
+(PostgreSQL versions, `2058058d`), in that order; `main` was `2058058d` when this was written.
 
-- **Released.** `v0.16.0` points at `334fa45c`, the merge of #219 (`git rev-parse v0.16.0^{commit}`), which is also `main`
-  (`git rev-parse origin/main`). The GitHub release is published (2026-11-19). crates.io serves 0.16.0 of
+- **Released.** `v0.16.0` points at `334fa45c`, the merge of #219 (`git rev-parse v0.16.0^{commit}`); `main` has moved past it
+  (the three merges above and the benchmark bot's `b626fede`). The GitHub release is published (2026-11-19). crates.io serves 0.16.0 of
   `a2a-protocol-types`, `-client`, `-server` and `-sdk`; `a2a-protocol-slimrpc` has never been published (the crates.io API answers
   "does not exist"). No issue is open.
 - **CI on `main` since the tag.** Every scheduled workflow (Fuzz, Soak, ITK, ITK nightly, OSV-Scanner) is green on `334fa45c` except
   `Official TCK`, red every night from 2026-11-19 to 2026-11-22. Cause, read in run 44981785033: the nightly grades upstream a2a-tck
   `main` (`5e6f37c`), where a2aproject/a2a-tck#276 fixed the suite's two defects this repository had baselined, so the four
-  baselined pairs passed and the gate failed on a stale baseline. **Fixed on this branch** (`claude/admiring-sagan-2yed5v`): the
+  baselined pairs passed and the gate failed on a stale baseline. **Fixed by #220** (merged 2026-11-23, `ad1758da`): the
   pin moved to `5e6f37c`, the baseline is empty, and the documents that said "2 fail" say 87 of 115 MUSTs pass and none fails
   (`docs/official-tck-findings.md` §27 has the measurement). The whole `official-tck` job passed here at the new pin with
   `scripts/run_workflow_job.py`. Since a2a-tck `104a7b4` the suite needs Python >= 3.15, which uv downloads by itself.
@@ -61,10 +63,10 @@ State on 2026-11-22 (Europe/Berlin evening), the first session after 0.16.0 ship
 - **Smaller defects found, not fixed:** `docs/readiness-bar.md` says "**F1 is measured**" (its 2026-11-11 section) while its
   2026-11-12 section and the machine-readable block list F1 as not measured (low; documents disagree).
   `book/src/reference/conformance-history/suppressions.md` W9 said "7 requirements, 9 pairs" since 2026-11-06 when the baseline held
-  2 and 4 (fixed on this branch, with the row retired).
-- **Baseline of 2026-11-22** (Phase 1 step 4), with `scripts/run_workflow_job.py` and Rust 1.100.0, on `main`'s code plus this
-  branch's documents and workflow comments (no Rust change): `ci.yml` `static-checks` PASS (47 steps; the first run failed
-  `check_doc_versions.py` on this branch's README wording, fixed), `doc` PASS, `clippy --matrix os=ubuntu-latest` PASS (14 steps),
+  2 and 4 (fixed by #220, with the row retired).
+- **Baseline of 2026-11-22** (Phase 1 step 4), with `scripts/run_workflow_job.py` and Rust 1.100.0, on `main`'s code plus #220's
+  documents and workflow comments (no Rust change): `ci.yml` `static-checks` PASS (47 steps; the first run failed
+  `check_doc_versions.py` on #220's README wording, fixed), `doc` PASS, `clippy --matrix os=ubuntu-latest` PASS (14 steps),
   `features` PASS (911 s), `test-postgres --services-ready` PASS (6 steps) on PostgreSQL 16.15 **with `PGSSLMODE=disable`**, and the
   same job PASS on 18.7 and 19.0 (Docker images, SSL off). `official-tck` PASS at the new pin. `test --matrix rust=stable
   --matrix os=ubuntu-latest`: steps 4 to 18 passed (the default-features run: 3,378 tests passed, 16 skipped); step 19,
@@ -78,13 +80,15 @@ State on 2026-11-22 (Europe/Berlin evening), the first session after 0.16.0 ship
   counting proxy sees no plaintext frame, every count is 0, and the failure says to "update the constants", which would be wrong.
   `PGSSLMODE=disable` makes both its tests pass with (8, 11). Fix: refuse, in the test, a server that answers the SSLRequest `S`.
 - **PostgreSQL versions.** postgresql.org (`versions.json`, read 2026-11-22): 19.0 released 2026-11-19; supported majors 15 to 19.
-  CI ran only 16. The maintainer chose on 2026-11-22: 18 in every job, and `test-postgres` on 16, 18 and 19. Branch
-  `claude/admiring-sagan-2yed5v-pg`.
+  CI ran only 16. The maintainer chose on 2026-11-22: 18 in every job, and `test-postgres` on 16, 18 and 19. Done
+  by #222 (merged 2026-11-23, `2058058d`); its CI finished with no check failed (GitHub's
+  suite result and `mergeable_state: clean`; the three PostgreSQL jobs were not read one by one).
 
 ### First, next
 
-1. Read CI on #220 (TCK pin) and #222 (PostgreSQL versions), each with #221 merged in, and close anything red; after #220 merges,
-   the next nightly `Official TCK` run should be green against upstream `main`.
+1. Check the first scheduled `Official TCK` run after 2026-11-23 17:15 UTC (#220's merge): it should be green against upstream
+   a2a-tck `main`. If upstream moved again, follow `docs/official-tck-findings.md` §26, *Moving the pin*. Then check that the
+   maintainer closed Dependabot #213, #216 and #217, which #221 superseded.
 2. Phase 2 of the program: a target sheet (scale, failure detection and recovery, latency, memory, cold start, telemetry
    cardinality) and a plan, both for the maintainer's approval before any building. Start from `docs/readiness-bar.md`; say for
    each target what hardware it needs and whether a session container has it.
@@ -98,7 +102,7 @@ The session image's `stable` was Rust 1.97.0; CI's is 1.100.0 (read from the 202
 needs `ssh-keygen` (`apt-get install -y openssh-client`). The clone is shallow: `git fetch --unshallow --tags origin` first.
 PostgreSQL 16 starts with `pg_ctlcluster 16 main start`. Build with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0
 CARGO_PROFILE_TEST_DEBUG=0`. `docs/compliance/spec-ledger.json` cites `CHANGELOG.md` by line: any line added above the 0.5.0 heading
-fails `check_spec_ledger.py` until the citation moves (it moved from 13290 to 13299 on this branch).
+fails `check_spec_ledger.py` until the citation moves (it moved from 13290 to 13311 in #220).
 The disk allowance ended this session once (2026-11-22, during a full workspace `test` job after the other jobs' builds): delete
 `target/debug/{deps,build,incremental}` between big jobs, and never build two worktrees at once. A local PostgreSQL with SSL on
 needs `PGSSLMODE=disable` for `statement_count`. `scripts/check_doc_versions.py` requires the README's TCK sentence to read "**N of M MUST requirements pass and F fail**" and to
