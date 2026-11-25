@@ -361,7 +361,11 @@ language binding: the shims above are what is shown to run. The interop
 harnesses check that the Python and Go SDKs' clients carry a lineage to this
 SDK's server and get the refusal of a malformed one, and that the Python SDK's
 leases and budgets, whose numbers it sends as doubles, are honoured. Draft
-upstream proposals (a parent-task link and a halt reason in A2A, and the
-error-reason gap described there) are in
-[`docs/upstream/swarm-proposals.md`](https://github.com/tomtom215/a2a-rust/blob/main/docs/upstream/swarm-proposals.md);
-nothing has been sent.
+upstream proposals are in the repository: a parent-task link and a halt reason
+in A2A
+([lineage and halt](https://github.com/tomtom215/a2a-rust/blob/main/docs/upstream/a2a-task-lineage-halt-draft.md)),
+a deadline and budget carried across hops
+([deadline and budget](https://github.com/tomtom215/a2a-rust/blob/main/docs/upstream/a2a-deadline-budget-propagation-draft.md)),
+and the error-reason gap
+([standard error reasons](https://github.com/tomtom215/a2a-rust/blob/main/docs/upstream/a2a-standard-error-reasons-draft.md)).
+They were written against A2A v1.0.1 and nothing has been sent.
