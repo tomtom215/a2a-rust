@@ -15,7 +15,7 @@ others.
 
 | File | What it holds |
 |---|---|
-| `README.md` (this file) | What the deep dive found, the decisions the maintainer owes, the session protocol, the order of work |
+| `README.md` (this file) | What the deep dive found, the decisions made, the session protocol, the order of work |
 | [`status.json`](status.json) | Every work package: id, workstream, dependencies, decision gates, status. The only place status lives |
 | [`target-sheet.md`](target-sheet.md) | The proposed measurable targets (scale, recovery, latency, memory, cold start, cardinality) |
 | [`plan/`](plan/) | One file per workstream; each work package in a fixed template |
