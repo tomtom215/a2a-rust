@@ -100,6 +100,34 @@ def has_path(tag: str, path: str) -> bool:
     return subprocess.run(["git", "cat-file", "-e", f"{tag}:{path}"], cwd=ROOT).returncode == 0
 
 
+INCLUDE = re.compile(r"\{\{#(?:include|rustdoc_include|playground)\s+([^}\s:]+)")
+UNRENDERED = "{{#include"
+
+
+def outside_includes(src: Path) -> list[str]:
+    """Repository paths a book's pages include from outside `book/`.
+
+    mdBook leaves an `{{#include}}` whose file is missing in the page as
+    text and still exits 0. Until 2026-11-25 a release's book was built
+    from an export of `book/` alone, so every page that includes a file
+    from elsewhere in the repository was published with the directive
+    showing where the code should be (0.16.0: the three interop shims on
+    reference/swarm-extensions.html).
+    """
+    found: set[str] = set()
+    pages = src / "book" / "src"
+    for page in pages.rglob("*.md"):
+        for target in INCLUDE.findall(page.read_text(encoding="utf-8")):
+            path = (page.parent / target).resolve()
+            try:
+                rel = path.relative_to(src.resolve())
+            except ValueError:
+                continue
+            if rel.parts[0] != "book":
+                found.add(rel.as_posix())
+    return sorted(found)
+
+
 def msrv(cargo_toml: Path) -> str | None:
     m = re.search(r'(?m)^rust-version\s*=\s*"([^"]+)"', cargo_toml.read_text(encoding="utf-8"))
     return m.group(1) if m else None
@@ -116,6 +144,9 @@ def build_line(line: Line, work: Path, mdbook: str, latest: bool) -> Path:
             sys.exit(f"error: {line.tag} has no scripts/seo_postprocess.py for the root")
         paths.append("scripts/seo_postprocess.py")
     export(line.tag, src, paths)
+    extra = [p for p in outside_includes(src) if has_path(line.tag, p)]
+    if extra:
+        export(line.tag, src, extra)
     subprocess.run([mdbook, "build", "book"], cwd=src, check=True, capture_output=True)
     built = src / "book" / "book"
     static = src / "book" / "static"
@@ -287,6 +318,8 @@ def check(site: Path) -> list[str]:
         rel = page.relative_to(site)
         top = rel.parts[0] if len(rel.parts) > 1 else ""
         text = page.read_text(encoding="utf-8")
+        if UNRENDERED in text:
+            faults.append(f"{rel}: an include directive was published as text, so its file was not in the build")
         canon = re.findall(r'<link rel="canonical"[^>]*>', text)
         robots = re.findall(r'<meta name="robots" content="([^"]*)"', text)
         if top in roles:
