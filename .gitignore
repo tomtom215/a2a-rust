@@ -75,3 +75,6 @@ benches/sdk-comparison/harness/*/target/
 
 # The live scripts' replica resolves fresh, with no lock committed (scripts/live/README.md).
 scripts/live/replica/**/Cargo.lock
+
+# Agent worktrees (Claude Code); never part of the repository.
+.claude/worktrees/
