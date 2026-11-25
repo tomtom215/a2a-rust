@@ -13,8 +13,8 @@ gap, a workflow that does not yet do what it claims. Nothing here is an
 invented milestone, and no dates are asserted, because sequencing and
 priority are the maintainer's call, not a thing to infer from the tree.
 
-Items are grouped by whether the work is *already decided* (0.8 removals that
-the code and docs commit to), *decided but unscheduled*, or *open questions*
+Items are grouped by whether the work is *already decided*, *decided but
+unscheduled*, or *open questions*
 that need a maintainer decision before any work starts.
 
 ## After 0.16.0

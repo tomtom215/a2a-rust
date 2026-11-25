@@ -62,7 +62,7 @@ usefully — the register of everything they did *not* ask.
 The project's own gates are strict, so a report that lets them be pointed at
 your case is worth far more than a description:
 
-1. The crate and version (`a2a-protocol-server 0.7.0`, not "latest").
+1. The crate and version (`a2a-protocol-server 0.16.0`, not "latest").
 2. The transport binding — JSON-RPC, HTTP+JSON, gRPC or WebSocket. Behaviour
    differs by binding and the first question will otherwise be this one.
 3. A minimal reproduction, ideally a failing test against one of the
@@ -72,8 +72,9 @@ your case is worth far more than a description:
 5. `RUST_LOG=debug` output if the failure is at runtime.
 
 If you believe the behaviour violates the A2A specification, say which
-requirement. The official TCK grades this SDK against 87 MUST-level
-requirements on its full profile, so if your case is covered by one of them,
+requirement. The official TCK grades this SDK on its full profile (the README's
+*Project Status* has the current figures), so if your case is covered by one of
+its requirements,
 that is a strong report and it will be treated as one.
 
 ## Supported versions

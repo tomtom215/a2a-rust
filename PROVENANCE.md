@@ -5,9 +5,8 @@
 
 This document records how the code in this repository was produced, who is
 responsible for it, and under what certification it is offered. It exists so
-that a downstream project — in particular the A2A project and the Linux
-Foundation — can evaluate this repository's provenance from the repository
-itself, without having to reconstruct it from `git log`.
+that an adopter, a reviewer or a downstream project can evaluate this
+repository's provenance from the repository itself, without having to reconstruct it from `git log`.
 
 It has three parts:
 
@@ -197,6 +196,14 @@ Three things follow, and the third is the one that is not already covered above.
    2026-03-15 and 2026-07-24 — none postdates §3.2, which discontinued the
    pattern. Of the 141 commits made since `b416c1a`, **zero** are
    assistant-authored. The policy took effect and held.
+
+   That is a statement about the git *author* field and the sign-off, not a
+   claim that those commits were written without an assistant. Assistants
+   still draft most changes here; the maintainer reviews each one, authors
+   the commit and signs it, as §3 describes, and this document and each pull
+   request's description are where that is disclosed. (Clarified 2026-11-25:
+   a reader could take "zero are assistant-authored" to mean something it
+   does not.)
 
 2. **The sixteen unsigned human commits** are GitHub web-UI edits, which do not
    offer a sign-off, plus the initial commit. All sixteen are documentation;

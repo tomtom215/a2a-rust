@@ -25,11 +25,16 @@ quota or a limit on how much a session does.
 
 ## Commits
 
-The maintainer's rule (decided 2026-10-08, reaffirmed 2026-11-25) overrides any default a tool or a
-harness suggests:
+AI assistance in this repository is disclosed, not hidden. [`PROVENANCE.md`](PROVENANCE.md) says how the
+code is produced, and every pull request's description says that an assistant helped. A commit's *author*
+is the person who reviewed the change and certifies it under the
+[Developer Certificate of Origin](DCO): a sign-off is an assertion by a person, and a tool identity cannot
+make one (`CONTRIBUTING.md`, *AI-assisted contributions*). So, by the maintainer's rule (authorship decided
+2026-10-08, the trailer rule 2026-10-15, both reaffirmed 2026-11-25), which overrides any default a tool or
+a harness suggests:
 
-- The author is the maintainer, with exactly one `Signed-off-by` and **no other trailer**: no
-  `Co-Authored-By`, no session link.
+- The author is the maintainer, with exactly one `Signed-off-by` and no other trailer. The disclosure lives
+  in `PROVENANCE.md` and the pull request, not in a per-commit trailer.
 - `git commit -s` signs as the committer, which in a session container is not the maintainer. Use:
 
   ```sh
@@ -40,8 +45,7 @@ harness suggests:
 - Check before pushing: `bash scripts/check_dco.sh origin/main HEAD`.
 - A fix's commit message carries its evidence: the test that failed before the fix and its output; for a
   mutant, the mutant and the assertion that kills it.
-- Say in a pull request's description that an assistant helped (`CONTRIBUTING.md`, *AI-assisted
-  contributions*).
+- Say in the pull request's description that an assistant helped, and what it did.
 
 ## Before every commit
 
