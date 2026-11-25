@@ -195,8 +195,9 @@ reading of it. Within a wave, packages are independent and can be separate sessi
 - **Wave 1, the delegation defects.** COR-03 to COR-09. COR-03, COR-04 and COR-05 gate SWM-02; COR-06 and
   COR-07 gate SWM-05.
 - **Wave 1b, reach, directly after the defects.** SWM-13 and SWM-14 (a caller knows which controls a peer
-  declares, and nothing degrades silently), ECO-06 (the extension contracts gated), ECO-04 (the Go
-  middleware), and ECO-02 once DEC-06 is answered. These make the controls hold, or say that they do not,
+  declares, and nothing degrades silently), ECO-06 (the extension contracts gated), ECO-04 (the
+  middleware for a2a-rs, then Go), and ECO-02 once DEC-06 is answered. ECO-07 (a Goose A2A agent in the
+  interop runs) waits on Goose shipping A2A. These make the controls hold, or say that they do not,
   on every edge of a mixed-language tree; they come before composition because a group over an edge that
   degrades silently hides the loss N times.
 - **Wave 2, composition.** SWM-02, then SWM-04 and SWM-05, with SWM-03 beside them; SWM-09 (the book part

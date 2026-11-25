@@ -352,11 +352,12 @@
     {
       "id": "ECO-04",
       "workstream": "ecosystem",
-      "title": "The swarm extensions in other SDKs",
+      "title": "The swarm extensions in other SDKs, a2a-rs first",
       "file": "plan/eco-ecosystem.md",
       "deps": [
         "COR-04",
         "COR-05",
+        "ECO-06",
         "SWM-01"
       ],
       "gates": [],
@@ -388,6 +389,21 @@
       "file": "plan/eco-ecosystem.md",
       "deps": [
         "SWM-01"
+      ],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "ECO-07",
+      "workstream": "ecosystem",
+      "title": "A Goose A2A agent in the interop runs",
+      "file": "plan/eco-ecosystem.md",
+      "deps": [
+        "SWM-13",
+        "SWM-14"
       ],
       "gates": [],
       "release": "none",
