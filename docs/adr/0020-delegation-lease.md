@@ -81,7 +81,8 @@ Option 3.
   The client docs say so.
 - What stays open on ASI08: a peer that does not implement the extension
   ignores the grant, and its children run as before. Leases are opt-in on
-  both sides. G5 (deadline and budget propagation) is not built.
+  both sides. G5 (deadline and budget propagation) is not built. *(Built
+  since: ADR 0023, 2026-10-21. Note added 2026-11-25.)*
 - Tests: the store contract (in-memory and PostgreSQL), ten handler tests
   (lapse, renewal on two replicas, a plain read not renewing, bounds, a
   malformed grant, no store, an unreadable store, a refused grant,

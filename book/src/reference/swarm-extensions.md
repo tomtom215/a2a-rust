@@ -9,6 +9,13 @@ the wire, what each of this SDK's swarm controls is, what a hop must do to
 keep it, and what is lost when a hop ignores it (ADR 0049). Nothing here
 needs this SDK: every control rides in a standard A2A slot.
 
+**These are this project's own extensions. They are not part of the A2A
+specification**, which defines the extension mechanism (a URI declared on the
+agent card and listed on a message, with the data in `metadata`) and none of
+the controls below. An agent built with another SDK ignores them unless it
+implements the rules on this page, and a control holds across a hop only when
+both ends honour it; the table below says what is lost when one does not.
+
 The words MUST, SHOULD and MAY are used as in RFC 2119.
 
 ## What crosses a hop today
@@ -43,8 +50,8 @@ and a float past 2^53, as invalid params. This SDK does so for every integer
 it reads (lease `ttlMs`, budget `remainingMs`, `meters` and `spent`, lineage
 `depth`), and the Python interop client sends each of them as a double.
 
-**Schemas and vectors.** Each extension below has a JSON Schema and
-conformance vectors in
+**Schemas and vectors.** Each extension below except steering has a JSON
+Schema and conformance vectors in
 [`crates/a2a-protocol-types/extensions/`](https://github.com/tomtom215/a2a-rust/tree/main/crates/a2a-protocol-types/extensions),
 one folder per extension. A vectors file lists `valid` values (each with what
 it `reads` as), `invalid` values a receiver MUST refuse as invalid params, and
@@ -57,6 +64,8 @@ cannot refuse (it needs `jsonschema` and is not yet a CI gate). Build against
 the files, not against this page: they are what the tests hold the SDK to. The JSON this SDK sends for each URI
 is also pinned in
 [`tests/golden/uri_contracts/`](https://github.com/tomtom215/a2a-rust/tree/main/crates/a2a-protocol-types/tests/golden/uri_contracts).
+Steering has no schema or vectors yet: its wire shape is held only by that
+golden file (`steering.json`) and by the rules in [its section](#steering-v1).
 
 ## Lineage v1
 

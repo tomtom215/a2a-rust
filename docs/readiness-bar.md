@@ -178,7 +178,7 @@ a different executor, or on another binding.
 
 ### 2026-11-11: what was measured, and a correction
 
-**F1 is measured** (`crates/a2a-protocol-server/tests/push_hang_live_subscriber.rs`, run on this tree): a real TCP peer that reads the webhook request
+**The first half of F1 is measured; the row stays under `not_measured` until both halves are** (corrected 2026-11-25: this said "F1 is measured" while the section above and the machine-readable block listed F1 as not measured) (`crates/a2a-protocol-server/tests/push_hang_live_subscriber.rs`, run on this tree): a real TCP peer that reads the webhook request
 and never answers; the streaming send that registered it ends in 0.23 s, the executor's own pacing being 0.2 s, and the same test fails (the stream does
 not end in 10 s) with push delivery run inline. This meets F1's "the send path is not delayed"; its "retried within its budget and then dropped with a
 log line" half is covered by `tests/push_sender_tests.rs` and was not re-measured here.

@@ -29,6 +29,11 @@ agents. This SDK is the substrate. What a substrate owes a swarm is:
 
 ## What is measured today
 
+*This table is the state on 2026-10-02 and is kept as measured. Three rows have changed since, each recorded
+further down this page: R1 (a client-side delegation handle cascades a cancel, G1-A, 2026-10-08; a lease stops
+an orphaned child, 2026-10-18), R3 (a delegation journal and reattach, G2) and R7 (deadlines and budgets, G5,
+2026-10-21). Note added 2026-11-25.*
+
 | | Status | Evidence |
 |---|---|---|
 | R1 | **Missing in the protocol and the SDK; possible by hand.** A2A has no link from a task to the tasks it started. Cancelling a supervisor's root task left **256 of 256** (64-worker run) and **512 of 512** (256-worker run) children still executing 5 s later. With the cascade written by hand (`run_once` in `examples/swarm/src/supervisor.rs`, which follows each child's stream and cancels it when the parent's token fires), the same trees went from 256 to 0 live executions in 65 ms, and from 512 to 0 in 84 ms. | `swarm` `cancel` and `cancel-control` rows; `benches/sdk-comparison/results/swarm/` |
@@ -67,8 +72,9 @@ last_event_id)` follows a child a restarted supervisor recorded. The
 `DelegationJournal` trait and an in-memory journal exist
 (`Delegation::start_journaled` writes the record before the message is sent),
 and so does a PostgreSQL journal in the server crate
-(`PostgresDelegationJournal`, the `postgres` feature). A SQLite journal is not
-built.
+(`PostgresDelegationJournal`, the `postgres` feature), and a SQLite one
+(`SqliteDelegationJournal`, the `sqlite` feature; corrected 2026-11-25: this
+said it was not built).
 
 ### G3 — Tenant isolation fails open by default (R5)
 
@@ -306,7 +312,8 @@ the two-hop runs measured here.
    finds every child cancelled, and the control arm, which detaches instead,
    still finds every child running. `crates/a2a-protocol-client/tests/delegation_tests.rs`
    checks each way a delegation ends against the server.
-2. **G3** — decide fail-closed or not. Either answer is small to implement.
+2. ~~**G3**~~ — decided 2026-10-02, option 2, and built: see *G3* above (corrected 2026-11-25: this line still
+   said "decide").
 3. **G2** — durable child records plus reattach, exercised by a swarm run
    that kills a supervisor partway through.
 4. **G1-B and G5** — ~~G1-B~~ done 2026-10-18 (ADR 0020): the lease
