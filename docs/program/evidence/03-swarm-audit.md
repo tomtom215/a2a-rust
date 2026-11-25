@@ -4,6 +4,13 @@
 > **Frozen audit input, 2026-11-25, of the tree at `2058058d`.** Not maintained. Written by a delegated
 > read-only audit for [`docs/program/README.md`](../README.md); its VERIFIED and INFERRED labels are the auditor's own.
 > Re-check an anchor before acting on it. `UPSTREAM/` is a local clone of the named upstream repository.
+>
+> **Correction, 2026-11-25, from a mechanical check of every citation in these seven files.** This file cites
+> `drop.rs` at lines 91 to 143; `crates/a2a-protocol-client/src/delegation/drop.rs` has 61 lines. What the
+> citations describe is there (the `Drop` impl starts at line 13 and spawns the cancel on the current
+> runtime near its end); only the numbers are wrong. Of the in-repository `path:line` citations across the
+> seven files, these were the only ones beyond the end of their file; a citation by bare file name that
+> matches several files was counted as resolving when any of them is long enough, which is weaker.
 
 # 03 — Swarm / fleet / orchestration audit of a2a-rust 0.16.0
 
