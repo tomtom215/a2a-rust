@@ -19,6 +19,17 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
+**2026-11-25: the plan the "Phase 2" item below asks for is written and waits for the maintainer.**
+[`docs/program/README.md`](program/README.md) is the plan of record for the work after 0.16.0: what a deep
+dive of the SDK, the swarm features, A2A 1.1, the peer SDKs, observability, performance, scale and the
+engineering system found; fourteen decisions it asks of the maintainer (its §4); the work packages by
+workstream under `docs/program/plan/`, with their status in `docs/program/status.json`; the proposed target
+sheet; and the seven audits it rests on, frozen under `docs/program/evidence/`. Nothing in it is built and
+nothing was measured for it: the audits read the tree at `2058058d` and built nothing. A session picking up
+work starts at that file's §6. Pull requests #220, #221 and #222 are merged (`git log --oneline -3
+origin/main`), so item 1 of *First, next* below is done; the block below is otherwise as the session of
+2026-11-22 left it, and `docs/program/plan/fnd-foundation.md` (FND-03) lists what in it is stale.
+
 State on 2026-11-22 (Europe/Berlin evening), the first session after 0.16.0 shipped. Re-run every command named; copy no figure.
 
 - **Released.** `v0.16.0` points at `334fa45c`, the merge of #219 (`git rev-parse v0.16.0^{commit}`), which is also `main`
@@ -85,11 +96,11 @@ State on 2026-11-22 (Europe/Berlin evening), the first session after 0.16.0 ship
 
 1. Read CI on #220 (TCK pin) and #222 (PostgreSQL versions), each with #221 merged in, and close anything red; after #220 merges,
    the next nightly `Official TCK` run should be green against upstream `main`.
-2. Phase 2 of the program: a target sheet (scale, failure detection and recovery, latency, memory, cold start, telemetry
-   cardinality) and a plan, both for the maintainer's approval before any building. Start from `docs/readiness-bar.md`; say for
-   each target what hardware it needs and whether a session container has it.
-3. The A2A v1.1.0-rc question for the maintainer: track it (a diff of the rc proto and specification against the ledger, no code),
-   or wait for a release.
+2. Phase 2 of the program: **written 2026-11-25, not yet approved.** The plan is `docs/program/README.md` and the target sheet
+   `docs/program/target-sheet.md`. The maintainer's answers to that file's §4 come first; the packages that need none are its
+   "Wave 0".
+3. The A2A v1.1.0-rc question for the maintainer is DEC-02 of the plan. The delta is larger than this file's summary above and
+   upstream has moved since the rc: `docs/program/evidence/01-spec-v1.1-delta.md`.
 
 ### Environment facts that still hold
 
