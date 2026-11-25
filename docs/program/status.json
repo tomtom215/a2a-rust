@@ -1,0 +1,1331 @@
+{
+  "schema": 1,
+  "written": "2026-11-25",
+  "base_commit": "2058058d",
+  "statuses": [
+    "todo",
+    "in-progress",
+    "partial",
+    "done",
+    "dropped"
+  ],
+  "note": "Status lives here only. Edit status, landed and decisions by hand; ids, titles, deps and gates mirror plan/*.md and are rewritten by docs/program/tools/plan_check.py --write.",
+  "decisions": {
+    "DEC-01": "decided 2026-11-25: three client-side layers in the existing crates (a turn-scoped delegate, ADR 0033's group, a recovery driver); no registry, scheduler or DSL; ADR 0033 accepted; ADR 0030's 'no recovery driver' reversed",
+    "DEC-02": "decided 2026-11-25: track A2A 1.1 now: delta ledger and forward-compatible changes at once, 1.1 types behind an off-by-default unstable feature, the unsettled parts held until a non-rc tag",
+    "DEC-03": "decided 2026-11-25: target sheet approved: quantities and procedures; every threshold stays PROPOSED until first measured",
+    "DEC-04": "decided 2026-11-25: commits are authored as Tom F. with one Signed-off-by and no other trailer; a CLAUDE.md at the root states it",
+    "DEC-05": "decided 2026-11-25: pin the lint toolchain in a file CI writes and preflight.sh reads",
+    "DEC-06": "decided 2026-11-25: send the lineage-and-halt and the deadline-and-budget drafts upstream; a session makes them ready, the maintainer sends",
+    "DEC-07": "decided 2026-11-25: split CHANGELOG.md by release, keeping [Unreleased], the newest release and an index",
+    "DEC-08": "decided 2026-11-25: a delegation always carries an idempotency key",
+    "DEC-09": "decided 2026-11-25: lineage is attached automatically inside the turn-scoped delegate only",
+    "DEC-10": "decided 2026-11-25: an opt-in authenticated halt route, off by default, refused under the production profile without an authenticator",
+    "DEC-11": "decided 2026-11-25: JsonRpcDispatcher serves /health and /ready",
+    "DEC-12": "decided 2026-11-25: publish the CLI first; the publishing itself is the maintainer's act",
+    "DEC-13": "decided 2026-11-25: a group does not retry; it reports which members are retryable (ADR 0033 as written)",
+    "DEC-14": "decided 2026-11-25: depth 16 stays the loop bound; add a width limit; no agent path in lineage"
+  },
+  "packages": [
+    {
+      "id": "COR-01",
+      "workstream": "correctness",
+      "title": "A store outage must not lose a task's ending (X-10)",
+      "file": "plan/cor-correctness.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "COR-02",
+      "workstream": "correctness",
+      "title": "Cancelling a parked task announces it (E-F25, X-11)",
+      "file": "plan/cor-correctness.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "COR-03",
+      "workstream": "correctness",
+      "title": "A handed-off child does not get its budget again (E03 R1)",
+      "file": "plan/cor-correctness.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "COR-04",
+      "workstream": "correctness",
+      "title": "`Canceled` says who stopped the child (E03 R3)",
+      "file": "plan/cor-correctness.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "COR-05",
+      "workstream": "correctness",
+      "title": "The client does not retry into a halt (E03 R2)",
+      "file": "plan/cor-correctness.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "COR-06",
+      "workstream": "correctness",
+      "title": "An ambiguous delegation start is recoverable (E03 R5)",
+      "file": "plan/cor-correctness.md",
+      "deps": [],
+      "gates": [
+        "DEC-08"
+      ],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "COR-07",
+      "workstream": "correctness",
+      "title": "Journal records have an owner that is enforced (E03 R4)",
+      "file": "plan/cor-correctness.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "COR-08",
+      "workstream": "correctness",
+      "title": "A parked child of a dead parent is stopped by its lease (E03 R8)",
+      "file": "plan/cor-correctness.md",
+      "deps": [
+        "COR-04"
+      ],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "COR-09",
+      "workstream": "correctness",
+      "title": "A SQLite lease store",
+      "file": "plan/cor-correctness.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "COR-10",
+      "workstream": "correctness",
+      "title": "The 0.17 fleet rows the register already holds",
+      "file": "plan/cor-correctness.md",
+      "deps": [
+        "FND-03"
+      ],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "COR-11",
+      "workstream": "correctness",
+      "title": "The security rows with a mechanical test",
+      "file": "plan/cor-correctness.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "COR-12",
+      "workstream": "correctness",
+      "title": "Close CI1",
+      "file": "plan/cor-correctness.md",
+      "deps": [],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "DVX-01",
+      "workstream": "devex",
+      "title": "A refused start cannot be dropped (E04 \u00a76 item 1)",
+      "file": "plan/dvx-devex.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "DVX-02",
+      "workstream": "devex",
+      "title": "`hello-agent` in thirty lines of code (item 3)",
+      "file": "plan/dvx-devex.md",
+      "deps": [
+        "DVX-01"
+      ],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "DVX-03",
+      "workstream": "devex",
+      "title": "One production reference (item 4)",
+      "file": "plan/dvx-devex.md",
+      "deps": [],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "DVX-04",
+      "workstream": "devex",
+      "title": "The examples teach the short forms, held by a ratchet (item 5)",
+      "file": "plan/dvx-devex.md",
+      "deps": [],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "DVX-05",
+      "workstream": "devex",
+      "title": "Serve an executor on loopback for a test (item 7)",
+      "file": "plan/dvx-devex.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "DVX-06",
+      "workstream": "devex",
+      "title": "`/health` and `/ready` on the JSON-RPC dispatcher (item 8)",
+      "file": "plan/dvx-devex.md",
+      "deps": [],
+      "gates": [
+        "DEC-11"
+      ],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "DVX-07",
+      "workstream": "devex",
+      "title": "Retire what the deprecations allow (item 9)",
+      "file": "plan/dvx-devex.md",
+      "deps": [
+        "FND-11"
+      ],
+      "gates": [],
+      "release": "0.17",
+      "breaking": true,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "DVX-08",
+      "workstream": "devex",
+      "title": "Group the handler builder's documentation (item 10)",
+      "file": "plan/dvx-devex.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "DVX-09",
+      "workstream": "devex",
+      "title": "`a2a doctor` (item 11)",
+      "file": "plan/dvx-devex.md",
+      "deps": [],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "DVX-10",
+      "workstream": "devex",
+      "title": "The smaller rows",
+      "file": "plan/dvx-devex.md",
+      "deps": [
+        "FND-03"
+      ],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "ECO-01",
+      "workstream": "ecosystem",
+      "title": "Distribution",
+      "file": "plan/eco-ecosystem.md",
+      "deps": [],
+      "gates": [
+        "DEC-12"
+      ],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "ECO-02",
+      "workstream": "ecosystem",
+      "title": "The upstream proposals",
+      "file": "plan/eco-ecosystem.md",
+      "deps": [
+        "COR-04"
+      ],
+      "gates": [
+        "DEC-06"
+      ],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "ECO-03",
+      "workstream": "ecosystem",
+      "title": "The comparison, refreshed",
+      "file": "plan/eco-ecosystem.md",
+      "deps": [
+        "PRF-07"
+      ],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "ECO-04",
+      "workstream": "ecosystem",
+      "title": "The swarm extensions in other SDKs, a2a-rs first",
+      "file": "plan/eco-ecosystem.md",
+      "deps": [
+        "COR-04",
+        "COR-05",
+        "ECO-06",
+        "SWM-01"
+      ],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "ECO-05",
+      "workstream": "ecosystem",
+      "title": "Discovery beyond one link, by catalog",
+      "file": "plan/eco-ecosystem.md",
+      "deps": [
+        "SPC-03"
+      ],
+      "gates": [
+        "DEC-02"
+      ],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "ECO-06",
+      "workstream": "ecosystem",
+      "title": "The extension contracts are gated",
+      "file": "plan/eco-ecosystem.md",
+      "deps": [
+        "SWM-01"
+      ],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "ECO-07",
+      "workstream": "ecosystem",
+      "title": "A Goose A2A agent in the interop runs",
+      "file": "plan/eco-ecosystem.md",
+      "deps": [
+        "SWM-13",
+        "SWM-14"
+      ],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "FND-01",
+      "workstream": "foundation",
+      "title": "A `CLAUDE.md` that states the session rules",
+      "file": "plan/fnd-foundation.md",
+      "deps": [],
+      "gates": [
+        "DEC-04"
+      ],
+      "release": "none",
+      "breaking": false,
+      "status": "done",
+      "landed": "branch claude/magical-ptolemy-sur0er, 2026-11-25 (no pull request yet)"
+    },
+    {
+      "id": "FND-02",
+      "workstream": "foundation",
+      "title": "Cite the changelog by heading, not by line",
+      "file": "plan/fnd-foundation.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "FND-03",
+      "workstream": "foundation",
+      "title": "Correct the claims that are stale at HEAD",
+      "file": "plan/fnd-foundation.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "FND-04",
+      "workstream": "foundation",
+      "title": "One build-free pre-commit command",
+      "file": "plan/fnd-foundation.md",
+      "deps": [
+        "FND-02"
+      ],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "FND-05",
+      "workstream": "foundation",
+      "title": "One register for what is open",
+      "file": "plan/fnd-foundation.md",
+      "deps": [
+        "FND-03"
+      ],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "FND-06",
+      "workstream": "foundation",
+      "title": "Pin the toolchain a session and CI lint with",
+      "file": "plan/fnd-foundation.md",
+      "deps": [],
+      "gates": [
+        "DEC-05"
+      ],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "FND-07",
+      "workstream": "foundation",
+      "title": "Ledger citations by symbol",
+      "file": "plan/fnd-foundation.md",
+      "deps": [
+        "FND-02"
+      ],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "FND-08",
+      "workstream": "foundation",
+      "title": "One source for the mutation test filter; retire `mutants.toml`",
+      "file": "plan/fnd-foundation.md",
+      "deps": [],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "FND-09",
+      "workstream": "foundation",
+      "title": "Release-engineering rows that can refuse or corrupt a tag",
+      "file": "plan/fnd-foundation.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "FND-10",
+      "workstream": "foundation",
+      "title": "Split the documents by rate of change",
+      "file": "plan/fnd-foundation.md",
+      "deps": [
+        "FND-05"
+      ],
+      "gates": [
+        "DEC-07"
+      ],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "FND-11",
+      "workstream": "foundation",
+      "title": "Gate the rules that are written and unenforced",
+      "file": "plan/fnd-foundation.md",
+      "deps": [],
+      "gates": [
+        "DEC-04"
+      ],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "FND-12",
+      "workstream": "foundation",
+      "title": "Machine-readable touch-point manifests",
+      "file": "plan/fnd-foundation.md",
+      "deps": [],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "OBS-01",
+      "workstream": "observability",
+      "title": "The series budget, as a gate",
+      "file": "plan/obs-observability.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "OBS-02",
+      "workstream": "observability",
+      "title": "A failed telemetry export is visible out of band (S4)",
+      "file": "plan/obs-observability.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "OBS-03",
+      "workstream": "observability",
+      "title": "The gauges and histograms a fleet operator is missing",
+      "file": "plan/obs-observability.md",
+      "deps": [
+        "OBS-01"
+      ],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "OBS-04",
+      "workstream": "observability",
+      "title": "Objectives and burn-rate alerts",
+      "file": "plan/obs-observability.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "OBS-05",
+      "workstream": "observability",
+      "title": "One job, one view, across a split trace",
+      "file": "plan/obs-observability.md",
+      "deps": [
+        "SWM-09"
+      ],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "OBS-06",
+      "workstream": "observability",
+      "title": "The register rows with a mechanical test",
+      "file": "plan/obs-observability.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "OBS-07",
+      "workstream": "observability",
+      "title": "Token accounting by tenant",
+      "file": "plan/obs-observability.md",
+      "deps": [
+        "OBS-01"
+      ],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "OBS-08",
+      "workstream": "observability",
+      "title": "Refresh the GenAI conventions against upstream",
+      "file": "plan/obs-observability.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "PRF-01",
+      "workstream": "performance",
+      "title": "Deterministic gates that see what the comparison saw",
+      "file": "plan/prf-performance.md",
+      "deps": [],
+      "gates": [
+        "DEC-03"
+      ],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "PRF-02",
+      "workstream": "performance",
+      "title": "No timer armed per request for the header read (P-1)",
+      "file": "plan/prf-performance.md",
+      "deps": [
+        "PRF-01"
+      ],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "PRF-03",
+      "workstream": "performance",
+      "title": "No timer in `settled()` (P-2)",
+      "file": "plan/prf-performance.md",
+      "deps": [
+        "PRF-01"
+      ],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "PRF-04",
+      "workstream": "performance",
+      "title": "Serialize the JSON-RPC envelope and parse the params once (P-3)",
+      "file": "plan/prf-performance.md",
+      "deps": [
+        "PRF-01"
+      ],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "PRF-05",
+      "workstream": "performance",
+      "title": "One serde pass per streamed event (P-4)",
+      "file": "plan/prf-performance.md",
+      "deps": [
+        "PRF-01"
+      ],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "PRF-06",
+      "workstream": "performance",
+      "title": "Metric recordings on the send path that allocate nothing (P-5)",
+      "file": "plan/prf-performance.md",
+      "deps": [
+        "PRF-01"
+      ],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "PRF-07",
+      "workstream": "performance",
+      "title": "Re-measure against a2a-rs and 0.14.1, and publish",
+      "file": "plan/prf-performance.md",
+      "deps": [
+        "PRF-02",
+        "PRF-03"
+      ],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "PRF-08",
+      "workstream": "performance",
+      "title": "The header map, and the third task (P-7, P-8)",
+      "file": "plan/prf-performance.md",
+      "deps": [
+        "PRF-07"
+      ],
+      "gates": [],
+      "release": "unstated",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SCL-01",
+      "workstream": "scale",
+      "title": "Adopt the target sheet",
+      "file": "plan/scl-scale.md",
+      "deps": [
+        "FND-03"
+      ],
+      "gates": [
+        "DEC-03"
+      ],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SCL-02",
+      "workstream": "scale",
+      "title": "The readiness bar on every binding and store it names (S-A)",
+      "file": "plan/scl-scale.md",
+      "deps": [
+        "SCL-01"
+      ],
+      "gates": [
+        "DEC-03"
+      ],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SCL-03",
+      "workstream": "scale",
+      "title": "Sixty replicas with a stated connection plan (S-B)",
+      "file": "plan/scl-scale.md",
+      "deps": [],
+      "gates": [
+        "DEC-03"
+      ],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SCL-04",
+      "workstream": "scale",
+      "title": "SQL write amplification, measured before anything changes (S-D)",
+      "file": "plan/scl-scale.md",
+      "deps": [],
+      "gates": [
+        "DEC-03"
+      ],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SCL-05",
+      "workstream": "scale",
+      "title": "Memory per idle stream and per parked task (S-E)",
+      "file": "plan/scl-scale.md",
+      "deps": [],
+      "gates": [
+        "DEC-03"
+      ],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SCL-06",
+      "workstream": "scale",
+      "title": "Leases and audit appends at fleet size",
+      "file": "plan/scl-scale.md",
+      "deps": [],
+      "gates": [
+        "DEC-03"
+      ],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SCL-07",
+      "workstream": "scale",
+      "title": "The deployment example is a fleet member (S-F)",
+      "file": "plan/scl-scale.md",
+      "deps": [
+        "DVX-03",
+        "OBS-03"
+      ],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SCL-08",
+      "workstream": "scale",
+      "title": "What the qualification matrix lists as not covered",
+      "file": "plan/scl-scale.md",
+      "deps": [
+        "SCL-03"
+      ],
+      "gates": [
+        "DEC-03"
+      ],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SPC-01",
+      "workstream": "spec",
+      "title": "Make a pre-release visible",
+      "file": "plan/spc-spec.md",
+      "deps": [],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SPC-02",
+      "workstream": "spec",
+      "title": "Vendor the 1.1 text as reference, outside every build path",
+      "file": "plan/spc-spec.md",
+      "deps": [
+        "SPC-01"
+      ],
+      "gates": [
+        "DEC-02"
+      ],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SPC-03",
+      "workstream": "spec",
+      "title": "A delta ledger",
+      "file": "plan/spc-spec.md",
+      "deps": [
+        "SPC-02"
+      ],
+      "gates": [
+        "DEC-02"
+      ],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SPC-04",
+      "workstream": "spec",
+      "title": "The client skips what it does not recognise",
+      "file": "plan/spc-spec.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SPC-05",
+      "workstream": "spec",
+      "title": "Carry the negotiated version through the request path",
+      "file": "plan/spc-spec.md",
+      "deps": [],
+      "gates": [
+        "DEC-02"
+      ],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SPC-06",
+      "workstream": "spec",
+      "title": "The client selects an interface by a version set",
+      "file": "plan/spc-spec.md",
+      "deps": [],
+      "gates": [
+        "DEC-02"
+      ],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SPC-07",
+      "workstream": "spec",
+      "title": "The 1.1 design record",
+      "file": "plan/spc-spec.md",
+      "deps": [
+        "SPC-03"
+      ],
+      "gates": [
+        "DEC-02"
+      ],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SPC-08",
+      "workstream": "spec",
+      "title": "1.1 types behind an unstable, off-by-default feature",
+      "file": "plan/spc-spec.md",
+      "deps": [
+        "FND-12",
+        "SPC-07"
+      ],
+      "gates": [
+        "DEC-02"
+      ],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SPC-09",
+      "workstream": "spec",
+      "title": "Server-side `generation`, behind the same feature",
+      "file": "plan/spc-spec.md",
+      "deps": [
+        "SPC-05",
+        "SPC-08"
+      ],
+      "gates": [
+        "DEC-02"
+      ],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SPC-10",
+      "workstream": "spec",
+      "title": "What waits for a 1.1 release",
+      "file": "plan/spc-spec.md",
+      "deps": [
+        "SPC-09"
+      ],
+      "gates": [
+        "DEC-02"
+      ],
+      "release": "unstated",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SPC-11",
+      "workstream": "spec",
+      "title": "Re-diff on every upstream movement",
+      "file": "plan/spc-spec.md",
+      "deps": [
+        "SPC-03"
+      ],
+      "gates": [
+        "DEC-02"
+      ],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SPC-12",
+      "workstream": "spec",
+      "title": "The 1.0.1 remainder",
+      "file": "plan/spc-spec.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SPC-13",
+      "workstream": "spec",
+      "title": "A conformance run for the WebSocket binding",
+      "file": "plan/spc-spec.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SWM-01",
+      "workstream": "swarm",
+      "title": "Make what exists findable, and make the examples use it",
+      "file": "plan/swm-swarm.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.16.x",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SWM-02",
+      "workstream": "swarm",
+      "title": "Layer A, a delegate scoped to the turn",
+      "file": "plan/swm-swarm.md",
+      "deps": [
+        "COR-03",
+        "COR-04",
+        "COR-05",
+        "SWM-01"
+      ],
+      "gates": [
+        "DEC-01",
+        "DEC-09"
+      ],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SWM-03",
+      "workstream": "swarm",
+      "title": "A fleet profile that checks the configuration agrees",
+      "file": "plan/swm-swarm.md",
+      "deps": [
+        "COR-09"
+      ],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SWM-04",
+      "workstream": "swarm",
+      "title": "Layer B, `DelegationGroup` as ADR 0033 specifies",
+      "file": "plan/swm-swarm.md",
+      "deps": [
+        "COR-04",
+        "SWM-02"
+      ],
+      "gates": [
+        "DEC-01",
+        "DEC-13"
+      ],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SWM-05",
+      "workstream": "swarm",
+      "title": "Layer C, a recovery driver",
+      "file": "plan/swm-swarm.md",
+      "deps": [
+        "COR-06",
+        "COR-07",
+        "SWM-02"
+      ],
+      "gates": [
+        "DEC-01"
+      ],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SWM-06",
+      "workstream": "swarm",
+      "title": "A width limit on fan-out",
+      "file": "plan/swm-swarm.md",
+      "deps": [
+        "SWM-02"
+      ],
+      "gates": [
+        "DEC-14"
+      ],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SWM-07",
+      "workstream": "swarm",
+      "title": "Forward a child's progress into the parent's stream",
+      "file": "plan/swm-swarm.md",
+      "deps": [
+        "SWM-02"
+      ],
+      "gates": [
+        "DEC-01"
+      ],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SWM-08",
+      "workstream": "swarm",
+      "title": "An opt-in halt route",
+      "file": "plan/swm-swarm.md",
+      "deps": [],
+      "gates": [
+        "DEC-10"
+      ],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SWM-09",
+      "workstream": "swarm",
+      "title": "One book part, and the swarm example on the new layers",
+      "file": "plan/swm-swarm.md",
+      "deps": [
+        "SWM-02",
+        "SWM-03",
+        "SWM-04",
+        "SWM-05"
+      ],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SWM-10",
+      "workstream": "swarm",
+      "title": "The swarm, measured past what has been measured",
+      "file": "plan/swm-swarm.md",
+      "deps": [
+        "OBS-03",
+        "SWM-04",
+        "SWM-05"
+      ],
+      "gates": [
+        "DEC-03"
+      ],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SWM-11",
+      "workstream": "swarm",
+      "title": "Endpoint selection that reads the server's load signal",
+      "file": "plan/swm-swarm.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SWM-12",
+      "workstream": "swarm",
+      "title": "A delegation carries the caller's principal",
+      "file": "plan/swm-swarm.md",
+      "deps": [
+        "COR-11",
+        "SWM-02"
+      ],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SWM-13",
+      "workstream": "swarm",
+      "title": "A caller can ask which controls a peer declares",
+      "file": "plan/swm-swarm.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SWM-14",
+      "workstream": "swarm",
+      "title": "Nothing degrades silently across a hop that ignores a control",
+      "file": "plan/swm-swarm.md",
+      "deps": [
+        "COR-04",
+        "COR-05",
+        "SWM-13"
+      ],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SWM-15",
+      "workstream": "swarm",
+      "title": "The tasks of one job can be listed",
+      "file": "plan/swm-swarm.md",
+      "deps": [
+        "SWM-06"
+      ],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    }
+  ]
+}

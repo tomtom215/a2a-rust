@@ -1,0 +1,3369 @@
+[
+ {
+  "id": "N14",
+  "title": "Migration rehearsal incomplete: PostgreSQL 0.15->0.16 for audit and push-config stores, PostgreSQL rollback, rolling two-version deployment",
+  "area": "testing-verification",
+  "severity": "Medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:3",
+   "ROADMAP.md:72",
+   "docs/handoff.md:207",
+   "docs/audits/2026-11-13-adversarial-review/findings.json:133",
+   "docs/audits/2026-11-14-qualification/README.md:69"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Part of the qualification matrix \"Not covered\" list (BL-006)."
+ },
+ {
+  "id": "CI1",
+  "title": "Two macOS mDNS discovery tests failed on main once; not reproduced, not root-caused",
+  "area": "testing-verification",
+  "severity": "High (release gate)",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:12",
+   "ROADMAP.md:70",
+   "docs/handoff.md:124",
+   "docs/handoff.md:205",
+   "docs/audits/2026-11-13-adversarial-review/findings.json:163"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. 270 targeted macOS runs reproduced nothing. Close rule recorded: find the cause, or close with the count of green macOS runs. Blocks: ci_evidence gate refuses a tag while main is red (N13)."
+ },
+ {
+  "id": "E1",
+  "title": "Profile::RegulatedData does not check the tool loop step journal; declared controls reported as declared, not verified",
+  "area": "security-compliance",
+  "severity": "Developer experience / release criterion",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:21",
+   "ROADMAP.md:106",
+   "docs/handoff.md:208",
+   "docs/audits/2026-11-13-adversarial-review/findings.json:203",
+   "CHANGELOG.md:3282",
+   "crates/a2a-protocol-server/src/profile.rs:164",
+   "crates/a2a-protocol-server/src/builder/durable.rs:71"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": true,
+  "notes": "VERIFIED open: the journal is the executor's, the builder never sees it. Decision sentence (handoff:208): \"E1's rest is a decision first: whether the step journal's durability should be checked, which needs the builder to see the ToolLoop's journal.\" Part of KL-22."
+ },
+ {
+  "id": "E6",
+  "title": "Three Scorecard alerts remain: Code-Review #126, Branch-Protection #93 (need G1), Vulnerabilities #125 (RUSTSEC-2026-0459 waiver)",
+  "area": "governance",
+  "severity": "Release criterion",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:30",
+   "ROADMAP.md:124",
+   "docs/handoff.md:209",
+   "docs/audits/2026-11-13-adversarial-review/findings.json:303"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED; alerts API not readable from a session. Depends on G1 and BL-007."
+ },
+ {
+  "id": "R3",
+  "title": "Push outbox: a writer whose process dies mid-write is settled only after the hold; rest of R3 and the ADR 0037 not-covered cases",
+  "area": "fleet-correctness",
+  "severity": "High (conditional)",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:39",
+   "ROADMAP.md:90",
+   "docs/audits/2026-11-12-adversarial-review/findings.json:23",
+   "CHANGELOG.md:3269",
+   "docs/adr/0037-push-outbox.md:7"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Grouped in ROADMAP with D-05, SEC-14 (per-destination rate limits, verification handshake, per-caller config quota). Alias: KL-14."
+ },
+ {
+  "id": "A3",
+  "title": "Required audit: the spool of refused records is in memory; no result record after a tool ran",
+  "area": "security-compliance",
+  "severity": "Operational",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:48",
+   "ROADMAP.md:106",
+   "docs/audits/2026-11-12-adversarial-review/findings.json:113",
+   "CHANGELOG.md:3282",
+   "crates/a2a-protocol-server/src/audit/mod.rs:55"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED open: audit/mod.rs:55 documents \"a process that dies with records in its spool loses them\". ROADMAP item: a durable audit spool. Part of KL-22."
+ },
+ {
+  "id": "S1",
+  "title": "Durable step journal: nothing begins an orphaned task again, no compensation, no two-replica test",
+  "area": "tool-loop",
+  "severity": "Product gap",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:57",
+   "ROADMAP.md:138",
+   "docs/audits/2026-11-12-adversarial-review/findings.json:173",
+   "ROADMAP.md:638",
+   "docs/adopter-audit-2026-09-22.md:1068"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Overlaps ROADMAP:638 \"No executor resumes after a restart\" (recorded, not scheduled) and adopter-audit S15."
+ },
+ {
+  "id": "S2",
+  "title": "Skill content pinning: manifests over bodies and resources, deployment pins, hashes in audit evidence, revocation",
+  "area": "security-compliance",
+  "severity": "Product gap",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:66",
+   "ROADMAP.md:120",
+   "docs/audits/2026-11-12-adversarial-review/findings.json:183",
+   "docs/handoff.md:210",
+   "crates/a2a-protocol-server/src/skills/spec.rs:7"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED open: no digest, manifest or pin code under crates/a2a-protocol-server/src/skills (git grep finds only the spec-snapshot date)."
+ },
+ {
+  "id": "S3",
+  "title": "Fleet-wide inference quota and cost reservation with a declared overshoot bound",
+  "area": "fleet-correctness",
+  "severity": "Scale",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:75",
+   "ROADMAP.md:93",
+   "ROADMAP.md:95",
+   "docs/audits/2026-11-12-adversarial-review/findings.json:193",
+   "docs/handoff.md:210"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": true,
+  "notes": "VERIFIED open: no fleet quota type in crates/*/src. Decision sentence (ROADMAP:95-96): \"S3, a fleet-wide inference quota, needs a decision first.\""
+ },
+ {
+  "id": "S4",
+  "title": "Independent visibility of a failed telemetry export; collector-outage and cardinality qualification",
+  "area": "observability",
+  "severity": "Operational",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:84",
+   "ROADMAP.md:144",
+   "docs/audits/2026-11-12-adversarial-review/findings.json:203",
+   "crates/a2a-protocol-server/src/otel/telemetry/counting.rs:116"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED not examined: the register note is \"Not examined this session\". A lost-export counter (a2a.telemetry.export.failed) exists in counting.rs:101-116, but it is reported through the same pipeline, so \"independent\" visibility and the qualification run remain to be established."
+ },
+ {
+  "id": "S5",
+  "title": "Measure the unmeasured readiness-bar rows (R5-R7, F1-F5, L2, L5), a second replica, PostgreSQL/SQLite, other bindings",
+  "area": "testing-verification",
+  "severity": "Evidence",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:93",
+   "ROADMAP.md:78",
+   "docs/audits/2026-11-12-adversarial-review/findings.json:213",
+   "docs/audits/2026-11-11-external-review/findings.json:115",
+   "docs/readiness-bar.md:88",
+   "docs/readiness-bar.md:288",
+   "docs/handoff.md:726",
+   "docs/handoff.md:88"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED: the machine-readable block lists R5,R6,R7,F1-F5,L2,L5, any second replica, any SQL store, any binding but JSON-RPC as not measured. Aliases: X-15. Needs an idle machine (handoff:64). Handoff \"First, next\" 2 makes this Phase 2: a target sheet and plan for the maintainer's approval before building. See contradiction C-01 (F1)."
+ },
+ {
+  "id": "S6",
+  "title": "Release evidence manifest runs no test suite and is not signed on its own",
+  "area": "release-eng",
+  "severity": "Governance",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:102",
+   "ROADMAP.md:229",
+   "docs/audits/2026-11-12-adversarial-review/findings.json:223"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED."
+ },
+ {
+  "id": "G1",
+  "title": "main is unprotected; the protect-main ruleset is disabled",
+  "area": "governance",
+  "severity": "Governance",
+  "status": "maintainer-action",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:111",
+   "ROADMAP.md:124",
+   "docs/audits/2026-11-12-adversarial-review/findings.json:253",
+   "docs/handoff.md:591",
+   "docs/handoff.md:209"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED (a repository setting; not checkable from the tree). Decision sentence (ROADMAP:124-125): \"[decision] Protect main with reviews ... A repository setting, the maintainer's.\" Constraint (handoff:593-596): a rule needs github-actions as a bypass actor because the benchmark workflow pushes to main, and Code-Review wants a second approver with one maintainer."
+ },
+ {
+  "id": "X-07",
+  "title": "SSRF corpus never run against both SDKs",
+  "area": "security-compliance",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:120",
+   "ROADMAP.md:114",
+   "docs/audits/2026-11-11-external-review/findings.json:51"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED: needs a build of a2a-rs and a harness."
+ },
+ {
+  "id": "W2-hostile-3",
+  "title": "A finished task whose owner died is completed only after about three claim lifetimes",
+  "area": "fleet-correctness",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:129",
+   "ROADMAP.md:82",
+   "docs/audits/2026-11-11-external-review/findings.json:67",
+   "CHANGELOG.md:3234",
+   "docs/audits/2026-11-07-campaign-wave2/hostile/README.md:48"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Severity from the hostile campaign (\"medium (was high; see the correction)\"). Aliases: X-09, KL-04. [0.17]."
+ },
+ {
+  "id": "X-10",
+  "title": "A store outage longer than store_write_retry loses the event being written and can leave a task unfinished",
+  "area": "fleet-correctness",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:138",
+   "ROADMAP.md:65",
+   "ROADMAP.md:273",
+   "docs/handoff.md:49",
+   "docs/handoff.md:686",
+   "CHANGELOG.md:3280",
+   "docs/audits/2026-11-11-external-review/findings.json:75",
+   "crates/a2a-protocol-server/src/handler/limits/mod.rs:48",
+   "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:198"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED open at HEAD: persisting() gives up after store_write_retry (30 s), the status is reverted in memory and Outcome::StoreFailed returned; nothing re-queues it. Register README names it the row closest to blocking 0.16.0. Candidates recorded (neither built): a breaker after one write used the whole budget, and a direct store write of the failure (handoff:691-693). Aliases: KL-20, ROADMAP antipattern 7."
+ },
+ {
+  "id": "E-F25",
+  "title": "CancelTask of a parked task writes Canceled with no event in the log; announce it from CancelTask",
+  "area": "fleet-correctness",
+  "severity": "low",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:147",
+   "ROADMAP.md:68",
+   "docs/handoff.md:51",
+   "CHANGELOG.md:3224",
+   "docs/audits/2026-11-11-external-review/findings.json:83",
+   "docs/audits/2026-11-01-triage/e.json:354",
+   "docs/audits/2026-11-01-triage/DECISIONS.md:516",
+   "docs/adr/0057-wake-a-waiting-subscriber-on-log-appends.md:7",
+   "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:147"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED open at HEAD: cancel_task.rs:147-163 writes save_status_delta(Canceled) after a throwaway writer; no event-log append. Aliases: X-11, KL-02. Severity \"low\" is from the 2026-11-01 triage (e.json:354); the 2026-11-11 review states none. ADR 0057 names the step; ROADMAP:184 says ADR 0057 itself repeats a stale sentence (\"the reaper writes no event\")."
+ },
+ {
+  "id": "X-13",
+  "title": "MSRV 1.94 against 1.85 (a2a-rs)",
+  "area": "governance",
+  "severity": "unstated",
+  "status": "decision",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:156",
+   "ROADMAP.md:175",
+   "docs/audits/2026-11-11-external-review/findings.json:99",
+   "ROADMAP.md:1402"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "Decision sentence (ROADMAP:175): \"[decision] MSRV 1.94 against 1.85 (X-13)\". STABILITY.md:215 also requires the MSRV to be stable six months before 1.0."
+ },
+ {
+  "id": "X-14",
+  "title": "Throughput gap to 0.14.1 and to a2a-rs: cheaper header-read bound, the timeout around the watch receiver in streaming",
+  "area": "performance",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:165",
+   "ROADMAP.md:154",
+   "docs/audits/2026-11-11-external-review/findings.json:107",
+   "CHANGELOG.md:3226",
+   "docs/handoff.md:459",
+   "docs/swarm-orchestration.md:90"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED (docs/sdk-comparison-2026-11-11.md). Aliases: KL-03, swarm-orchestration G4. handoff:459 asked whether to close it before the tag; the tag shipped, so that question is moot."
+ },
+ {
+  "id": "X-15",
+  "title": "the production-readiness measurement matrix is incomplete",
+  "area": "testing-verification",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:174",
+   "ROADMAP.md:78"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED."
+ },
+ {
+  "id": "X-16",
+  "title": "Publish the SLIMRPC binding (first publish) and build it on its declared MSRV",
+  "area": "release-eng",
+  "severity": "unstated",
+  "status": "decision",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:183",
+   "ROADMAP.md:175",
+   "ROADMAP.md:225",
+   "docs/audits/2026-11-11-external-review/findings.json:123",
+   "docs/handoff.md:635",
+   "docs/handoff.md:452",
+   "bindings/a2a-protocol-slimrpc/Cargo.toml:23"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": true,
+  "notes": "VERIFIED in tree: version 0.7.0, publish = true; crates.io state is as documented (handoff:26 \"does not exist\"). Decision sentence (ROADMAP:175-176): \"[decision] ... publishing the SLIMRPC binding (X-16) and the CLI (X-17)\". ROADMAP:225 lists the publish as [0.16.x] work at the same time."
+ },
+ {
+  "id": "X-17",
+  "title": "Whether and how to distribute the a2a CLI (crates.io, release binaries, Homebrew, winget)",
+  "area": "release-eng",
+  "severity": "unstated",
+  "status": "decision",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:192",
+   "ROADMAP.md:175",
+   "ROADMAP.md:1383",
+   "docs/audits/2026-11-11-external-review/findings.json:131",
+   "docs/handoff.md:636",
+   "tools/a2a-cli/Cargo.toml:13"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": true,
+  "notes": "VERIFIED: tools/a2a-cli is publish = false. Binaries wait on vars.PUBLISH_CLI_BINARIES. \"The maintainer decided on 2026-10-08 that this is theirs to turn on\" (ROADMAP:1387)."
+ },
+ {
+  "id": "X-18",
+  "title": "The CLI does not say whether it sends usage telemetry or that it redacts credentials",
+  "area": "security-compliance",
+  "severity": "low",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:201",
+   "ROADMAP.md:122",
+   "docs/audits/2026-11-11-external-review/findings.json:139",
+   "tools/a2a-cli/README.md:79"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED partly open: the CLI README has a Telemetry section (OTLP only when OTEL_EXPORTER_OTLP_ENDPOINT is set; \"Unset ... nothing is sent\"), but no explicit no-usage-telemetry statement and no redaction statement were found there."
+ },
+ {
+  "id": "X-19",
+  "title": "Regulated use: crash-time audit consistency, cross-replica erasure, metadata encryption, onward propagation",
+  "area": "security-compliance",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:210",
+   "ROADMAP.md:106",
+   "docs/audits/2026-11-11-external-review/findings.json:147",
+   "CHANGELOG.md:3282",
+   "docs/handoff.md:719",
+   "docs/handoff.md:740"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. \"each is a format or protocol change. A coverage check of the audit chain against the event log is the cheapest first step\". Alias: KL-22; overlaps handoff Privacy and Control map (GDPR-15-20, AIA-14-4e, CRA-AI-I-2e)."
+ },
+ {
+  "id": "X-21",
+  "title": "Single-maintainer concentration",
+  "area": "governance",
+  "severity": "unstated",
+  "status": "disclosed-accepted",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:219",
+   "docs/audits/2026-11-11-external-review/findings.json:163",
+   "ROADMAP.md:1136"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "Not a code finding. Not named in ROADMAP \"After 0.16.0\"."
+ },
+ {
+  "id": "X-22",
+  "title": "Decide whether itk.yml pins A2A_ITK_REVISION as acts.yml does; record this repository's own ACTS counts per binding",
+  "area": "spec-conformance",
+  "severity": "unstated",
+  "status": "decision",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:228",
+   "ROADMAP.md:45",
+   "docs/audits/2026-11-11-external-review/findings.json:171",
+   "docs/handoff.md:460",
+   ".github/workflows/itk.yml:38",
+   ".github/workflows/acts.yml:43"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": true,
+  "notes": "VERIFIED: itk.yml and itk-nightly.yml float \"main\"; acts.yml pins a commit. Decision sentence (ROADMAP:46-47): \"Decide whether itk.yml pins a revision (X-22).\""
+ },
+ {
+  "id": "A13",
+  "title": "Walking README.md:263-267 line by line still fails twice: the Secret `deploy-agent-db` is never created (CreateContainerConfigError), then `deploy-agent:latest` with the ",
+  "area": "devex",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:237",
+   "docs/audits/2026-11-01-triage/a-l.json:6",
+   "ROADMAP.md:168"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 636eaf0)\". Triage severity as written: \"medium (unchanged)\"."
+ },
+ {
+  "id": "A15",
+  "title": "Pool size is now settable (DATABASE_POOL_SIZE, `new_with_pool_size`) and the push pool is a fixed 2, so a replica opens size+2 rather than 20. Readiness still checks only",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:246",
+   "docs/audits/2026-11-01-triage/a-l.json:46",
+   "ROADMAP.md:168",
+   "CHANGELOG.md:3277"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED: readiness checks the task pool only. Alias: KL-18. Triage severity as written: \"low (remaining part: info/low)\"."
+ },
+ {
+  "id": "A26",
+  "title": "On a many-core node the pod runs one tokio worker per node CPU and jemalloc sizes its arenas from the node's CPUs (and would even under a CPU limit), against a 256 Mi mem",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:255",
+   "docs/audits/2026-11-01-triage/a-l.json:181",
+   "ROADMAP.md:168",
+   "CHANGELOG.md:3277"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED: memory effect not measured. Alias: KL-18. Triage severity as written: \"low (the mechanism is confirmed by reading; the OOM consequence is still conjecture)\"."
+ },
+ {
+  "id": "A27",
+  "title": "Every deployed deploy-agent advertises version 0.0.0, so the card cannot tell rollouts apart.",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:264",
+   "docs/audits/2026-11-01-triage/a-l.json:199",
+   "ROADMAP.md:168"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 636eaf0)\". Triage severity as written: \"low (unchanged)\"."
+ },
+ {
+  "id": "NEW-a-l-1",
+  "title": "deploy-agent never purges terminal tasks. With DATABASE_URL set, retention silently changes from the in-memory default (10,000 tasks, 1 h TTL) to forever: `tasks`, `task_",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:273",
+   "docs/audits/2026-11-01-triage/a-l.json:239",
+   "ROADMAP.md:168"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 636eaf0)\". Triage severity as written: \"low (medium for a long-running deployment)\"."
+ },
+ {
+  "id": "NEW-a-l-3",
+  "title": "Every Secret recipe uses `sslmode=verify-full&sslrootcert=/path/ca.pem` and says 'mount it there', but the manifest has no volumes/volumeMounts and a read-only root files",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:282",
+   "docs/audits/2026-11-01-triage/a-l.json:257",
+   "ROADMAP.md:168"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 636eaf0)\". Triage severity as written: \"low\"."
+ },
+ {
+  "id": "NEW-a-l-4a",
+  "title": "No CI job builds the deploy-agent image or validates the manifest (no docker build of this Dockerfile, no kubeconform/kube-linter/PSS check). L18 records that the Dockerf",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:291",
+   "docs/audits/2026-11-01-triage/a-l.json:266"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 05263fe4)\". Triage severity as written: \"low\". Not named in ROADMAP.md \"After 0.16.0\" (orphan row)."
+ },
+ {
+  "id": "NEW-a-l-4b",
+  "title": "The Dockerfile pins rust:1.94-bookworm and debian:bookworm-slim by digest, and nothing refreshes those digests (no Dependabot docker ecosystem, pin-freshness.yml covers S",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:300",
+   "docs/audits/2026-11-01-triage/a-l.json:275",
+   "ROADMAP.md:168"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 636eaf0)\". Triage severity as written: \"low\"."
+ },
+ {
+  "id": "B-03",
+  "title": "Card resolver and client fetch_jwks take a rustls config through CardFetchOptions::with_tls_config, and card, JWKS and token provider all read SSL_CERT_FILE/SSL_CERT_DIR ",
+  "area": "security-compliance",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:309",
+   "docs/audits/2026-11-01-triage/b.json:6",
+   "ROADMAP.md:118"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 6d746dd)\". Triage severity as written: \"medium\"."
+ },
+ {
+  "id": "B-10",
+  "title": "Quiet WebSocket and gRPC streams still carry no traffic by default on either side, so an L7 load balancer's idle timeout (often 60 s) closes them. Turning keepalive on by",
+  "area": "fleet-correctness",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:318",
+   "docs/audits/2026-11-01-triage/b.json:87",
+   "ROADMAP.md:97"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, f532f245)\". Triage severity as written: \"medium\"."
+ },
+ {
+  "id": "B-12",
+  "title": "The direct WebSocket dial is still tokio's sequential connect with no happy eyeballs and no TCP keepalive.",
+  "area": "fleet-correctness",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:327",
+   "docs/audits/2026-11-01-triage/b.json:128",
+   "ROADMAP.md:97"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 4b6b382)\". Triage severity as written: \"medium\"."
+ },
+ {
+  "id": "B-13",
+  "title": "An http:// webhook is still delivered to the first resolved public address on every attempt, with no failover across A/AAAA records.",
+  "area": "security-compliance",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:336",
+   "docs/audits/2026-11-01-triage/b.json:147"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 2b83f88)\". Triage severity as written: \"low\". Not named in ROADMAP.md \"After 0.16.0\" (orphan row)."
+ },
+ {
+  "id": "B-15",
+  "title": "The CLI still has no TLS or proxy flags, but it now picks up SSL_CERT_FILE/SSL_CERT_DIR and the proxy variables, which covers private-CA and self-signed agents on JSON-RP",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:345",
+   "docs/audits/2026-11-01-triage/b.json:184",
+   "ROADMAP.md:165",
+   "ROADMAP.md:167",
+   "tools/a2a-cli/src/cli.rs:116"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED the finding text is stale: the CLI has --cacert, --client-cert and --client-key. Remaining part, if any, is not stated in ROADMAP. Triage severity as written: \"low\"."
+ },
+ {
+  "id": "B-18",
+  "title": "A strict PEM constructor exists and is tested, but the old DER helper still drops a bad CA silently, and an SSL_CERT_FILE that holds no usable certificate is invisible at",
+  "area": "security-compliance",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:354",
+   "docs/audits/2026-11-01-triage/b.json:204"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 6d746dd)\". Triage severity as written: \"low\". Not named in ROADMAP.md \"After 0.16.0\" (orphan row)."
+ },
+ {
+  "id": "B-19",
+  "title": "Unchanged: the gRPC client needs h2 in ALPN, plaintext means h2c prior knowledge, and one connection pins one replica; none of it is documented for clients.",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:363",
+   "docs/audits/2026-11-01-triage/b.json:225",
+   "ROADMAP.md:165"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 6d746dd)\". Triage severity as written: \"low\"."
+ },
+ {
+  "id": "B-20",
+  "title": "Trust still differs by path and has got wider: SSL_CERT_FILE reaches every HTTP path and WebSocket but not the gRPC client or OTLP, and gRPC needs its own tonic config ty",
+  "area": "security-compliance",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:372",
+   "docs/audits/2026-11-01-triage/b.json:243",
+   "ROADMAP.md:118"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 6d746dd)\". Triage severity as written: \"medium\"."
+ },
+ {
+  "id": "B-23",
+  "title": "Unchanged and now shared by every outbound path: NO_PROXY host:port and *.domain entries never match, upper case wins, loopback is not exempt, and SOCKS/HTTPS proxies are",
+  "area": "security-compliance",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:381",
+   "docs/audits/2026-11-01-triage/b.json:282"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 4b6b382)\". Triage severity as written: \"low\". Not named in ROADMAP.md \"After 0.16.0\" (orphan row)."
+ },
+ {
+  "id": "B-27",
+  "title": "All four IPv6 edge cases are unchanged.",
+  "area": "security-compliance",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:390",
+   "docs/audits/2026-11-01-triage/b.json:338"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 4b6b382)\". Triage severity as written: \"low\". Not named in ROADMAP.md \"After 0.16.0\" (orphan row)."
+ },
+ {
+  "id": "B-28",
+  "title": "Unchanged: no DNS caching or bound on client transports, an unpooled client per card fetch, and no ndots guidance.",
+  "area": "security-compliance",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:399",
+   "docs/audits/2026-11-01-triage/b.json:356",
+   "ROADMAP.md:115"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 53664f62, 4c0c0496, 30fe152a, 6077888a)\". Triage severity as written: \"low\"."
+ },
+ {
+  "id": "B-29",
+  "title": "Unchanged: ring only on default paths, TLS 1.2+ AEAD suites, no FIPS, CRL or OCSP, and no insecure mode. A custom ClientConfig is the escape hatch everywhere except the t",
+  "area": "security-compliance",
+  "severity": "info",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:408",
+   "docs/audits/2026-11-01-triage/b.json:374",
+   "ROADMAP.md:115"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 878dfc47)\". Triage severity as written: \"info\"."
+ },
+ {
+  "id": "B-30",
+  "title": "In tls-rustls builds (the SDK default) the push, JWKS/OIDC and model clients now bound the TCP connect and keep connections alive. No test pins it, and the server crate's",
+  "area": "security-compliance",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:417",
+   "docs/audits/2026-11-01-triage/b.json:394"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 2b83f88)\". Triage severity as written: \"low\". Not named in ROADMAP.md \"After 0.16.0\" (orphan row)."
+ },
+ {
+  "id": "NEW-b-2",
+  "title": "Loopback is never exempt from the proxy variables: hyper-util's Matcher consults only NO_PROXY, and Go's net/http exempts localhost and loopback while this code does not.",
+  "area": "security-compliance",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:426",
+   "docs/audits/2026-11-01-triage/b.json:423"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 4b6b382)\". Triage severity as written: \"medium\". Not named in ROADMAP.md \"After 0.16.0\" (orphan row)."
+ },
+ {
+  "id": "C-05",
+  "title": "The SDK cannot emit exemplars (upstream opentelemetry_sdk 0.33.1 hard-codes none and ignores OTEL_METRICS_EXEMPLAR_FILTER), and the shipped stack neither stores exemplars",
+  "area": "observability",
+  "severity": "medium",
+  "status": "waiting-upstream",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:435",
+   "docs/audits/2026-11-01-triage/c.json:6",
+   "ROADMAP.md:150",
+   "ROADMAP.md:1377",
+   "CHANGELOG.md:3259"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED: waits on opentelemetry_sdk recording exemplars (0.33.1 does not). Alias: KL-09. Triage severity as written: \"medium (unchanged)\"."
+ },
+ {
+  "id": "C-08",
+  "title": "Unrecognised enum values and unparsable numbers in the OTEL_* variables fail build() and every binary exits 2, contrary to the spec's MUST warn-and-ignore; this is a docu",
+  "area": "observability",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:444",
+   "docs/audits/2026-11-01-triage/c.json:67",
+   "ROADMAP.md:146"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 4fd80d0)\". Triage severity as written: \"medium (unchanged)\"."
+ },
+ {
+  "id": "C-17",
+  "title": "The per-call WARN is real and deliberate; it also fires for the SDK's own non-credential A2A-Extensions header, where its advice is wrong.",
+  "area": "observability",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:453",
+   "docs/audits/2026-11-01-triage/c.json:233",
+   "ROADMAP.md:146"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, e2712ec)\". Triage severity as written: \"low (unchanged)\"."
+ },
+ {
+  "id": "NEW-c-2",
+  "title": "logs.md says spans are not filtered by level and that with install_subscriber 'every span is exported'; since the C-01 fix spans below TelemetryBuilder::with_span_level (",
+  "area": "observability",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:462",
+   "docs/audits/2026-11-01-triage/c.json:371",
+   "ROADMAP.md:146"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 065f0a0)\". Triage severity as written: \"low\"."
+ },
+ {
+  "id": "NEW-c-5",
+  "title": "OTEL_SDK_DISABLED accepts only case-insensitive 'true'; '1', 'yes' or 'on' are silently false. The spec's boolean rule says any value other than true, false or empty SHOU",
+  "area": "observability",
+  "severity": "low",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:471",
+   "docs/audits/2026-11-01-triage/c.json:398",
+   "ROADMAP.md:146",
+   "crates/a2a-protocol-server/src/otel/telemetry/config.rs:173"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED as described: sdk_disabled() accepts only case-insensitive \"true\". Triage severity as written: \"low\"."
+ },
+ {
+  "id": "D-05",
+  "title": "All four sub-claims hold on main: a few in-memory attempts, nothing persisted across restart (and lanes now also shed under backlog), no dedupe id, and a 404/410 webhook ",
+  "area": "fleet-correctness",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:480",
+   "docs/audits/2026-11-01-triage/d.json:46",
+   "ROADMAP.md:90"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, be7ff31e)\". Triage severity as written: \"medium (unchanged)\"."
+ },
+ {
+  "id": "D-07",
+  "title": "One connection whose peer stops reading can pin the server's read loop on an untimed sink lock, so the idle bound and the closing signal are never evaluated, and shutdown",
+  "area": "fleet-correctness",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:489",
+   "docs/audits/2026-11-01-triage/d.json:66",
+   "ROADMAP.md:97"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, e2712ec)\". Triage severity as written: \"medium (unchanged)\"."
+ },
+ {
+  "id": "D-08",
+  "title": "A silently dropped WebSocket flow is never detected by the client: no ping, no TCP keepalive, and a timeout does not mark the connection dead, so every call times out on ",
+  "area": "fleet-correctness",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:498",
+   "docs/audits/2026-11-01-triage/d.json:88",
+   "ROADMAP.md:97",
+   "crates/a2a-protocol-client/src/transport/websocket.rs:322"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED the finding text is stale in part: the WebSocket client pings by default (DEFAULT_PING_INTERVAL 15 s). ROADMAP lists it as \"only part fixed\" without saying which part is left. Triage severity as written: \"medium (unchanged)\"."
+ },
+ {
+  "id": "D-09",
+  "title": "The connect timeout and protocol-level handshake failures are still non-retryable Transport errors and a 503 handshake's Retry-After is dropped; TLS failures are not affe",
+  "area": "fleet-correctness",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:507",
+   "docs/audits/2026-11-01-triage/d.json:107",
+   "ROADMAP.md:97"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, e2712ec)\". Triage severity as written: \"low (unchanged)\"."
+ },
+ {
+  "id": "D-10",
+  "title": "As reported: a Retry-After longer than max_backoff is cut to 30 s and retried early, without jitter, and the HTTP-date form is ignored. The clamp is documented, so changi",
+  "area": "fleet-correctness",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:516",
+   "docs/audits/2026-11-01-triage/d.json:125",
+   "ROADMAP.md:97"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 0a8038cb)\". Triage severity as written: \"low (unchanged)\"."
+ },
+ {
+  "id": "D-11",
+  "title": "Plain EventStream and follow_task still never resume a cut stream and retries are still off by default; only the Delegation API resumes now.",
+  "area": "fleet-correctness",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:525",
+   "docs/audits/2026-11-01-triage/d.json:143",
+   "ROADMAP.md:97"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, f532f245)\". Triage severity as written: \"low (unchanged)\"."
+ },
+ {
+  "id": "D-12",
+  "title": "The idle-timeout race is fixed (50 s); connection max-lifetime, a per-host cap and HTTP/2 keepalive are still absent and are the subject of proposed ADR 0032.",
+  "area": "fleet-correctness",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:534",
+   "docs/audits/2026-11-01-triage/d.json:162",
+   "ROADMAP.md:97"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 3ce8d69a)\". Triage severity as written: \"low (unchanged)\"."
+ },
+ {
+  "id": "D-13",
+  "title": "The missing reserved ranges and the trailing-dot bypass are fixed and tested at every edge; https webhooks are still not pinned, so a rebinding resolver gets a blind TCP ",
+  "area": "security-compliance",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:543",
+   "docs/audits/2026-11-01-triage/d.json:180",
+   "ROADMAP.md:110"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 2b83f88)\". Triage severity as written: \"low (unchanged)\"."
+ },
+ {
+  "id": "D-21",
+  "title": "A rolling deploy no longer cancels tasks; it fails every turn still running after 5 s as transient and refuses new sends retryably, but the work is still lost and has to ",
+  "area": "fleet-correctness",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:552",
+   "docs/audits/2026-11-01-triage/d.json:272",
+   "ROADMAP.md:86",
+   "CHANGELOG.md:3261",
+   "docs/adr/0054-turn-hand-off-on-shutdown.md:7"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED [0.17]: hand-off does not cover a crashed replica, a handler without claims, a reattached delegation. Alias: KL-10. Triage severity as written: \"medium (unchanged for long tasks)\"."
+ },
+ {
+  "id": "D-22",
+  "title": "Push DNS lookups still run getaddrinfo on the blocking pool and a timeout does not free the thread; the new delivery gate bounds concurrency but not the leaked threads, s",
+  "area": "fleet-correctness",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:561",
+   "docs/audits/2026-11-01-triage/d.json:293"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 2b83f88)\". Triage severity as written: \"low (unchanged)\". Not named in ROADMAP.md \"After 0.16.0\" (orphan row)."
+ },
+ {
+  "id": "NEW-d-2",
+  "title": "A WebSocket call enqueues its frame with `write_tx.send(..).await` on a 64-slot channel before any timeout starts; request_timeout/send_timeout bound only the wait for th",
+  "area": "fleet-correctness",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:570",
+   "docs/audits/2026-11-01-triage/d.json:376",
+   "ROADMAP.md:97"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, e2712ec)\". Triage severity as written: \"low\"."
+ },
+ {
+  "id": "E-F8",
+  "title": "The conjecture is read-confirmed: positions are broadcast before they are logged, a takeover numbers from the log end, and both resume paths treat the reused positions as",
+  "area": "fleet-correctness",
+  "severity": "medium",
+  "status": "disclosed-accepted",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:579",
+   "docs/audits/2026-11-01-triage/e.json:29",
+   "ROADMAP.md:80",
+   "CHANGELOG.md:3281",
+   "docs/audits/2026-11-01-triage/DECISIONS.md:116"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "Accepted 2026-11-03 (fork F13) and documented; \"Reopen it only with a reproduction.\" Alias: KL-21. Triage severity as written: \"medium\"."
+ },
+ {
+  "id": "E-F12",
+  "title": "max_concurrent_tasks is enforced per process, so a fleet of N admits N times the limit, and the docs do not say so.",
+  "area": "fleet-correctness",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:588",
+   "docs/audits/2026-11-01-triage/e.json:94",
+   "ROADMAP.md:93",
+   "crates/a2a-protocol-server/src/tenant_config/mod.rs:124"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED: the per-replica scope is documented in the rustdoc; fleet-wide enforcement is not built ([0.17], with H7, H9, H17). Triage severity as written: \"medium\"."
+ },
+ {
+  "id": "E-F18",
+  "title": "One optimistic append point per tenant chain for the whole fleet: each append is at least 2 round trips and every success invalidates the other replicas' reads. Back of t",
+  "area": "performance",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:597",
+   "docs/audits/2026-11-01-triage/e.json:213",
+   "ROADMAP.md:157"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED [0.16.x]: measure audit appends at several replicas. Triage severity as written: \"medium\"."
+ },
+ {
+  "id": "E-F26",
+  "title": "SQLite claims use the host wall clock, so a forward step past the TTL (NTP step, VM resume) makes live claims look expired until the next renewal, during which a continua",
+  "area": "testing-verification",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:606",
+   "docs/audits/2026-11-01-triage/e.json:375",
+   "ROADMAP.md:72"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 30e017be 004f2ece)\". Triage severity as written: \"low\"."
+ },
+ {
+  "id": "SEC-13",
+  "title": "Unchanged: https webhooks are validated by one lookup and connected by another, so a rebinding name still gets a TCP connection and ClientHello to an internal address:por",
+  "area": "security-compliance",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:615",
+   "docs/audits/2026-11-01-triage/f.json:86",
+   "ROADMAP.md:110",
+   "docs/audits/2026-11-01-triage/DECISIONS.md:155",
+   "crates/a2a-protocol-server/src/push/sender.rs:251",
+   "crates/a2a-protocol-server/src/push/pinning.rs:4"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": true,
+  "notes": "VERIFIED: direct https and http deliveries are pinned to the checked addresses (the register's finding text is stale). Open: no pin behind a proxy. Fork F16 was \"not chosen 2026-11-03: stays deferred and documented\" (DECISIONS.md:33), so the proxy boundary is undecided. Triage severity as written: \"low (unchanged); KNOWN\"."
+ },
+ {
+  "id": "SEC-14",
+  "title": "Outbound webhook concurrency is now bounded per destination and overall, in front of any sender. There is still no per-caller quota, no per-destination rate, no URL verif",
+  "area": "fleet-correctness",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:624",
+   "docs/audits/2026-11-01-triage/f.json:104",
+   "ROADMAP.md:90"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, b9d4a3e5)\". Triage severity as written: \"low (unchanged): bounded, but no per-caller quota or rate, and the bound itself can be monopolised\"."
+ },
+ {
+  "id": "SEC-17",
+  "title": "A custom PushSender (e.g. reqwest, which follows redirects and re-resolves) still gets only the creation-time static check; the requirement is in the book but not on the ",
+  "area": "security-compliance",
+  "severity": "info",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:633",
+   "docs/audits/2026-11-01-triage/f.json:159",
+   "ROADMAP.md:110"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 2b83f88)\". Triage severity as written: \"info (unchanged)\"."
+ },
+ {
+  "id": "NEW-f-3",
+  "title": "Since c4404e8 push delivery honours HTTPS_PROXY, but the SSRF pre-flight still resolves the webhook host with the local resolver (tokio::net::lookup_host) and refuses del",
+  "area": "security-compliance",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:642",
+   "docs/audits/2026-11-01-triage/f.json:216",
+   "ROADMAP.md:110",
+   "ROADMAP.md:113",
+   "docs/audits/2026-11-01-triage/DECISIONS.md:155"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED: fails closed; opt-in HttpPushSender::with_proxy_resolved_names exists. Same fork F16 as SEC-13. Triage severity as written: \"medium\"."
+ },
+ {
+  "id": "NEW-f-4",
+  "title": "The deny-list approach cannot see an operator's own address plan. Multi-label names resolved through Kubernetes search domains (ndots:5: kubernetes.default, redis.prod, s",
+  "area": "security-compliance",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:651",
+   "docs/audits/2026-11-01-triage/f.json:225",
+   "ROADMAP.md:110"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 2b83f88)\". Triage severity as written: \"low\"."
+ },
+ {
+  "id": "G-04",
+  "title": "build_grpc still dials whatever endpoint from_card chose (the card's first interface), so a card listing JSON-RPC before gRPC gets gRPC spoken to the JSON-RPC port with t",
+  "area": "fleet-correctness",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:660",
+   "docs/audits/2026-11-01-triage/g-api.json:12",
+   "ROADMAP.md:97",
+   "ROADMAP.md:98",
+   "crates/a2a-protocol-client/src/builder/transport_factory.rs:377"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED the stated finding is fixed: build_grpc selects the card's gRPC interface (select_grpc_interface) and refuses a card with none. What ROADMAP:97-98 still counts as \"only part fixed\" for G-04 is not stated there. Triage severity as written: \"medium (unchanged)\"."
+ },
+ {
+  "id": "G-06",
+  "title": "Both directions still hold: the SDK's defaults compile the OTLP exporter and tonic for hello-agent (deliberately), and the server crate alone cannot reach any https:// we",
+  "area": "devex",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:669",
+   "docs/audits/2026-11-01-triage/g-api.json:50",
+   "ROADMAP.md:173"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 41756f1)\". Triage severity as written: \"medium (unchanged; the server-only gap is wider than the report says)\"."
+ },
+ {
+  "id": "G-07",
+  "title": "All three sub-claims hold: new() yields a card build() refuses, validate() names no index, and streaming is opt-in, so the flagship example cannot stream; AgentCard's rus",
+  "area": "devex",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:678",
+   "docs/audits/2026-11-01-triage/g-api.json:71",
+   "ROADMAP.md:173"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 41756f1)\". Triage severity as written: \"medium (unchanged)\"."
+ },
+ {
+  "id": "G-18",
+  "title": "context_id is still a String beside a TaskId, against the types crate's newtype policy.",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:687",
+   "docs/audits/2026-11-01-triage/g-api.json:259"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 41756f1)\". Triage severity as written: \"low (unchanged)\". Not named in ROADMAP.md \"After 0.16.0\" (orphan row)."
+ },
+ {
+  "id": "G-20",
+  "title": "The blocking-send half is fixed for JSON-RPC, HTTP+JSON and WebSocket with tests; other timeouts still say only 'timed out', and the gRPC blocking send is still capped at",
+  "area": "fleet-correctness",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:696",
+   "docs/audits/2026-11-01-triage/g-api.json:294",
+   "ROADMAP.md:97"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 6d746dd)\". Triage severity as written: \"low (unchanged) for the row; see NEW-g-api-1 (medium) for a gRPC hole in the fix\"."
+ },
+ {
+  "id": "NEW-g-api-1",
+  "title": "The gRPC channel is built with Endpoint::timeout(request_timeout) (30 s default, builder transport_factory.rs:208). tonic's client stack wraps every call in GrpcTimeout, ",
+  "area": "devex",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:705",
+   "docs/audits/2026-11-01-triage/g-api.json:366"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 6d746dd)\". Triage severity as written: \"medium\". Not named in ROADMAP.md \"After 0.16.0\" (orphan row)."
+ },
+ {
+  "id": "NEW-g-api-2",
+  "title": "G-02 was fixed for Server only (serve/graceful/mod.rs refuses max_connections 0 and clamps to Semaphore::MAX_PERMITS at :326-327). GrpcDispatcher::with_max_connections an",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:714",
+   "docs/audits/2026-11-01-triage/g-api.json:376",
+   "ROADMAP.md:173"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 6d746dd)\". Triage severity as written: \"low\"."
+ },
+ {
+  "id": "NEW-g-api-4",
+  "title": "STABILITY.md section 1 says the crates are at 0.15.0, 'the newest release' (0.15.1 shipped 2026-10-26), and promises that sign_agent_card 'is removed in 0.16.0'. It is st",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:723",
+   "docs/audits/2026-11-01-triage/g-api.json:394"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 41756f1)\". Triage severity as written: \"low\". Not named in ROADMAP.md \"After 0.16.0\" (orphan row)."
+ },
+ {
+  "id": "G/D-02",
+  "title": "Two READMEs (server crate README, which is its crates.io page, and the root README) still say `serve` has hyper's defaults / no limits / no idle timeout; the code runs it",
+  "area": "docs-book",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:732",
+   "docs/audits/2026-11-01-triage/g-docs.json:26"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 065f0a0)\". Triage severity as written: \"medium (unchanged); the crates.io page of the server crate and the root README both say it\". Not named in ROADMAP.md \"After 0.16.0\" (orphan row)."
+ },
+ {
+  "id": "G/D-03",
+  "title": "The `with_max_connections` rustdoc still predicts two fields that the struct already has.",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:741",
+   "docs/audits/2026-11-01-triage/g-docs.json:48",
+   "ROADMAP.md:165"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 065f0a0)\". Triage severity as written: \"low (unchanged)\"."
+ },
+ {
+  "id": "G/D-04",
+  "title": "packaging/README.md still says no signing key is committed and lists committing one as step 1; a key is committed and two releases passed the gate.",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:750",
+   "docs/audits/2026-11-01-triage/g-docs.json:64",
+   "ROADMAP.md:165"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 065f0a0)\". Triage severity as written: \"low (was M): only the maintainer's packaging plan reads it; nothing published depends on it\"."
+ },
+ {
+  "id": "G/D-05",
+  "title": "The README's exit-code table and `--header` row now match the code; the CLI's own rustdoc does not, the header rule is case-sensitive, and `a2a card <URL>` sends no `--he",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:759",
+   "docs/audits/2026-11-01-triage/g-docs.json:85",
+   "ROADMAP.md:165"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 065f0a0)\". Triage severity as written: \"low (was M)\"."
+ },
+ {
+  "id": "G/D-06",
+  "title": "The book says both dispatchers return `ServeReport`; gRPC returns `io::Result<ServeReport>`.",
+  "area": "docs-book",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:768",
+   "docs/audits/2026-11-01-triage/g-docs.json:107",
+   "ROADMAP.md:188"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 065f0a0)\". Triage severity as written: \"low (unchanged)\"."
+ },
+ {
+  "id": "G/D-07",
+  "title": "The hidden card on the Axum, REST, gRPC and WebSocket dispatcher pages advertises only JSON-RPC while the page serves another binding; a reader who expands and copies it ",
+  "area": "docs-book",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:777",
+   "docs/audits/2026-11-01-triage/g-docs.json:125",
+   "ROADMAP.md:188"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 065f0a0)\". Triage severity as written: \"low (unchanged), wider than reported: six hidden cards on four dispatcher pages\"."
+ },
+ {
+  "id": "G/D-08",
+  "title": "The server crate's rustdoc quick start still tells users to wire a dispatcher into their own hyper server instead of `Server`/`serve`.",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:786",
+   "docs/audits/2026-11-01-triage/g-docs.json:146",
+   "ROADMAP.md:165"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 065f0a0)\". Triage severity as written: \"low (unchanged)\"."
+ },
+ {
+  "id": "G/D-09",
+  "title": "The rustdoc lists 'HTTP connection/transport errors' as retryable while `ClientError::Transport` is explicitly not; the variant's own doc still calls it a connection erro",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:795",
+   "docs/audits/2026-11-01-triage/g-docs.json:163",
+   "ROADMAP.md:165"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 065f0a0)\". Triage severity as written: \"low (unchanged)\"."
+ },
+ {
+  "id": "G/D-10",
+  "title": "The example is ~106 lines (52 of code) above its tests, a third of main() is telemetry the README does not mention, and it relies on the SDK's default `otlp` feature, so ",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:804",
+   "docs/audits/2026-11-01-triage/g-docs.json:180",
+   "ROADMAP.md:165"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 065f0a0)\". Triage severity as written: \"low (unchanged); measurements changed since the report\"."
+ },
+ {
+  "id": "G/D-11",
+  "title": "Both the prelude rustdoc and the SDK README's 'Prelude Contents' list a subset of what the prelude exports, and `ServeConfig` is not in the prelude although `Server` is.",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:813",
+   "docs/audits/2026-11-01-triage/g-docs.json:200",
+   "ROADMAP.md:165"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 065f0a0)\". Triage severity as written: \"low (unchanged)\"."
+ },
+ {
+  "id": "G/C-01",
+  "title": "The CHANGELOG is 806 KB and growing; [Unreleased] alone is 74 KB with ~100-word bullets, internal notes and lab measurements, and no release has a one-screen summary.",
+  "area": "docs-book",
+  "severity": "medium",
+  "status": "decision",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:822",
+   "docs/audits/2026-11-01-triage/g-docs.json:218",
+   "ROADMAP.md:190",
+   "docs/handoff.md:454",
+   "CHANGELOG.md:36"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": true,
+  "notes": "VERIFIED size: CHANGELOG.md is 1,007,269 bytes and 14,411 lines at HEAD; the 0.16.0 section spans lines 36-3289. Decision sentence (ROADMAP:190): \"[decision] The size of a release's changelog section (G/C-01)\". Triage severity as written: \"medium (unchanged; the file grew)\"."
+ },
+ {
+  "id": "G/C-02",
+  "title": "Nothing stops a breaking behaviour change in a patch: semver-checks sees only API, and the release gate keys on the words '### Breaking Changes', which 0.15.1 avoided by ",
+  "area": "docs-book",
+  "severity": "medium",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:831",
+   "docs/audits/2026-11-01-triage/g-docs.json:240"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 0b06ec2)\". Triage severity as written: \"medium (unchanged); 0.15.1 is published, the open question is the policy and its gate\". Not named in ROADMAP.md \"After 0.16.0\" (orphan row)."
+ },
+ {
+  "id": "G/C-03",
+  "title": "Book coverage is near-total, but 14 rustdoc examples (EventEmitter's among them), the slimrpc README's five blocks and three example-README blocks are compiled by nothing",
+  "area": "docs-book",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:840",
+   "docs/audits/2026-11-01-triage/g-docs.json:262",
+   "ROADMAP.md:188"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 065f0a0)\". Triage severity as written: \"low (unchanged); one ratchet hole found\"."
+ },
+ {
+  "id": "NEW-g-docs-1",
+  "title": "`without_tls()` is documented as 'plain HTTP only', but only `build()` honours it. `build_grpc()` ignores `config.tls`: an `https://` endpoint gets TLS from transport/grp",
+  "area": "devex",
+  "severity": "low",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:849",
+   "docs/audits/2026-11-01-triage/g-docs.json:285",
+   "ROADMAP.md:165",
+   "ROADMAP.md:166",
+   "crates/a2a-protocol-client/src/builder/transport_factory.rs:63",
+   "crates/a2a-protocol-client/src/builder/transport_factory/http.rs:85"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED open: the HTTP factories refuse https with TlsConfig::Disabled; grpc_transport_config() reads only grpc_tls_config, not config.tls. Triage severity as written: \"low\"."
+ },
+ {
+  "id": "NEW-g-docs-2",
+  "title": "`a2a card <URL>` passes no GlobalOpts: it fetches with `resolve_agent_card(url)` / `fetch_card_from_url(url)`, so `--header`, `--timeout` and `--tenant` are silently igno",
+  "area": "devex",
+  "severity": "low",
+  "status": "stale-claim",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:858",
+   "docs/audits/2026-11-01-triage/g-docs.json:294",
+   "ROADMAP.md:165",
+   "ROADMAP.md:167",
+   "tools/a2a-cli/src/commands.rs:54",
+   "tools/a2a-cli/src/connect.rs:89"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED fixed at HEAD: `a2a card` takes GlobalOpts and fetches with fetch_options(opts, true) (headers, timeout, TLS flags). Stale: ROADMAP.md:167 and register row. --tenant was not checked (a card fetch carries no tenant). Triage severity as written: \"low\"."
+ },
+ {
+  "id": "NEW-g-docs-3",
+  "title": "Says '`BIND-EQUIV-004` is graded **structurally only** ... Proving each binding *enforces* those schemes identically needs a target configured to require credentials.' Th",
+  "area": "docs-book",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:867",
+   "docs/audits/2026-11-01-triage/g-docs.json:303"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 065f0a0)\". Triage severity as written: \"low\". Not named in ROADMAP.md \"After 0.16.0\" (orphan row)."
+ },
+ {
+  "id": "NEW-g-docs-4",
+  "title": "STABILITY.md §1 says 'The crates are at `0.15.0` (2026-10-25), the newest release' although 0.15.1 shipped 2026-10-26 and every crate's Cargo.toml is now 0.16.0. It, the ",
+  "area": "docs-book",
+  "severity": "low",
+  "status": "stale-claim",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:876",
+   "docs/audits/2026-11-01-triage/g-docs.json:312",
+   "STABILITY.md:15"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED closed: STABILITY.md section 1 names 0.16.0. The register row's own evidence says \"Closed by this pull request\" while its status reads \"open\": the register disagrees with itself. Triage severity as written: \"low\"."
+ },
+ {
+  "id": "NEW-g-docs-5",
+  "title": "The shrink-only ratchet on ignored book blocks matches only fences at column 0. An indented fence (inside a list item, which rustdoc still treats as a code block) escapes",
+  "area": "devex",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:885",
+   "docs/audits/2026-11-01-triage/g-docs.json:321",
+   "ROADMAP.md:165"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 065f0a0)\". Triage severity as written: \"low\"."
+ },
+ {
+  "id": "NEW-g-docs-6",
+  "title": "'TLS verification is the library's, against its bundled roots, with no way to turn it off here.' Since 57f034e the library's default (crates/a2a-protocol-client/src/tls.r",
+  "area": "docs-book",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:894",
+   "docs/audits/2026-11-01-triage/g-docs.json:330"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 065f0a0)\". Triage severity as written: \"low\". Not named in ROADMAP.md \"After 0.16.0\" (orphan row)."
+ },
+ {
+  "id": "NEW-g-docs-7",
+  "title": "When a release section exceeds 120,000 characters the GitHub release body keeps only '### (Known Limitations|Breaking Changes|Deprecated|Security)' and drops the preamble",
+  "area": "docs-book",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:903",
+   "docs/audits/2026-11-01-triage/g-docs.json:339"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 065f0a0)\". Triage severity as written: \"low\". Not named in ROADMAP.md \"After 0.16.0\" (orphan row)."
+ },
+ {
+  "id": "H5",
+  "title": "Unchanged since the audit: per-child renewal tasks doing a full GetTask every ttl/3, a per-turn watcher reading the lease store every second, and unbounded, unthrottled 2",
+  "area": "performance",
+  "severity": "S1",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:912",
+   "docs/audits/2026-11-01-triage/h-designs.json:6",
+   "ROADMAP.md:158",
+   "CHANGELOG.md:3263",
+   "docs/adr/0044-lease-renewal-and-control-plane-cost.md:7"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED [0.17]: lease groups, after a measurement at 10^4 to 10^5 leased tasks per replica. Alias: KL-11. Triage severity as written: \"S1 (S0 at 10^5-10^6 leased tasks); unchanged\"."
+ },
+ {
+  "id": "H6",
+  "title": "No retry budget, no circuit breaker, no HTTP in-flight cap and no deadline-aware retries. Retries are off by default; when on, overload refusals are retried up to 3 times",
+  "area": "fleet-correctness",
+  "severity": "S1",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:921",
+   "docs/audits/2026-11-01-triage/h-designs.json:33"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 0a8038cb)\". Triage severity as written: \"S1; unchanged (amplification only for clients that opt in to retries)\". Not named in ROADMAP.md \"After 0.16.0\" (orphan row)."
+ },
+ {
+  "id": "H13",
+  "title": "All four sub-claims hold: count-bounded queues with no byte budget, base64 payloads inside the task row, SQL sends still O(history) twice, and an event log that grows wit",
+  "area": "performance",
+  "severity": "S1",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:930",
+   "docs/audits/2026-11-01-triage/h-designs.json:200",
+   "ROADMAP.md:160",
+   "CHANGELOG.md:3265",
+   "docs/adr/0047-event-byte-budget-and-payload-scaling.md:7"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED [0.17]: blob offload, holds on the SQL stores, SQL save_appending_history overrides. Alias: KL-12. Triage severity as written: \"S1; unchanged\"."
+ },
+ {
+  "id": "H19",
+  "title": "Trace context crosses non-Rust hops by standard headers; lease, budget, idempotency, failure class and approval are ignored by non-Rust peers; halts never cross a process",
+  "area": "upstream",
+  "severity": "S1",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:939",
+   "docs/audits/2026-11-01-triage/h-designs.json:316",
+   "ROADMAP.md:99",
+   "ROADMAP.md:53",
+   "CHANGELOG.md:3275",
+   "docs/upstream/README.md:23",
+   "docs/adr/0049-polyglot-swarm-extensions.md:7"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED: middleware and bindings for other SDKs are not built [0.17]; sending the upstream drafts is \"[decision]\" (ROADMAP:53). Alias: KL-17. Triage severity as written: \"S1 for polyglot fleets; unchanged\"."
+ },
+ {
+  "id": "H2",
+  "title": "On main a private CA and mTLS work on JSON-RPC and HTTP+JSON (ClientBuilder::with_tls_config), WebSocket (WebSocketTransportConfig::with_tls_config), gRPC (with_grpc_tls_",
+  "area": "security-compliance",
+  "severity": "S1",
+  "status": "partial",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:948",
+   "docs/audits/2026-11-01-triage/h-s0.json:6",
+   "ROADMAP.md:118"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Register status: \"fixed (part) (section O, 6d746dd)\". Triage severity as written: \"S1 (down from S0): every binding can now trust a private CA and present a client certificate, so the S0 part (a private PKI or SPIFFE swarm cannot use the default client) is fixed. Still open: the token provider has no TLS option, gRPC does not read SSL_CERT_FILE, and there is one connection pool per A2aClient (an S1 cost at swarm scale)\"."
+ },
+ {
+  "id": "NEW-h-s0-7",
+  "title": "gRPC alone ignores SSL_CERT_FILE/SSL_CERT_DIR. The default ClientTlsConfig::new().with_enabled_roots() with tonic features tls-ring and tls-webpki-roots loads Mozilla roo",
+  "area": "security-compliance",
+  "severity": "medium",
+  "status": "stale-claim",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:957",
+   "docs/audits/2026-11-01-triage/h-s0.json:142",
+   "ROADMAP.md:118",
+   "crates/a2a-protocol-client/src/transport/grpc.rs:74"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED fixed at HEAD for the gRPC client: default_client_tls() adds crate::tls::env_roots_pem() (SSL_CERT_FILE/SSL_CERT_DIR) under tls-rustls. Stale: ROADMAP.md:118-119, register row, and the SSL_CERT_FILE clause of B-20/H2. Not checked: OTLP, token provider TLS options (B-03, H2 remainder). Triage severity as written: \"medium\"."
+ },
+ {
+  "id": "CI2",
+  "title": "blocking_over_stream_e2e a_send_carried_over_a_stream_crosses_the_same_proxy tolerates only a 500 ms machine pause",
+  "area": "testing-verification",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/0.16.0-release/findings.json:1164",
+   "ROADMAP.md:215",
+   "crates/a2a-protocol-client/tests/blocking_over_stream_e2e.rs:67",
+   "crates/a2a-protocol-client/tests/blocking_over_stream_e2e.rs:217"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED open: keep-alive 100 ms against a proxy that cuts at 600 ms is unchanged. Constraint in ROADMAP: fix without widening the window or retrying. Test is in the client crate (the register does not give a path)."
+ },
+ {
+  "id": "KL-01",
+  "title": "Steering: a message handed to a replica that just died is accepted and unread until the claim expires; no gRPC/WebSocket tests; two-process proof not in CI",
+  "area": "fleet-correctness",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:84",
+   "CHANGELOG.md:3222",
+   "docs/audits/0.16.0-release/findings.json:966",
+   "docs/adr/0036-steering-a-running-task.md:7",
+   "docs/handoff.md:470"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED [0.17]."
+ },
+ {
+  "id": "W2-hostile-5",
+  "title": "Authentication runs after method dispatch, body parsing and version negotiation",
+  "area": "security-compliance",
+  "severity": "low",
+  "status": "disclosed-accepted",
+  "source_refs": [
+   "ROADMAP.md:126",
+   "CHANGELOG.md:3240",
+   "docs/audits/0.16.0-release/findings.json:1002",
+   "docs/audits/2026-11-07-campaign-wave2/hostile/README.md:50"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "\"Recorded, not planned ... a design decision\" (ROADMAP:126). Alias: KL-05."
+ },
+ {
+  "id": "W2-LIVE-8",
+  "title": "A provider error body reaches the invoke_agent span events and the log, where the book says spans carry no content: redact it or correct the book",
+  "area": "tool-loop",
+  "severity": "low",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:131",
+   "CHANGELOG.md:3247",
+   "docs/audits/0.16.0-release/findings.json:1011",
+   "docs/audits/2026-11-07-campaign-wave2/live/README.md:30",
+   "docs/handoff.md:713"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED [0.16.x]. Part of KL-06."
+ },
+ {
+  "id": "W2-LIVE-11",
+  "title": "A trusted project skill can take an operator skill's name with a look-alike character",
+  "area": "security-compliance",
+  "severity": "low",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:120",
+   "CHANGELOG.md:3247",
+   "docs/audits/2026-11-07-campaign-wave2/live/README.md:33"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED open: no confusable/normalisation check under crates/a2a-protocol-server/src/skills. Part of KL-06. [0.17] with S2."
+ },
+ {
+  "id": "W2-LIVE-12",
+  "title": "finish_reason content_filter with partial text completes the task unmarked (only length is marked)",
+  "area": "tool-loop",
+  "severity": "polish",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:134",
+   "CHANGELOG.md:3247",
+   "docs/audits/2026-11-07-campaign-wave2/live/README.md:34",
+   "crates/a2a-protocol-server/src/tool_loop/answer.rs:64"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED open: answer.rs marks only FINISH_REASON_LENGTH; content_filter is handled only for an empty answer (loop_error.rs:98). [0.17]."
+ },
+ {
+  "id": "W2-LIVE-13",
+  "title": "A tool call cut at max_tokens surfaces as the provider's HTTP 500 and fails the task internal",
+  "area": "tool-loop",
+  "severity": "polish",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:135",
+   "CHANGELOG.md:3247",
+   "docs/audits/2026-11-07-campaign-wave2/live/README.md:35"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED [0.17]."
+ },
+ {
+  "id": "D-18",
+  "title": "Parked-task expiry: the stream that ends without a terminal state; the continuation that races the sweep",
+  "area": "fleet-correctness",
+  "severity": "low",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:88",
+   "docs/audits/2026-11-01-triage/d.json:215",
+   "CHANGELOG.md:3255",
+   "docs/audits/0.16.0-release/findings.json:1020",
+   "docs/adr/0056-parked-tasks-may-expire.md:7",
+   "docs/audits/2026-11-01-triage/DECISIONS.md:431"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED [0.17]. Alias: KL-07."
+ },
+ {
+  "id": "KL-08",
+  "title": "Agent Skills: no hot reload; not run on Windows or macOS; hard-link and FIFO cases",
+  "area": "tool-loop",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:136",
+   "CHANGELOG.md:3257",
+   "docs/audits/0.16.0-release/findings.json:1029",
+   "docs/adr/0035-agent-skills.md:7"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED [0.17]. ROADMAP:185 says ADR 0035 still says \"not run\" against a live model (stale sentence)."
+ },
+ {
+  "id": "KL-13",
+  "title": "Load and admission across a fleet: ORCA over gRPC trailers, queue-cap gauge, priority, preemption, fleet-wide admission and limits (H7, H9, H17)",
+  "area": "fleet-correctness",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:93",
+   "CHANGELOG.md:3267",
+   "docs/audits/0.16.0-release/findings.json:1074",
+   "docs/adr/0045-admission-queue.md:7",
+   "docs/adr/0046-readiness-and-load-signal.md:7",
+   "docs/adr/0048-tool-loop-inference-limit-and-backoff.md:7",
+   "docs/handoff.md:525"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED [0.17]. handoff:525: \"the load signal's ORCA header was not checked against Envoy\". S3 needs a decision first."
+ },
+ {
+  "id": "KL-16",
+  "title": "Network: Host check for non-loopback listeners, Origin check on HTTP, DNS cache, fips feature, CRL and OCSP (B-25, B-28, B-29)",
+  "area": "security-compliance",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:115",
+   "CHANGELOG.md:3273",
+   "docs/audits/0.16.0-release/findings.json:1101",
+   "docs/adr/0041-server-certificate-reload-and-crypto-policy.md:7",
+   "docs/adr/0055-websocket-on-the-http-port.md:7"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED [0.17]. ROADMAP:186 says the doc comment of dispatch/websocket/serve_config.rs on Origin and DNS rebinding is stale."
+ },
+ {
+  "id": "G-09",
+  "title": "ServeConfig (idle_timeout, header_read_timeout, allowed_hosts) is not applied to a gRPC or a WebSocket listener",
+  "area": "devex",
+  "severity": "medium",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:170",
+   "docs/audits/2026-11-01-triage/g-api.json:109",
+   "CHANGELOG.md:3279",
+   "docs/audits/0.16.0-release/findings.json:1128",
+   "crates/a2a-protocol-server/src/dispatch/grpc/serve_config.rs:44",
+   "docs/adr/0052-one-serve-shape-per-listener.md:7"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED as documented: the gRPC with_serve_config rustdoc lists the fields it does not apply. [0.17]. Alias: KL-19."
+ },
+ {
+  "id": "BL-001",
+  "title": "Spec ledger: the 4 PARTIAL rows (3.5.2, 5.7, 7.6.1, 12.4): a test for each, or the reason it stays partial",
+  "area": "spec-conformance",
+  "severity": "unstated",
+  "status": "partial",
+  "source_refs": [
+   "ROADMAP.md:39",
+   "docs/handoff.md:366",
+   "docs/compliance/spec-ledger.json:2790",
+   "docs/compliance/spec-ledger.json:4326",
+   "docs/compliance/spec-ledger.json:5154",
+   "docs/compliance/spec-ledger.json:7370",
+   "docs/compliance/audit-register.md:44"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": true,
+  "notes": "VERIFIED count: `python3 scripts/check_spec_ledger.py` prints PARTIAL 4 of 510. handoff:366: \"cannot all be closed from this repository\": 12.4 waits on agntcy-slim-rpc (upstream), 5.7 is a contradiction in the spec (upstream draft held), 3.5.2 is a design limit (streamLagged past the ceiling), 7.6.1 \"means an executor mailbox, an ADR and a decision\"."
+ },
+ {
+  "id": "BL-002",
+  "title": "The 7 MUSTs the official TCK marks manual and the 16 it marks not tested: cite a test of this repository for each, or say there is none",
+  "area": "spec-conformance",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:42",
+   "tck/untested-musts.toml:7",
+   "docs/official-tck-findings.md:2395",
+   "ROADMAP.md:1319"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED: tck/untested-musts.toml has 22 [[requirement]] entries and its header still says \"Measured against a2a-tck at 263b9cf: 21 of them\" while the pin is 5e6f37c with 16 not tested + 7 manual + 5 skipped = 28 ungraded. Also: ROADMAP:1319 tracks 13 upstream backlog items."
+ },
+ {
+  "id": "BL-003",
+  "title": "A conformance run for the WebSocket binding, which is outside both external suites",
+  "area": "spec-conformance",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:48",
+   "ROADMAP.md:1322"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED [0.17]. In-repo runner has a --binding websocket leg (21 checks)."
+ },
+ {
+  "id": "BL-004",
+  "title": "Decide: is a field a specification revision adds a minor or a patch addition",
+  "area": "governance",
+  "severity": "unstated",
+  "status": "decision",
+  "source_refs": [
+   "ROADMAP.md:50",
+   "book/src/reference/upgrading/0.15-to-0.16.md:220",
+   "STABILITY.md:127",
+   "README.md:505"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": true,
+  "notes": "VERIFIED contradiction at HEAD: the upgrade guide says \"minor-version addition\"; STABILITY.md section 4 says \"patch-level addition\"; README says \"patch releases\". Decision sentence: ROADMAP:50 \"[decision]\"."
+ },
+ {
+  "id": "BL-005",
+  "title": "Decide: A2A v1.1 (v1.1.0-rc tagged upstream 2026-10-29): diff it against the spec ledger now, or wait for a release",
+  "area": "spec-conformance",
+  "severity": "unstated",
+  "status": "decision",
+  "source_refs": [
+   "ROADMAP.md:54",
+   "docs/handoff.md:39",
+   "docs/handoff.md:91"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "Decision sentence (ROADMAP:58-59): \"nothing is built against a release candidate without that decision.\" rc adds SendLiveMessage, a task timeline with generation counters, TaskMessageUpdateEvent; deprecates history_length and history. scripts/check_a2a_proto_upstream.sh excludes pre-releases by design."
+ },
+ {
+  "id": "BL-006",
+  "title": "Qualify what the qualification matrix lists as not covered: multi-host network, SQLite under faults, disk full, OOM kills, clock skew, slow database, 60 replicas, a provider other than llama.cpp",
+  "area": "testing-verification",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:72",
+   "docs/audits/2026-11-14-qualification/README.md:61",
+   "docs/handoff.md:316"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED [0.16.x]. Includes N14 and E-F26. handoff:316: Kubernetes, IPv6 on the wire and the toxiproxy partition run were not run. Hardware/environment dependent."
+ },
+ {
+  "id": "BL-007",
+  "title": "Remove the RUSTSEC-2026-0459 waiver when sqlx allows libsqlite3-sys >= 0.39",
+  "area": "security-compliance",
+  "severity": "unstated",
+  "status": "waiting-upstream",
+  "source_refs": [
+   "ROADMAP.md:104",
+   "deny.toml:80",
+   "osv-scanner.toml:37",
+   "bindings/a2a-protocol-slimrpc/deny.toml:175",
+   "fuzz/osv-scanner.toml:21",
+   "benches/sdk-comparison/harness/agent-a2a-rust/osv-scanner.toml:22",
+   "SECURITY.md:85",
+   "docs/handoff.md:810",
+   "CHANGELOG.md:3271",
+   "Cargo.lock:2251"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED still needed: Cargo.lock holds libsqlite3-sys 0.37.0 under sqlx 0.9.0. osv-scanner ignoreUntil = 2027-02-11 (a hard re-examination date). Alias: KL-15, E6 alert #125."
+ },
+ {
+  "id": "BL-008",
+  "title": "Waivers RUSTSEC-2026-0543 (chrono) and -0555 (chrono-tz): remove each when its path drops the crate",
+  "area": "security-compliance",
+  "severity": "unstated",
+  "status": "waiting-upstream",
+  "source_refs": [
+   "deny.toml:79",
+   "osv-scanner.toml:46",
+   "bindings/a2a-protocol-slimrpc/deny.toml:173",
+   "bindings/a2a-protocol-slimrpc/deny.toml:174",
+   "bindings/a2a-protocol-slimrpc/osv-scanner.toml:46",
+   "bindings/a2a-protocol-slimrpc/osv-scanner.toml:51",
+   "benches/sdk-comparison/harness/agent-a2a-rs/osv-scanner.toml:15",
+   "docs/handoff.md:804"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED present. Unmaintained notices, no fix. osv-scanner ignoreUntil = 2027-02-17. Reached only by examples (rmcp, schemars) and the SLIM stack."
+ },
+ {
+  "id": "BL-009",
+  "title": "Run the live tool-loop files against a provider other than llama.cpp with Qwen3-1.7B",
+  "area": "tool-loop",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:139",
+   "docs/audits/2026-11-14-qualification/README.md:71"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED [0.16.x]."
+ },
+ {
+  "id": "BL-010",
+  "title": "Remove init_otlp_pipeline and init_otlp_pipeline_with_endpoint (deprecated 0.16.0, removable no earlier than 0.17.0)",
+  "area": "observability",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:148",
+   "crates/a2a-protocol-server/src/otel/pipeline.rs:99",
+   "crates/a2a-protocol-server/src/otel/pipeline.rs:125"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED present with #[deprecated(since = \"0.16.0\")]. A break: [0.17]."
+ },
+ {
+  "id": "BL-011",
+  "title": "Remove the names deprecated in 0.15.0 and 0.16.0 that STABILITY.md section 3 now allows removing",
+  "area": "devex",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:171",
+   "STABILITY.md:92",
+   "crates/a2a-protocol-client/src/config.rs:139",
+   "crates/a2a-protocol-client/src/config/setters.rs:16",
+   "crates/a2a-protocol-server/src/agent_card/hot_reload.rs:108",
+   "crates/a2a-protocol-types/src/generated/security.rs:198",
+   "crates/a2a-protocol-server/src/dispatch/grpc/serve_config.rs:64",
+   "crates/a2a-protocol-server/src/dispatch/websocket.rs:352",
+   "crates/a2a-protocol-server/src/handler/renamed.rs:27",
+   "crates/a2a-protocol-server/src/serve/mod.rs:216",
+   "crates/a2a-protocol-server/src/tenant_config/mod.rs:259",
+   "docs/handoff.md:530"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED counts at HEAD: 34 #[deprecated] attributes in *.rs; of those with a since on a following line, 5 are since 0.15.0 (removable now) and 26 since 0.16.0 (removable from 0.17.0). 45 #[allow(deprecated)] in 30 files go with them. handoff:530: there is no gate that deprecation notes carry a removal version (ADR 0053). Blocks 1.0: each removal is a break and restarts STABILITY section 7's two-unbroken-minors count."
+ },
+ {
+  "id": "BL-012",
+  "title": "One book page that lists the Known Limitations by id, linked from the changelog",
+  "area": "docs-book",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:180"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED [0.16.x]: \"On 2026-11-18 five of the 19 entries carried a stale claim and one named a ROADMAP row.\""
+ },
+ {
+  "id": "BL-013",
+  "title": "Three documents repeat a sentence the code has outgrown: ADR 0057, ADR 0035, the doc comment of dispatch/websocket/serve_config.rs",
+  "area": "docs-book",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:184"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED [0.16.x]."
+ },
+ {
+  "id": "BL-014",
+  "title": "ci_evidence.py refuses a release when any ci.yml job failed, and Nightly (informational) is continue-on-error on a floating toolchain",
+  "area": "release-eng",
+  "severity": "unstated",
+  "status": "decision",
+  "source_refs": [
+   "ROADMAP.md:196",
+   "scripts/ci_evidence.py:44",
+   ".github/workflows/ci.yml:909"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": true,
+  "notes": "VERIFIED open: BAD = {failure, cancelled, timed_out, ...} with no exemption; the nightly job is continue-on-error: true. Decision sentence (ROADMAP:199-200): \"Either the gate skips jobs ci.yml marks continue-on-error, or the nightly job stops being able to fail.\" Blocks: any tag cut while nightly is red."
+ },
+ {
+  "id": "BL-015",
+  "title": "spec-ledger.json cites CHANGELOG.md by line number, so every release preparation breaks check_spec_ledger.py: cite the heading",
+  "area": "release-eng",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:201",
+   "docs/handoff.md:101",
+   "docs/compliance/spec-ledger.json:76",
+   "CHANGELOG.md:13311"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED open: one citation, CHANGELOG.md:13311 (the 0.5.0 heading today). The same antipattern is in docs/audits/0.16.0-release/findings.json: 91 CHANGELOG.md:<line> strings, and its KL rows cite 3201-3261 where the entries now sit at 3222-3282."
+ },
+ {
+  "id": "BL-016",
+  "title": "check_provenance_manifest.py gave a wrong answer once (pass/nosignoff off by one): find the cause",
+  "area": "release-eng",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:204",
+   "scripts/provenance_manifest.sh:26",
+   "scripts/provenance_manifest.sh:86"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED the suspected construct is present: `git log -1 --format=%B \"$sha\" | grep -Eqi` under `set -uo pipefail`. Cause \"Suspected, not shown\". Until fixed, re-running the job at the tag is the recorded remedy."
+ },
+ {
+  "id": "BL-017",
+  "title": "Decide: an absolute coverage floor in codecov.yml",
+  "area": "release-eng",
+  "severity": "unstated",
+  "status": "decision",
+  "source_refs": [
+   "ROADMAP.md:227"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "Decision sentence: ROADMAP:227 \"[decision]\" (RELEASING.md, Path to 1.0.0)."
+ },
+ {
+  "id": "BL-018",
+  "title": "Decide: pin the toolchain a session and CI lint with (session image 1.97.0 vs CI 1.100.0; their clippy disagreed)",
+  "area": "release-eng",
+  "severity": "unstated",
+  "status": "decision",
+  "source_refs": [
+   "ROADMAP.md:231",
+   "docs/handoff.md:96"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "Decision sentence: ROADMAP:231 \"[decision]\". Affects every fresh session: install 1.100.0 first (handoff:96)."
+ },
+ {
+  "id": "BL-019",
+  "title": "release.yml's ci job is a reduced copy of ci.yml and nothing compares the two",
+  "area": "release-eng",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:237",
+   ".github/workflows/release.yml:326",
+   ".github/workflows/release.yml:51"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED open: release.yml has its own ci job; no workflow has `workflow_call` for ci.yml. The one known divergence (CARGO_PROFILE_DEV_DEBUG) is fixed at release.yml:51. Jobs after ci run only on a tag."
+ },
+ {
+  "id": "BL-020",
+  "title": "statement_count.rs counts 0 statements when PostgreSQL has SSL on: refuse a server that accepts the SSLRequest",
+  "area": "testing-verification",
+  "severity": "low",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:246",
+   "docs/handoff.md:67",
+   "docs/handoff.md:311",
+   "crates/a2a-protocol-server/tests/statement_count.rs:122"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED open: the proxy only recognises SSLRequest (80877103) and forwards it. Severity \"low\" from handoff:67. Workaround: PGSSLMODE=disable."
+ },
+ {
+  "id": "BL-021",
+  "title": "docs/readiness-bar.md says \"F1 is measured\" in one section and lists F1 as not measured in two others: make them agree",
+  "area": "docs-book",
+  "severity": "low",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:251",
+   "docs/handoff.md:55",
+   "docs/readiness-bar.md:181",
+   "docs/readiness-bar.md:88",
+   "docs/readiness-bar.md:288",
+   "docs/audits/2026-11-11-external-review/findings.json:115"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED open. See contradiction C-01. The measured-limits block is copied into the release evidence manifest, so the block is the one a release asserts."
+ },
+ {
+  "id": "BL-022",
+  "title": "Antipattern classes to remove: present-tense moments, underived counts in prose, multi-id status rows, registers with no status field, limitation restated in three places",
+  "area": "docs-book",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:255"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED: \"each is a class to remove, not one site.\""
+ },
+ {
+  "id": "BL-023",
+  "title": "mutants.toml is not read by cargo-mutants (it looks for .cargo/mutants.toml): generated proto code is mutated and the full sweep has no timeout cap",
+  "area": "testing-verification",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:966",
+   "mutants.toml:110",
+   "mutants.toml:162"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED open: no .cargo/ directory exists; mutants.toml is at the root and still carries cap_timeout (an unknown field). \"Deliberately not fixed for 0.8\"; the recipe is at ROADMAP:997-1003. Changes what the sweep measures, so it needs a sweep to land on."
+ },
+ {
+  "id": "BL-024",
+  "title": "Raise coverage on the weak files: handler/event_processing/background/mod.rs (54.2%), serve.rs (67.5%), background/push_delivery.rs (72.8%)",
+  "area": "testing-verification",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:1072"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED, figures from 2026-07-31; serve.rs is now a directory (serve/), so the entry is not current. Staleness risk: high."
+ },
+ {
+  "id": "BL-025",
+  "title": "File-length debt: .file-length-baseline holds 82 files over 500 lines (shrink-only ratchet)",
+  "area": "devex",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   ".file-length-baseline:1",
+   "ROADMAP.md:1077"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED: 82 non-comment entries. ROADMAP:1077 still says handler/helpers.rs is 612 lines and \"77 of 310\" files exceed; helpers.rs is 961 lines at HEAD."
+ },
+ {
+  "id": "BL-026",
+  "title": "Book ignore debt: .book-ignore-baseline holds 1 entry (book/src/bindings/slimrpc.md, 4 ignored blocks)",
+  "area": "docs-book",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   ".book-ignore-baseline:1",
+   "docs/handoff.md:453"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED: 1 non-comment entry. Tied to X-16: the page shows a path dependency until the binding is published."
+ },
+ {
+  "id": "BL-027",
+  "title": "Soak: sustained traffic over hours (rotation under load, RSS and queue growth, store eviction at steady state)",
+  "area": "testing-verification",
+  "severity": "unstated",
+  "status": "partial",
+  "source_refs": [
+   "ROADMAP.md:577"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED in the 0.8.x section; a soak.yml workflow exists and is green per handoff:27, so this entry is probably superseded. Staleness risk: high."
+ },
+ {
+  "id": "BL-028",
+  "title": "SLIMRPC known limits: federation by manual bundle exchange, rotation covers JWT-SVIDs only, single-machine tests, static-token identity untested; agent cannot see a client abandon a stream",
+  "area": "fleet-correctness",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:603",
+   "ROADMAP.md:642"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED; the stream-abandon item is upstream (agntcy-slim-rpc has no cancel frame)."
+ },
+ {
+  "id": "BL-029",
+  "title": "examples/resilient-agent is not run in CI with a database (example-surface runs the older examples only)",
+  "area": "testing-verification",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:646"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED (2026-09-10); not re-checked."
+ },
+ {
+  "id": "BL-030",
+  "title": "prove_gates_fail.sh: no complete sweep has been run against the current gate set",
+  "area": "testing-verification",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "ROADMAP.md:1148",
+   "docs/handoff.md:784"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED: last complete sweep 2026-09-19, 55 proven / 10 unproven of 65; the harness then listed 66. The workflow-gate prover is separate and current (34 proven, 0 unproven at 3f6be5f7, handoff:163)."
+ },
+ {
+  "id": "BL-031",
+  "title": "PGP key for security reports: none published",
+  "area": "security-compliance",
+  "severity": "unstated",
+  "status": "maintainer-action",
+  "source_refs": [
+   "ROADMAP.md:1122",
+   "SECURITY.md:124",
+   "docs/lf-readiness-review.md:150",
+   "docs/openssf-best-practices.md:68"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": true,
+  "notes": "VERIFIED: SECURITY.md:124 \"Not available.\""
+ },
+ {
+  "id": "BL-032",
+  "title": "Register a2a-rust.dev so conduct@ and security@ addresses can be restored",
+  "area": "governance",
+  "severity": "unstated",
+  "status": "maintainer-action",
+  "source_refs": [
+   "ROADMAP.md:1140"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED (NXDOMAIN re-verified 2026-08-11)."
+ },
+ {
+  "id": "BL-033",
+  "title": "A v* tag ruleset in the repository settings is unset",
+  "area": "release-eng",
+  "severity": "unstated",
+  "status": "maintainer-action",
+  "source_refs": [
+   "ROADMAP.md:1119",
+   "docs/handoff.md:577",
+   ".github/release-signers/README.md:1"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED: without it, a tag on an unreviewed commit whose workflow has been edited is what release.yml cannot stop."
+ },
+ {
+  "id": "BL-034",
+  "title": "Listing on the ITK dashboard waits on upstream changes (draft not sent)",
+  "area": "upstream",
+  "severity": "unstated",
+  "status": "waiting-upstream",
+  "source_refs": [
+   "ROADMAP.md:1370",
+   "docs/upstream/README.md:27"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "Draft: docs/upstream/a2a-itk-dashboard-enrolment-draft.md, \"Draft, not sent\"."
+ },
+ {
+  "id": "BL-035",
+  "title": "RFC ledger: 4 high-severity RFC 8725 rows implemented and untested (3.1 alg used, 3.3 all crypto validated, 3.8 keys belong to issuer, 3.9 audience)",
+  "area": "security-compliance",
+  "severity": "high",
+  "status": "open",
+  "source_refs": [
+   "docs/handoff.md:495",
+   "docs/compliance/rfc-ledger.json:2578",
+   "docs/compliance/rfc-ledger.json:2783",
+   "docs/compliance/rfc-ledger.json:2959",
+   "docs/compliance/rfc-ledger.json:3043"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED by jq at HEAD: 45 IMPLEMENTED_UNTESTED, 4 of them severity high. A security row is TESTED only with a recorded mutant a test killed. \"no decision needed\" (handoff:495)."
+ },
+ {
+  "id": "BL-036",
+  "title": "RFC ledger GAP: RFC 7515 5.2 and 7.2.1, the card verifier does not refuse a header name present in both protected and unprotected headers",
+  "area": "security-compliance",
+  "severity": "low",
+  "status": "open",
+  "source_refs": [
+   "docs/handoff.md:498",
+   "docs/compliance/rfc-ledger.json:860",
+   "docs/compliance/rfc-ledger.json:1170"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED open: no disjointness check found under crates/a2a-protocol-types/src/signing*."
+ },
+ {
+  "id": "BL-037",
+  "title": "RFC ledger GAP: RFC 8725 3.2, ES256 card signing is hedged with a random nonce, not RFC 6979 deterministic",
+  "area": "security-compliance",
+  "severity": "low",
+  "status": "open",
+  "source_refs": [
+   "docs/handoff.md:499",
+   "docs/compliance/rfc-ledger.json:2762"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED."
+ },
+ {
+  "id": "BL-038",
+  "title": "RFC ledger PARTIAL (8 rows): RFC 7519 4.1.4, 4.1.5, 7.2; RFC 8725 3.1, 3.2, 3.5 (two rows, one medium: HS256 runtime checks length only), 3.8",
+  "area": "security-compliance",
+  "severity": "low",
+  "status": "partial",
+  "source_refs": [
+   "docs/handoff.md:499",
+   "docs/compliance/rfc-ledger.json:1786",
+   "docs/compliance/rfc-ledger.json:1885",
+   "docs/compliance/rfc-ledger.json:2228",
+   "docs/compliance/rfc-ledger.json:2546",
+   "docs/compliance/rfc-ledger.json:2688",
+   "docs/compliance/rfc-ledger.json:2847",
+   "docs/compliance/rfc-ledger.json:2869",
+   "docs/compliance/rfc-ledger.json:2933",
+   "docs/handoff.md:838"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED count by jq: 8 PARTIAL (7 low, 1 medium: 3.5 line 372). The 3.5 runtime was left unchanged by the maintainer's decision of 2026-11-06 (handoff:838-840). The one DEVIATION (RFC 7519 section 8, `none`, rfc-ledger.json:2314) names ADR 0010 and is by design."
+ },
+ {
+  "id": "BL-039",
+  "title": "The card verifier does not read a JWK's key_ops (RFC 7517 4.3): a sign-only public key is still used to verify",
+  "area": "security-compliance",
+  "severity": "low",
+  "status": "open",
+  "source_refs": [
+   "docs/handoff.md:500"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED open: `git grep key_ops -- crates/a2a-protocol-types/src` finds nothing. RFC 7517 is not in the ledger."
+ },
+ {
+  "id": "BL-040",
+  "title": "Standards ledgers not started: RFC 7518, 7517, 8785, then 6750, 9068, 6749; a ledger for RFC 9111 and 5861 (the card cache)",
+  "area": "security-compliance",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/handoff.md:501"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED."
+ },
+ {
+  "id": "BL-041",
+  "title": "OpenTelemetry wiring audit, still open: H3 (SLIMRPC multicast span), M6 (WebSocket upgrade refusals not metered), M7, M8, M10 (client retries invisible), M11 (no DB span on push-config, audit, halt, lease, retention stores), M12, M15 (axum A2aRouter, SLIMRPC), L1, L3-L12; SQLSTATE in error.type",
+  "area": "observability",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/handoff.md:381",
+   "docs/handoff.md:414"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED, with the document's own warning (handoff:382): \"what is open below was not re-derived\" after the 0.16.0 observability work. M7 \"need record_unrouted and RpcSystem public, an API decision\". L1 is \"an OTEL_*_EXPORTER=prometheus env that panics every binary\". The source report (2026-10-24 wiring audit) \"is not in the repository\". Ids H3/M6/etc. are local to that report. Staleness risk: high; re-derive before work."
+ },
+ {
+  "id": "BL-042",
+  "title": "ADR 0025 plaintext refusal and warning were not checked on CombinedDispatcher and SLIMRPC",
+  "area": "spec-conformance",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/handoff.md:363"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED (\"Not checked in this session\")."
+ },
+ {
+  "id": "BL-043",
+  "title": "Spec ledger: MAY entries relabelled SUPPORTED are not started",
+  "area": "spec-conformance",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/handoff.md:379"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED."
+ },
+ {
+  "id": "BL-044",
+  "title": "Mutation testing: read the next scheduled full sweep's logs; whether the incremental run at b1c4a84d was clean was not known",
+  "area": "testing-verification",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/handoff.md:436",
+   "docs/handoff.md:118",
+   "ROADMAP.md:954"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. 38 #[mutants::skip] in 25 files at HEAD (counted by git grep)."
+ },
+ {
+  "id": "BL-045",
+  "title": "AES-GCM nonce budget is per process: R replicas can seal R x 2^32 under one key; proposed HKDF-derived per-value key is a format change with a two-step rollout",
+  "area": "security-compliance",
+  "severity": "medium",
+  "status": "open",
+  "source_refs": [
+   "docs/handoff.md:704",
+   "crates/a2a-protocol-server/src/store/encrypted/cipher.rs:75"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED as documented: \"The budget is enforced per cipher\" (cipher.rs:75); the book tells deployers to split the limit. \"it waits\" (handoff:711)."
+ },
+ {
+  "id": "BL-046",
+  "title": "Privacy residue: erased persons' audit records stay linkable; erase_caller leaves a tenant's shared partition; EncryptedTaskStore leaves ids, states, timestamps, metadata in the clear",
+  "area": "security-compliance",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/handoff.md:719",
+   "docs/handoff.md:740",
+   "CHANGELOG.md:3282"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED; overlaps X-19 and KL-22. Control map: 29 partial rows of 88 (handoff:740, counted 2026-10-24; not re-counted here)."
+ },
+ {
+  "id": "BL-047",
+  "title": "Cross-replica: a cancel reaches another replica's executor at the owner's next renewal (1 s) unless a halt store pushes it; subscribe on a non-owning replica polls the event log",
+  "area": "fleet-correctness",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/handoff.md:654",
+   "docs/adr/0057-wake-a-waiting-subscriber-on-log-appends.md:7"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED (2026-10-28). ADR 0057 (accepted, built for 0.16.0) added an opt-in event-log wake, so the \"LISTEN/NOTIFY ... unbuilt\" clause is probably superseded. Staleness risk: high."
+ },
+ {
+  "id": "BL-048",
+  "title": "Interop: card_signature_interop.py checks Python only",
+  "area": "spec-conformance",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/handoff.md:735"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED."
+ },
+ {
+  "id": "BL-049",
+  "title": "Gates: a mutation shard that starts after its PR merges grades nothing; the Windows stress-test connect failure has no known cause; tck-self-test's a2a-inspector step exits 1 under continue-on-error, not investigated",
+  "area": "testing-verification",
+  "severity": "low",
+  "status": "open",
+  "source_refs": [
+   "docs/handoff.md:794",
+   "docs/handoff.md:296"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. \"low\" is the handoff's grade for the mutation-shard item only."
+ },
+ {
+  "id": "BL-050",
+  "title": "Small, left as found: five identical examples/*/src/card_url.rs with no sync check; process metrics count their own fd (+1) and assume USER_HZ is 100",
+  "area": "devex",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/handoff.md:537"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED."
+ },
+ {
+  "id": "BL-051",
+  "title": "Decide ADR 0028: whether Tokio stays mandatory on wasm32-unknown-unknown (qualify ADR 0003 so a runtime seam can land as phase 1)",
+  "area": "governance",
+  "severity": "unstated",
+  "status": "decision",
+  "source_refs": [
+   "docs/handoff.md:544",
+   "docs/adr/0028-webassembly-and-cloudflare-workers.md:7"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": true,
+  "notes": "VERIFIED status line: \"Proposed ... The decision it asks for (qualifying ADR 0003) is the maintainer's.\" Phases 2-4 unbuilt. If declined, nothing changes here."
+ },
+ {
+  "id": "BL-052",
+  "title": "ADR 0029 local network discovery: built and tested, crate not published; whether and under what name is undecided",
+  "area": "governance",
+  "severity": "unstated",
+  "status": "decision",
+  "source_refs": [
+   "docs/adr/0029-local-network-discovery.md:7"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": true,
+  "notes": "VERIFIED status line: \"Proposed. Built and tested (below); the crate is not published, and whether it is, and under what name, is the maintainer's call.\""
+ },
+ {
+  "id": "BL-053",
+  "title": "ADR 0030 delegation resume and journal: still \"Proposed\" though built (resume, reattach, in-memory, PostgreSQL and SQLite journals)",
+  "area": "governance",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/adr/0030-delegation-resume-and-journal.md:7",
+   "docs/swarm-orchestration.md:70",
+   "docs/swarm-orchestration.md:316"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED: SqliteDelegationJournal exists (crates/a2a-protocol-server/src/store/delegation_journal/sqlite.rs). Open per swarm-orchestration.md:316: \"a swarm run that kills a supervisor process is not done\". The ADR status needs settling now that 0.16.0 is released (its choices were \"open to change while 0.16.0 is unreleased\")."
+ },
+ {
+  "id": "BL-054",
+  "title": "ADR 0031 discovery beyond one link: Proposed, nothing built",
+  "area": "devex",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/adr/0031-discovery-beyond-one-link.md:7"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED status line. The maintainer approved all four sources on 2026-10-31; placement and dependencies are open."
+ },
+ {
+  "id": "BL-055",
+  "title": "ADR 0033 group delegation (fan-out): Proposed, nothing built",
+  "area": "fleet-correctness",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/adr/0033-group-delegation.md:7"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED status line: recorded \"for a later session\"."
+ },
+ {
+  "id": "BL-056",
+  "title": "ADR 0032 HTTP pool: per-origin state (decision 5), the card resolver (decision 6) and client-side load balancing (H12) are not built",
+  "area": "performance",
+  "severity": "unstated",
+  "status": "partial",
+  "source_refs": [
+   "docs/adr/0032-http-pool.md:7"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED status line: \"Accepted, built in part\". H12 \"stays conditional on a measurement\"."
+ },
+ {
+  "id": "BL-057",
+  "title": "File GHSA-hr9h-6jvf-wvg6 with RustSec (draft ready; three decisions left to the maintainer)",
+  "area": "security-compliance",
+  "severity": "unstated",
+  "status": "maintainer-action",
+  "source_refs": [
+   "docs/handoff.md:554",
+   "docs/upstream/README.md:33",
+   "docs/handoff.md:761"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. Until filed, cargo audit / cargo deny / OSV on an integrator's lockfile do not flag server or sdk < 0.14.1. Carried as a gap by CRA-AI-I-2a, CRA-AI-II-2-4-8, CRA-14."
+ },
+ {
+  "id": "BL-058",
+  "title": "Upstream drafts not sent (13) and held (3): see docs/upstream/README.md",
+  "area": "upstream",
+  "severity": "unstated",
+  "status": "maintainer-action",
+  "source_refs": [
+   "docs/handoff.md:600",
+   "ROADMAP.md:53",
+   "docs/upstream/README.md:18",
+   "docs/upstream/README.md:28",
+   "docs/compliance/audit-register.md:46"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": true,
+  "notes": "VERIFIED from the README table (22 rows): 3 filed (1 fixed upstream), 2 superseded, 13 \"Draft, not sent\", 3 \"Draft, held\" (a2a-required-empty-array, slimrpc-a2a-error-mapping, a2a-go-a2a-json-errors), plus 1 reproduction script. \"Nothing is filed upstream without asking.\" The a2a-go R19 draft is deliberately not committed. The agntcy error-details draft is \"ready for the maintainer to file\" (handoff:632)."
+ },
+ {
+  "id": "BL-059",
+  "title": "Delete two redundant remote branches (claude/inspiring-mccarthy-rgpntj-304-merge, -standards-ledger)",
+  "area": "governance",
+  "severity": "unstated",
+  "status": "maintainer-action",
+  "source_refs": [
+   "docs/handoff.md:487"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED: the session's delete was refused with HTTP 403."
+ },
+ {
+  "id": "BL-060",
+  "title": "Code-scanning alerts on main: OSV alerts 183-186 (golang.org/x/net in ITK Go peers) and the six alerts of 2026-10-25",
+  "area": "security-compliance",
+  "severity": "unstated",
+  "status": "not-verifiable",
+  "source_refs": [
+   "docs/handoff.md:539",
+   "docs/handoff.md:581"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED from screenshots; \"the alerts API is not readable from a session\". Likely closed by merged bumps; needs a maintainer read."
+ },
+ {
+  "id": "BL-061",
+  "title": "Private advisory to a2a-python is open: file nothing public about it",
+  "area": "upstream",
+  "severity": "unstated",
+  "status": "waiting-upstream",
+  "source_refs": [
+   "docs/handoff.md:604"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "A constraint, not work."
+ },
+ {
+  "id": "BL-062",
+  "title": "In flight outside this repository: adk-rust patch needs porting from 0.12 to 0.15+; rig #391 comment drafted, not posted; AutoAgents #52 unanswered; a2a-rig-held crate unpublished",
+  "area": "upstream",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/handoff.md:639",
+   "docs/handoff.md:966"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. The rig crate is held unpublished by decision."
+ },
+ {
+  "id": "BL-063",
+  "title": "RUSTSEC-2026-0592 (url <= 2.5.8): whether sqlx calls Url::origin() on untrusted input was not checked, so 0.16.0 users' exposure is not known",
+  "area": "security-compliance",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "docs/handoff.md:44",
+   "Cargo.lock:4867"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED the lockfile holds url 2.5.9. The exposure question for published 0.16.0 is recorded as not checked."
+ },
+ {
+  "id": "BL-064",
+  "title": "Handoff \"First, next\" 2: Phase 2 target sheet (scale, failure detection and recovery, latency, memory, cold start, telemetry cardinality) and a plan, for approval before building",
+  "area": "governance",
+  "severity": "unstated",
+  "status": "decision",
+  "source_refs": [
+   "docs/handoff.md:88"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "Decision sentence: \"both for the maintainer's approval before any building\". Blocks S5/BL-006 measurement work."
+ },
+ {
+  "id": "BL-065",
+  "title": "STABILITY section 7: 1.0 needs two consecutive minors with no break; 0.13-0.16 each broke, so the count is zero",
+  "area": "governance",
+  "severity": "unstated",
+  "status": "open",
+  "source_refs": [
+   "STABILITY.md:204",
+   "STABILITY.md:23"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED text. Other gates to 1.0: TCK no MUST failure outside baselined rows (met: baseline empty); nightly ITK green; semver-checks on all crates; MSRV stable six months (raised to 1.94 on 2026-10-23). Planned 0.17 removals (BL-010, BL-011) are breaks."
+ },
+ {
+  "id": "WT-D-9",
+  "title": "CLI: a URL without a scheme exits 1 though the table puts unparseable values under exit 2",
+  "area": "devex",
+  "severity": "low",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/2026-11-07-adopter-walkthrough/README.md:46"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED (state column \"open\"). Not in ROADMAP \"After 0.16.0\". Source id is \"D-9\", which collides with the 2026-11-01 triage's D-nn rows."
+ },
+ {
+  "id": "WT-D-10",
+  "title": "CLI: a 401 or 429 prints status and body only (no WWW-Authenticate, Retry-After or --header-env hint)",
+  "area": "devex",
+  "severity": "low",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/2026-11-07-adopter-walkthrough/README.md:47"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED (state column \"open\"). Not in ROADMAP \"After 0.16.0\". Source id is \"D-10\", which collides with the 2026-11-01 triage's D-nn rows."
+ },
+ {
+  "id": "WT-D-11",
+  "title": "CLI: a message is one argument (128 KiB at most); `a2a send URL -` sends the text \"-\"",
+  "area": "devex",
+  "severity": "low",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/2026-11-07-adopter-walkthrough/README.md:48",
+   "docs/audits/2026-11-07-adopter-walkthrough/README.md:74"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED (state column \"open\"). Not in ROADMAP \"After 0.16.0\". Source id is \"D-11\", which collides with the 2026-11-01 triage's D-nn rows. Decision recorded (README:74-75): \"(a) Leave and document; (b) add `a2a send URL -` (read stdin) and --stream-idle-timeout. Recommend (b), small, and not for 0.16.0.\""
+ },
+ {
+  "id": "WT-D-12",
+  "title": "CLI: no flag bounds a stream that has started (library's 300 s)",
+  "area": "devex",
+  "severity": "low",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/2026-11-07-adopter-walkthrough/README.md:49",
+   "docs/audits/2026-11-07-adopter-walkthrough/README.md:74"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED (state column \"open\"). Not in ROADMAP \"After 0.16.0\". Source id is \"D-12\", which collides with the 2026-11-01 triage's D-nn rows. Decision recorded (README:74-75): \"(a) Leave and document; (b) add `a2a send URL -` (read stdin) and --stream-idle-timeout. Recommend (b), small, and not for 0.16.0.\""
+ },
+ {
+  "id": "WT-D-6",
+  "title": "Server and SDK crate READMEs: hidden \"# \" lines show on crates.io; SDK Quick Start has no dependency line or fn main",
+  "area": "docs-book",
+  "severity": "polish",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/2026-11-07-adopter-walkthrough/README.md:52"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED (state column \"open\"). Not in ROADMAP \"After 0.16.0\". Source id is \"D-6\", which collides with the 2026-11-01 triage's D-nn rows."
+ },
+ {
+  "id": "WT-D-13",
+  "title": "CLI: after a stream idle timeout the \"card named another URL\" hint is wrong",
+  "area": "devex",
+  "severity": "polish",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/2026-11-07-adopter-walkthrough/README.md:53"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED (state column \"open\"). Not in ROADMAP \"After 0.16.0\". Source id is \"D-13\", which collides with the 2026-11-01 triage's D-nn rows."
+ },
+ {
+  "id": "WT-D-16",
+  "title": "Dead anchors and links in design records (plan.md 11, spec/slimrpc_v1 1, vendored spec 10)",
+  "area": "docs-book",
+  "severity": "polish",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/2026-11-07-adopter-walkthrough/README.md:54"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED (state column \"open\"). Not in ROADMAP \"After 0.16.0\". Source id is \"D-16\", which collides with the 2026-11-01 triage's D-nn rows."
+ },
+ {
+  "id": "WT-D-17",
+  "title": "REST dispatcher: OPTIONS with no CORS configured is 200 {\"status\":\"ok\"}; JSON-RPC answers 204",
+  "area": "devex",
+  "severity": "polish",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/2026-11-07-adopter-walkthrough/README.md:55"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED (state column \"open\"). Not in ROADMAP \"After 0.16.0\". Source id is \"D-17\", which collides with the 2026-11-01 triage's D-nn rows."
+ },
+ {
+  "id": "WT-D-18",
+  "title": "genai-agent logs three WARNs about its own card at startup",
+  "area": "devex",
+  "severity": "polish",
+  "status": "open",
+  "source_refs": [
+   "docs/audits/2026-11-07-adopter-walkthrough/README.md:56"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED (state column \"open\"). Not in ROADMAP \"After 0.16.0\". Source id is \"D-18\", which collides with the 2026-11-01 triage's D-nn rows."
+ },
+ {
+  "id": "AA22-N2",
+  "title": "An OAuth2 token endpoint's 429 or 5xx is classed permanent",
+  "area": "devex",
+  "severity": "Low",
+  "status": "open",
+  "source_refs": [
+   "docs/adopter-audit-2026-09-22.md:41",
+   "docs/adopter-audit-2026-09-22.md:866"
+  ],
+  "needs_decision": true,
+  "decision_owner": "maintainer",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED: \"Not fixed: UnexpectedStatus would make a token-endpoint 401 read as the agent's, so the variant needs a decision.\""
+ },
+ {
+  "id": "AA22-OW1",
+  "title": "a2a-go cannot read this SDK's securityRequirements (T1, write side)",
+  "area": "spec-conformance",
+  "severity": "Medium",
+  "status": "open",
+  "source_refs": [
+   "docs/adopter-audit-2026-09-22.md:653",
+   "docs/adopter-audit-2026-09-22.md:1105"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED (2026-09-22); Rust matches the spec shape. Not re-checked."
+ },
+ {
+  "id": "AA22-OW13",
+  "title": "a2a-go's client loses JSON-RPC streaming pre-stream errors (S2)",
+  "area": "upstream",
+  "severity": "Medium",
+  "status": "waiting-upstream",
+  "source_refs": [
+   "docs/adopter-audit-2026-09-22.md:955",
+   "docs/adopter-audit-2026-09-22.md:1055"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED: \"a2a-go's to fix\"."
+ },
+ {
+  "id": "AA22-OW11",
+  "title": "The coordinator end-to-end test against a2a-go that phase 1 promised and did not build",
+  "area": "testing-verification",
+  "severity": "Medium",
+  "status": "open",
+  "source_refs": [
+   "docs/adopter-audit-2026-09-22.md:918"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": false,
+  "notes": "AS-DOCUMENTED. scripts/go_sdk_interop.sh drives each direction on its own."
+ },
+ {
+  "id": "AA22-unmarked",
+  "title": "adopter-audit-2026-09-22: 41 table rows carry no [Fixed] marker (O3, O6-O9, O12, O14-O16, S2, S4, S5, S10, S11, S13-S16, C7, C12-C14, C17-C21, T1, T3-T12, K2-K4) plus O11 partly fixed and OW2, OW8, OW9",
+  "area": "docs-book",
+  "severity": "High",
+  "status": "stale-claim",
+  "source_refs": [
+   "docs/adopter-audit-2026-09-22.md:1029",
+   "docs/adopter-audit-2026-09-22.md:936",
+   "docs/adopter-audit-2026-09-22.md:679",
+   "docs/adopter-audit-2026-09-22.md:883",
+   "docs/adopter-audit-2026-09-22.md:899",
+   "docs/adopter-audit-2026-09-22.md:1225"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED by spot check that the register is stale, not that each row is fixed. Severities as the source states: 10 High, 17 Medium, 14 Low (counted from the tables). Spot checks at HEAD: OW2/Finding 8 fixed (tests/multi_replica.rs:579 the_single_writer_refusal_crosses_replicas); S10 fixed in its type half (request_context.rs:53 context_id: ContextId); T11 fixed (#[non_exhaustive] wire structs); C13 fixed (crates/a2a-protocol-client/src/proxy.rs and tls.rs read the proxy and SSL_CERT_FILE variables); S5 fixed (crates/a2a-protocol-client/src/delegation); O8 fixed (crates/a2a-protocol-client/src/call_span, call_metric). Not checked: the other rows. Every row needs a status against 0.16.0 before any is planned; C12 and C14 are the two Medium ones the document says to schedule first. Section 8 bar-raiser candidates E1-E7 are proposals, \"none started\"."
+ },
+ {
+  "id": "DOC-01",
+  "title": "ROADMAP \"Signed tags\" still says \"No key is committed yet, so the next release is blocked\"",
+  "area": "docs-book",
+  "severity": "unstated",
+  "status": "stale-claim",
+  "source_refs": [
+   "ROADMAP.md:1117",
+   ".github/release-signers/allowed_signers:4",
+   "SECURITY.md:140"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED stale: a key is committed and v0.15.0/v0.16.0 were released under the gate. docs/lf-readiness-review.md:147 repeats it."
+ },
+ {
+  "id": "DOC-02",
+  "title": "docs/lf-readiness-review.md section 4 item 1 says there is no dependency-update automation",
+  "area": "docs-book",
+  "severity": "unstated",
+  "status": "stale-claim",
+  "source_refs": [
+   "docs/lf-readiness-review.md:125",
+   ".github/dependabot.yml:1"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED stale: .github/dependabot.yml exists and Dependabot PRs #213, #216, #217 were taken. Item 7 (\"Seven examples still have no tests\", :186) is also out of date: 2 example directories have no test at HEAD (live-model, swarm)."
+ },
+ {
+  "id": "DOC-03",
+  "title": "docs/openssf-best-practices.md vulnerabilities_fixed_60_days row says \"with no active waiver\"",
+  "area": "docs-book",
+  "severity": "unstated",
+  "status": "stale-claim",
+  "source_refs": [
+   "docs/openssf-best-practices.md:106",
+   "deny.toml:78"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED stale since 2026-11-11: two waivers in deny.toml. RUSTSEC-2026-0459 has a CVE; the 60-day criterion needs a re-read against it (waived 2026-11-11)."
+ },
+ {
+  "id": "DOC-04",
+  "title": "docs/swarm-orchestration.md: \"A SQLite journal is not built\"; \"Next, in order\" 2 still says \"G3 - decide\" though G3 was decided 2026-10-02",
+  "area": "docs-book",
+  "severity": "unstated",
+  "status": "stale-claim",
+  "source_refs": [
+   "docs/swarm-orchestration.md:70",
+   "docs/swarm-orchestration.md:309",
+   "docs/swarm-orchestration.md:83",
+   "docs/adr/0030-delegation-resume-and-journal.md:12"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED stale: SqliteDelegationJournal exists."
+ },
+ {
+  "id": "DOC-05",
+  "title": "docs/swarm-scale-findings.md Finding 8 (\"the single-writer refusal does not cross replicas\") is superseded by turn claims",
+  "area": "docs-book",
+  "severity": "unstated",
+  "status": "stale-claim",
+  "source_refs": [
+   "docs/swarm-scale-findings.md:601",
+   "crates/a2a-protocol-server/tests/multi_replica.rs:579",
+   "docs/swarm-orchestration.md:285"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED stale: the pinned test is now the_single_writer_refusal_crosses_replicas."
+ },
+ {
+  "id": "DOC-06",
+  "title": "docs/handoff.md is behind HEAD: \"Now\" describes #220 and #222 as open branches; \"Next, in order\" 6 and line 796 say the benchmark harness pins =0.14.1",
+  "area": "docs-book",
+  "severity": "unstated",
+  "status": "stale-claim",
+  "source_refs": [
+   "docs/handoff.md:84",
+   "docs/handoff.md:449",
+   "docs/handoff.md:796",
+   ".github/workflows/official-tck.yml:58",
+   ".github/workflows/ci.yml:775",
+   "benches/sdk-comparison/harness/agent-a2a-rust/Cargo.toml:24",
+   "docs/handoff.md:459",
+   "docs/handoff.md:463",
+   "docs/handoff.md:572"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED: HEAD (2058058d) is the merge of #222; the TCK pin is 5e6f37c and test-postgres runs 16, 18, 19; the harness uses a path dependency. Also stale under \"Waiting on the maintainer\": the nifty-gauss branch (:459), PR #203 (:463), the turn-claims release number (:572), all settled by the 0.16.0 release."
+ },
+ {
+  "id": "DOC-07",
+  "title": "Wave-2 live campaign README still lists W2-LIVE-3, -4, -5 and -10 as \"not fixed\"",
+  "area": "docs-book",
+  "severity": "unstated",
+  "status": "stale-claim",
+  "source_refs": [
+   "docs/audits/2026-11-07-campaign-wave2/live/README.md:25",
+   "docs/audits/2026-11-07-campaign-wave2/live/README.md:32",
+   "docs/handoff.md:480",
+   "crates/a2a-protocol-server/src/tool_loop/openai_parse.rs:49"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED for W2-LIVE-10: Usage fields deserialize through `count`, which yields None for a float, negative or string. W2-LIVE-3/4/5: handoff:480 and :147 record the three bounds (17e124fb) and byte limits (ac63a18f); not opened in code."
+ },
+ {
+  "id": "DOC-08",
+  "title": "docs/audits/2026-11-01-triage/DECISIONS.md fork table (2026-11-02) says F7 HttpPool, ADR 0035, ADR 0036 \"not built\"",
+  "area": "docs-book",
+  "severity": "unstated",
+  "status": "stale-claim",
+  "source_refs": [
+   "docs/audits/2026-11-01-triage/DECISIONS.md:25",
+   "docs/audits/2026-11-01-triage/DECISIONS.md:36",
+   "docs/adr/0032-http-pool.md:7",
+   "docs/adr/0035-agent-skills.md:7"
+  ],
+  "needs_decision": false,
+  "decision_owner": "",
+  "evidence_checked": true,
+  "notes": "VERIFIED against the ADR status lines (built in 0.16.0). The table is dated; nothing marks it superseded."
+ }
+]
