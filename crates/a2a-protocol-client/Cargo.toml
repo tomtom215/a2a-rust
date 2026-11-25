@@ -39,7 +39,7 @@ default = ["tls-rustls", "tracing", "otel", "webhook"]
 ## or the config given to `ClientBuilder::with_tls_config`; and the proxy
 ## `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` and `NO_PROXY` name, as curl reads
 ## them (`hyper-util`'s matcher, already in the graph for OTLP export).
-tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots", "dep:pin-project-lite", "hyper-util/client-proxy", "rustls-pki-types/std", "tokio-tungstenite?/__rustls-tls"]
+tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots", "dep:pin-project-lite", "hyper-util/client-proxy", "rustls-pki-types/std", "tokio-tungstenite?/__rustls-tls", "dep:rustls-webpki"]
 ## Make `a2a_protocol_types::signing` available (JWS, RFC 8785 canonicalization),
 ## and let card discovery verify signatures.
 ##
@@ -58,18 +58,18 @@ tracing = ["dep:tracing"]
 ## called is its child; and `rpc.client.call.duration`, through the global
 ## meter provider. No exporter — the application, or the server crate's
 ## `Telemetry`, installs one.
-otel = ["tracing", "dep:opentelemetry", "dep:tracing-opentelemetry"]
+otel = ["tracing", "dep:opentelemetry", "dep:tracing-opentelemetry", "dep:bumpalo"]
 ## Enable WebSocket transport via `tokio-tungstenite`.
 websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
 ## Enable gRPC transport via `tonic`. Speaks the canonical `lf.a2a.v1.A2AService`
 ## (protobuf-native, wire-compatible with the official Go/Python/Java A2A SDKs).
-grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:tonic-types", "dep:tonic-prost-build", "dep:protoc-bin-vendored", "a2a-protocol-types/proto"]
+grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:tonic-types", "dep:tonic-prost-build", "dep:protoc-bin-vendored", "a2a-protocol-types/proto", "dep:anyhow", "dep:hashbrown", "dep:pulldown-cmark", "dep:rustix"]
 ## gRPC over TLS. `grpc` alone has no TLS connector — tonic's is a feature —
 ## so an `https://` endpoint, or a bare `host:port` the default policy
 ## dials securely, is refused with a message naming this feature. Verifies
 ## against the same bundled Mozilla roots (`webpki-roots`, via ring) the
 ## HTTP transports use, or a `ClientTlsConfig` you supply for a private CA.
-grpc-tls = ["grpc", "tonic?/tls-ring", "tonic?/tls-webpki-roots"]
+grpc-tls = ["grpc", "tonic?/tls-ring", "tonic?/tls-webpki-roots", "dep:rustls-webpki"]
 ## `webhook::WebhookReceiver`: the receiving side of push notifications
 ## (spec §4.3.3, §13.2) — token and `Authorization` checks, task-id check,
 ## duplicate suppression and an optional rate limit, framework-agnostic over
@@ -134,9 +134,26 @@ tonic-types    = { workspace = true, optional = true }
 prost          = { workspace = true, optional = true }
 tokio-stream   = { workspace = true, optional = true }
 
+# Floors, not dependencies: nothing here is used by this crate's code. Each names
+# a crate that a dependency of ours brings in, at the first version outside a RustSec
+# advisory, so a consumer's cargo cannot keep an affected one (`scripts/check_advisory_floors.py`
+# names the advisory and the path). Each is switched on only by the features that
+# bring the crate in, and adds no crate to any build.
+h2 = { version = ">=0.4.16, <0.5", default-features = false }  # RUSTSEC-2026-0258
+anyhow = { version = ">=1.0.103, <2", default-features = false, optional = true }  # RUSTSEC-2026-0190
+rustls-webpki = { version = ">=0.103.16, <0.104", default-features = false, optional = true }  # RUSTSEC-2026-0382
+
 [build-dependencies]
 tonic-prost-build   = { workspace = true, optional = true }
 protoc-bin-vendored = { workspace = true, optional = true }
+# Floors (see the block above `[build-dependencies]`): build scripts only.
+hashbrown = { version = ">=0.15.1, <0.16", default-features = false, optional = true }  # RUSTSEC-2024-0402
+pulldown-cmark = { version = ">=0.13.6, <0.14", default-features = false, optional = true }  # RUSTSEC-2026-0414, RUSTSEC-2026-0433
+rustix = { version = ">=1.1.6, <2", default-features = false, optional = true }  # RUSTSEC-2026-0486
+
+# Floors for a wasm32 target only, where `wasm-bindgen` brings the crate in.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+bumpalo = { version = ">=3.11.1, <4", default-features = false, optional = true }  # RUSTSEC-2022-0078
 
 [package.metadata.docs.rs]
 all-features = true
