@@ -7,8 +7,12 @@ Read [`../README.md`](../README.md) §6 first, then E02: the feature matrix (§1
 SDK lacks (§2), what this SDK has that needs glue elsewhere (§3), and the assessment of the thesis (§6).
 
 Why this workstream exists: the swarm controls are unique among A2A SDKs and are private extension URIs, so
-they stop at the language boundary (README §2 finding 3). Every package here is about reach, and most need
-an act only the maintainer can perform: publishing, filing, posting. A session prepares; the maintainer
+they stop at the language boundary (README §2 finding 3). Every package here is about reach. The controls
+use A2A's own extension mechanism and their contracts are written down, so the work is to make existing
+contracts travel, not to redesign them. It has four layers, ordered by who must cooperate: the caller alone
+(SWM-13, SWM-14, in the swarm file), a gated contract (ECO-06), one small middleware per SDK (ECO-04), and an
+upstream namespace (ECO-02). Several packages here need an act only the maintainer can perform: publishing,
+filing, posting. A session prepares; the maintainer
 sends. **Nothing is filed, posted or published upstream by a session** (`docs/upstream/README.md`:
 "Nothing is filed upstream without asking").
 
@@ -108,3 +112,25 @@ sends. **Nothing is filed, posted or published upstream by a session** (`docs/up
 - **Accept.** A test against a served catalog document taken from upstream's own example (vendored with its
   commit); the SSRF guard that protects a card fetch protects the catalog fetch (name the test).
 - **Out of scope.** Serving a catalog; a directory service; AGNTCY's directory.
+
+## ECO-06: The extension contracts are gated
+
+- **Goal.** The reference page, the schemas, the vectors and the code for every wire extension cannot drift
+  apart, so an implementation in another language can be built from the contract alone.
+- **Evidence.** ADR 0049 ("What is not built": `scripts/check_extension_vectors.py` as a CI gate, because
+  it needs `jsonschema`, which CI's script gates do not install); E03 §7 D7 (steering has no schema or
+  vectors; SWM-01 adds them); `crates/a2a-protocol-types/extensions/` holds a folder per extension.
+- **Gates.** none. **Depends.** SWM-01. **Release.** internal.
+- **Read first.** `scripts/check_extension_vectors.py`, ADR 0049 (the amendment on schemas and vectors for
+  every extension), `.github/requirements/` (how a pinned, hash-checked Python dependency is installed for
+  a gate), ADR 0002.
+- **Do.** Run the script in `ci.yml` `static-checks`, with `jsonschema` installed the way `pyyaml` and
+  `cryptography` already are; or, if that dependency is unwanted, validate in a Rust test inside the types
+  crate against the same files and say which was chosen and why. Add a check that every extension URI the
+  crates define has a folder with a schema and at least one valid and one invalid vector.
+- **Touch.** `.github/workflows/ci.yml`, `.github/requirements/`, `scripts/check_extension_vectors.py`,
+  `scripts/prove_gates_fail.sh`, ADR 0049 (a dated amendment).
+- **Accept.** `scripts/prove_gates_fail.sh` proves the gate: a vector edited to contradict its schema turns
+  it red, and so does an extension URI with no folder. `./scripts/check_gate_inventory.sh` exits 0.
+- **Out of scope.** Changing any extension's wire shape.
+

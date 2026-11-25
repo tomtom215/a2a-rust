@@ -353,3 +353,105 @@ unfixed handle multiplies each defect by its width.
 - **Accept.** A two-hop test: the child's server reads an `act` chain naming the parent, and the token's
   audience is the child. With no provider the request is byte-identical to today's (a golden test).
 - **Out of scope.** A token cache policy beyond what the provider already has.
+
+## SWM-13: A caller can ask which controls a peer declares
+
+- **Goal.** From a peer's agent card, a public call says which of this SDK's controls the peer declares, so
+  a caller knows on which edge of a tree each guarantee holds.
+- **Evidence.** The client reads one extension from a peer's card: `ClientBuilder::from_card` sets
+  `peer_honours_idempotency` (`C/builder/mod.rs`), exposed as `A2aClient::honours_idempotency`
+  (`C/client.rs`). `C/declared.rs` models three capabilities (streaming, push, extended card) and no
+  extension. For lease, budget, lineage, failure class, approval and steering there is no way to ask, so a
+  lease granted to a peer that ignores it is silently not a lease. ADR 0049 states that a peer in another
+  SDK receives these extensions and ignores them, and lists what each loses; E02 §6 ("built in is true only
+  between a2a-rust nodes").
+- **Gates.** none. **Depends.** none. **Release.** `[0.17]`, additive.
+- **Read first.** ADR 0049 and `book/src/reference/swarm-extensions.md` (per control: the URI, and what is
+  lost when a hop ignores it); `C/declared.rs`; `C/builder/mod.rs` (how the idempotency declaration is
+  read, v1 and v2); the constants for each extension URI under `T/`.
+- **Do.**
+  1. One `#[non_exhaustive]` enum of the controls and one report type, built from the card's declared
+     extensions in the same place idempotency is read today; `honours_idempotency` becomes a view of it,
+     unchanged in behaviour.
+  2. A client built without a card (`ClientBuilder::new`) reports "unknown", which is distinct from
+     "not declared". Do not guess.
+  3. A declaration is a claim, not a proof: say so in the doc comment, as ADR 0034 does for lineage.
+- **Touch.** `C/declared.rs`, `C/builder/mod.rs`, `C/client.rs`, tests, the SDK `swarm` module,
+  `book/src/reference/swarm-extensions.md`, `CHANGELOG.md`.
+- **Accept.** A table-driven test: for each control, a card that declares it, one that does not, and no
+  card, give declared, not declared and unknown. The existing idempotency tests in `C/builder/` pass
+  unmodified. `cargo semver-checks` reports no break.
+- **Out of scope.** Probing a peer to verify a declaration. Changing what any call sends.
+
+## SWM-14: Nothing degrades silently across a hop that ignores a control
+
+- **Goal.** When a peer does not declare a control, the caller enforces what can be enforced from outside,
+  refuses when asked to require it, and reports per delegation which of the three applied.
+- **Evidence.** SWM-13's evidence; ADR 0049 decision 4 (what a hop in another language must do, and that
+  without it a halt reaches the leaves only as cancels, one hop at a time); E03 §3 G12, G14, G17 and G34;
+  `S/handler/lease.rs` (a lease the server cannot hold is ignored, which is the same silence on the other
+  side).
+- **Gates.** none. **Depends.** SWM-13, COR-04, COR-05. **Release.** `[0.17]`, additive.
+- **Read first.** ADR 0020, ADR 0023, ADR 0026, ADR 0034, ADR 0049; `C/delegation/options.rs`,
+  `C/delegation/mod.rs`, `C/delegation/outcome.rs`.
+- **Do.**
+  1. **An ADR first.** For each control, state what the caller does when the peer does not declare it. The
+     starting position, to be confirmed or corrected against the code:
+
+     | Control | Caller-side enforcement when the peer does not declare it | Lost regardless |
+     |---|---|---|
+     | Deadline (the time part of a budget) | The caller cancels the child when the time is up | Nothing while the caller is alive |
+     | Meters (tokens, tool calls, cost) | None; spend is reported as unknown, never as zero | Enforcement and accounting |
+     | Lease | None while the parent is down; the journal lets a restarted parent cancel or reattach | The child runs until the parent returns or its own timeout |
+     | Lineage | The caller's journal records the child | What the peer delegates onward |
+     | Halt | The caller cancels the child, one hop | What the peer delegated onward |
+     | Idempotency | The start is not re-sent (the rule today) | Recovery of an ambiguous start |
+     | Failure class | A failure is final unless the caller's policy says otherwise | Precision |
+
+  2. A `DelegationOptions` setting that names controls the peer must declare; a delegation to a peer that
+     does not is refused before anything is sent, with an error that names the control. Off by default.
+  3. The caller-side deadline: when a budgeted delegation goes to a peer that does not declare the budget
+     extension, the handle cancels the child at the deadline. State the cancellation safety.
+  4. The settled result says, per control, whether it was enforced by the peer, enforced by the caller, or
+     not enforced. Unknown (no card) is reported as not enforced by the peer.
+- **Touch.** `docs/adr/` (new, and the indexes), `C/delegation/options.rs`, `C/delegation/mod.rs`,
+  `C/delegation/outcome.rs`, tests, `book/src/reference/swarm-extensions.md`,
+  `book/src/client/delegation.md`, `CHANGELOG.md`.
+- **Accept.** Against a `ScriptedPeer` whose card declares nothing: a budgeted delegation is cancelled by
+  the caller at its deadline (paused clock); with the control required, nothing is sent and the error names
+  it; the result reports "enforced by the caller" for the deadline and "not enforced" for meters. Against a
+  peer that declares everything, the requests are byte-identical to today's (a golden test) and the result
+  reports "enforced by the peer". The incremental mutation gate has no survivor in the new branch logic.
+- **Out of scope.** Middleware for other SDKs (ECO-04). Enforcing a meter the caller cannot observe.
+
+## SWM-15: The tasks of one job can be listed
+
+- **Goal.** Given a lineage root, a caller or an operator gets that job's tasks from one agent without
+  listing every task and filtering.
+- **Evidence.** ADR 0034 leaves open "whether a stored root index belongs in the `TaskStore` contract" and
+  lists as not built "a stored root index, a `rootId` filter on `ListTasks`"; its tree view is a pure
+  function over tasks the caller must gather from every agent (E03 §3 G22). E03 §3 G14: no query answers
+  "which running tasks have no live parent". SWM-06 needs a count by parent for the same reason.
+- **Gates.** none. **Depends.** none; do it with SWM-06 if both are taken, since they share the index.
+  **Release.** `[0.17]`, additive.
+- **Read first.** ADR 0034 whole (decision 4: lineage is a caller's claim and never an authorization; the
+  amendments on tenants); `T/lineage.rs` and `T/lineage/`; `S/store/task_store/mod.rs`;
+  `S/handler/lifecycle/list_tasks.rs`; E07 §B10 (the touch points of a store-backed addition; the next
+  migration version on both databases; the "overrides every method" tests).
+- **Do.**
+  1. Amend ADR 0034 with the answer to its open question. Constraints the amendment must hold: the query is
+     scoped to the caller's tenant and to what the caller may already read, because lineage is not an
+     authorization; `ListTasks` gains no non-standard request field (A2A defines its parameters), so the
+     query is a handler method and an opt-in route beside `/health`, or a metadata filter the specification
+     already allows, whichever the amendment argues.
+  2. A defaulted `TaskStore` method; `CONTRIBUTING.md` *Extending a public trait* applies whole. An index on
+     the stored root in both SQL stores, through the versioned migration.
+  3. State the write cost: statements per send before and after.
+- **Touch.** ADR 0034, `S/store/task_store/mod.rs` and every store and wrapper, the migrations,
+  `S/handler/lifecycle/`, tests, `book/src/reference/swarm-extensions.md`, `CHANGELOG.md`.
+- **Accept.** On memory, SQLite and PostgreSQL: a job of three levels is returned whole by its root and no
+  task of another root or another tenant is; a caller who may not read a task does not see it.
+  `crates/a2a-protocol-server/tests/statement_count.rs` constants are unchanged, or the change is stated.
+  The upgrade test passes from a 0.16.0 schema. `python3 -I scripts/check_store_delta_forwarding.py` exits 0.
+- **Out of scope.** A query across agents (each agent answers for its own store). Storing a tree.
+

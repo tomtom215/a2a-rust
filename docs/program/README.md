@@ -73,7 +73,10 @@ Ten findings decide the shape of the plan. Each names its evidence.
    (R5). They come before any new surface.
 3. **The differentiator stops at the language boundary.** Every swarm control is a private
    `a2a-rust.com/extensions/…` URI. A peer in another language receives them and ignores them (ADR 0049);
-   the middleware for other SDKs is unbuilt (E02 §6). A2A 1.1 adds no lineage, cascade, budget or lease
+   the middleware for other SDKs is unbuilt (E02 §6). And the caller cannot tell: the client reads only
+   idempotency support from a peer's card, so a lease or a budget sent to a peer that ignores it degrades
+   silently. This is a limit of reach, not of design: the controls use A2A's own extension mechanism and
+   their contracts are written. A2A 1.1 adds no lineage, cascade, budget or lease
    (E01 §3.2), so the gap stays open upstream: that is the opening for the drafts already in
    `docs/upstream/`.
 4. **A2A 1.1 is larger than the handoff records, and still moving.** Beyond `SendLiveMessage`, the timeline
@@ -132,7 +135,9 @@ carried across languages.
    is gated on a count.
 5. **One source of truth, generated views.** Status in one register; citations by symbol; lists derived.
 6. **Nothing built against an unreleased specification in a default build.**
-7. **The evidence bar does not drop.** Zero surviving mutants in changed lines, a failing test before a fix,
+7. **Nothing degrades silently.** A control that a peer does not honour is enforced by the caller where
+   that is possible, refused where the caller required it, and reported either way.
+8. **The evidence bar does not drop.** Zero surviving mutants in changed lines, a failing test before a fix,
    the provers. Simplifications remove copies and couplings, never a check.
 
 ## 4. Decisions the maintainer owes
@@ -189,6 +194,11 @@ reading of it. Within a wave, packages are independent and can be separate sessi
   DEC-03 is answered, SPC-01, SPC-04, SPC-12, OBS-01, DVX-01, DVX-02, DVX-04, SWM-01.
 - **Wave 1, the delegation defects.** COR-03 to COR-09. COR-03, COR-04 and COR-05 gate SWM-02; COR-06 and
   COR-07 gate SWM-05.
+- **Wave 1b, reach, directly after the defects.** SWM-13 and SWM-14 (a caller knows which controls a peer
+  declares, and nothing degrades silently), ECO-06 (the extension contracts gated), ECO-04 (the Go
+  middleware), and ECO-02 once DEC-06 is answered. These make the controls hold, or say that they do not,
+  on every edge of a mixed-language tree; they come before composition because a group over an edge that
+  degrades silently hides the loss N times.
 - **Wave 2, composition.** SWM-02, then SWM-04 and SWM-05, with SWM-03 beside them; SWM-09 (the book part
   and the rewritten example) closes the wave. PRF-02 to PRF-06 and OBS-02 to OBS-06 run beside it; they
   touch different modules.
@@ -196,7 +206,8 @@ reading of it. Within a wave, packages are independent and can be separate sessi
   (the refreshed comparison).
 - **Wave 4, 1.1.** With DEC-02: SPC-02 and SPC-03 (the reference text and the delta ledger), SPC-05 to
   SPC-09 behind a feature, then SPC-10 when upstream tags a release.
-- **Any time, each its own decision.** ECO-01, ECO-02, FND-06, FND-09, FND-10.
+- **Any time, each its own decision.** ECO-01, FND-06, FND-09, FND-10. SWM-15 (the tasks of a job) fits
+  beside SWM-06.
 
 A release note for the planner: COR and FND packages are `[0.16.x]` material by `STABILITY.md` §3 unless
 their section says "breaking". Each package states its own release line; DVX-07 is the one that is breaking by design.

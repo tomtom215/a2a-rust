@@ -382,6 +382,20 @@
       "landed": null
     },
     {
+      "id": "ECO-06",
+      "workstream": "ecosystem",
+      "title": "The extension contracts are gated",
+      "file": "plan/eco-ecosystem.md",
+      "deps": [
+        "SWM-01"
+      ],
+      "gates": [],
+      "release": "none",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
       "id": "FND-01",
       "workstream": "foundation",
       "title": "A `CLAUDE.md` that states the session rules",
@@ -1248,6 +1262,48 @@
       "deps": [
         "COR-11",
         "SWM-02"
+      ],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SWM-13",
+      "workstream": "swarm",
+      "title": "A caller can ask which controls a peer declares",
+      "file": "plan/swm-swarm.md",
+      "deps": [],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SWM-14",
+      "workstream": "swarm",
+      "title": "Nothing degrades silently across a hop that ignores a control",
+      "file": "plan/swm-swarm.md",
+      "deps": [
+        "COR-04",
+        "COR-05",
+        "SWM-13"
+      ],
+      "gates": [],
+      "release": "0.17",
+      "breaking": false,
+      "status": "todo",
+      "landed": null
+    },
+    {
+      "id": "SWM-15",
+      "workstream": "swarm",
+      "title": "The tasks of one job can be listed",
+      "file": "plan/swm-swarm.md",
+      "deps": [
+        "SWM-06"
       ],
       "gates": [],
       "release": "0.17",
