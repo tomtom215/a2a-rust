@@ -173,7 +173,7 @@
  {
   "id": "X-15",
   "source": "docs/audits/2026-11-11-external-review/findings.json",
-  "status": "CONFIRMED, one row measured (F1); the rest open",
+  "status": "CONFIRMED, partly measured: R1 to R4 and C1 to C5 (2026-11-12) and the first half of F1 (2026-11-11); the rest open (corrected 2026-11-25: said \"one row measured (F1)\")",
   "finding": "the production-readiness measurement matrix is incomplete",
   "blocker": "no",
   "basis": "read",
@@ -857,11 +857,11 @@
  {
   "id": "NEW-g-docs-2",
   "source": "docs/audits/2026-11-01-triage/g-docs.json",
-  "status": "open (the triage verdict; not in section O)",
+  "status": "fixed (78fcd2cf; recorded 2026-11-25)",
   "finding": "`a2a card <URL>` passes no GlobalOpts: it fetches with `resolve_agent_card(url)` / `fetch_card_from_url(url)`, so `--header`, `--timeout` and `--tenant` are silently ignored, while README:61 says '--header ... Extra header on every request' and the flags are 'Accepted before or after the subcommand'",
   "blocker": "no",
   "basis": "read",
-  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low. The notes: not named in the 0.16.0 section."
+  "evidence": "Class: documentation or release process (not a defect in shipped behaviour). Recorded severity: low. The notes: not named in the 0.16.0 section. Fixed (recorded 2026-11-25): `card` in tools/a2a-cli/src/commands.rs fetches with `crate::connect::fetch_options(opts, true)`, which carries `--header` and `--timeout` (and the TLS flags); test `the_card_command_carries_the_header_and_honours_the_timeout` in tools/a2a-cli/tests/e2e/header_sources.rs. `--tenant` overrides the tenant of a call to the card's chosen interface, and fetching a card makes no such call. Dropped from ROADMAP.md, After 0.16.0, Developer experience and defaults, item 1."
  },
  {
   "id": "NEW-g-docs-3",
@@ -875,7 +875,7 @@
  {
   "id": "NEW-g-docs-4",
   "source": "docs/audits/2026-11-01-triage/g-docs.json",
-  "status": "open (the triage verdict; not in section O)",
+  "status": "fixed (41756f1a, df6852d7; recorded 2026-11-25)",
   "finding": "STABILITY.md §1 says 'The crates are at `0.15.0` (2026-10-25), the newest release' although 0.15.1 shipped 2026-10-26 and every crate's Cargo.toml is now 0.16.0. It, the rustdoc and the 0.15.0 CHANGELOG say deprecated `sign_agent_card` 'is removed in 0.16.0', yet signing.rs:424 still defines it in t",
   "blocker": "no",
   "basis": "read",
@@ -956,15 +956,15 @@
  {
   "id": "NEW-h-s0-7",
   "source": "docs/audits/2026-11-01-triage/h-s0.json",
-  "status": "open (the triage verdict; not in section O)",
+  "status": "fixed (6d746ddf; recorded 2026-11-25)",
   "finding": "gRPC alone ignores SSL_CERT_FILE/SSL_CERT_DIR. The default ClientTlsConfig::new().with_enabled_roots() with tonic features tls-ring and tls-webpki-roots loads Mozilla roots only, while JSON-RPC, HTTP+JSON, WebSocket, card, JWKS and the token provider all add the env roots (tls.rs:207-216). The featu",
   "blocker": "no",
   "basis": "read",
-  "evidence": "The gRPC client does not read SSL_CERT_FILE: a connection to a private CA fails closed (no connection), it does not trust the wrong peer. Planned: ROADMAP.md, After 0.16.0, Security, item 6. The notes: not named in the 0.16.0 section."
+  "evidence": "The gRPC client does not read SSL_CERT_FILE: a connection to a private CA fails closed (no connection), it does not trust the wrong peer. Planned: ROADMAP.md, After 0.16.0, Security, item 6. The notes: not named in the 0.16.0 section. Fixed (recorded 2026-11-25): `default_client_tls` in crates/a2a-protocol-client/src/transport/grpc.rs adds the roots `SSL_CERT_FILE` and `SSL_CERT_DIR` name to tonic's (with the `tls-rustls` feature); test `the_default_trusts_ssl_cert_file_and_a_callers_config_stays_exact` in crates/a2a-protocol-client/tests/grpc_env_roots_tests.rs. Dropped from ROADMAP.md, After 0.16.0, Security, item 6."
  },
  {
   "id": "KL-01",
-  "source": "CHANGELOG.md:3201",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**Steering** (ADR 0036): a replica that has just died keeps its claim until the claim's time to live, and a steering message handed off in that window is acce",
   "blocker": "no",
@@ -973,7 +973,7 @@
  },
  {
   "id": "KL-02",
-  "source": "CHANGELOG.md:3203",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**A status written with no event** (audit E-F25): a `CancelTask` of a parked task on one replica writes a status with no event in the log, so a subscriber on ",
   "blocker": "no",
@@ -982,7 +982,7 @@
  },
  {
   "id": "KL-03",
-  "source": "CHANGELOG.md:3205",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**Throughput against a2a-rs and against 0.14.1** (measured 2026-11-11, `docs/sdk-comparison-2026-11-11.md`; echo executor, blocking `SendMessage` over",
   "blocker": "no",
@@ -991,7 +991,7 @@
  },
  {
   "id": "KL-04",
-  "source": "CHANGELOG.md:3213",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**A finished task whose owner died is completed after about three claim lifetimes** (hostile campaign W2-hostile-3, 2026-11-08; the reaper's",
   "blocker": "no",
@@ -1000,7 +1000,7 @@
  },
  {
   "id": "KL-05",
-  "source": "CHANGELOG.md:3219",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**Authentication runs after method dispatch, body parsing and version negotiation** (hostile campaign W2-hostile-5, 2026-11-08): with a bearer",
   "blocker": "no",
@@ -1009,7 +1009,7 @@
  },
  {
   "id": "KL-06",
-  "source": "CHANGELOG.md:3226",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**Tool-loop and model-provider edges found by running real models** (live-model campaign, wave 2, 2026-11-08; each reproduced by the agent, not all",
   "blocker": "no",
@@ -1018,7 +1018,7 @@
  },
  {
   "id": "KL-07",
-  "source": "CHANGELOG.md:3234",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**Parked-task expiry** (audit D-18): a parked task deleted by `parked_max_age` answers `TaskNotFound` afterwards, and a stream open on it ends without a termi",
   "blocker": "no",
@@ -1027,7 +1027,7 @@
  },
  {
   "id": "KL-08",
-  "source": "CHANGELOG.md:3236",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**Agent Skills** (ADR 0035): the catalog is a snapshot taken at start-up (no hot reload; build a new executor to pick up a change); scripts are never run; on ",
   "blocker": "no",
@@ -1036,7 +1036,7 @@
  },
  {
   "id": "KL-09",
-  "source": "CHANGELOG.md:3238",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**Exemplars** (audit C-05): the stack stores and links them, but the SDK records none until the pinned `opentelemetry_sdk` does; ROADMAP has a *Waiting on ups",
   "blocker": "no",
@@ -1045,7 +1045,7 @@
  },
  {
   "id": "KL-10",
-  "source": "CHANGELOG.md:3240",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**Hand-off on shutdown** (audit D-21): covers a graceful shutdown with turn claims; it does not cover a crashed replica, a handler without claims, or reattach",
   "blocker": "no",
@@ -1054,7 +1054,7 @@
  },
  {
   "id": "KL-11",
-  "source": "CHANGELOG.md:3242",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**Control-plane cost** (audit H5): renewals stay one per child per ttl/3; lease groups (a wire change; ADR 0044 lists them as an option not taken) are not bui",
   "blocker": "no",
@@ -1063,7 +1063,7 @@
  },
  {
   "id": "KL-12",
-  "source": "CHANGELOG.md:3244",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**Memory and payload scaling** (audit H13): blob offload, holds on the SQL stores (a stream owing events below a compaction cut ends with `streamLagged` and r",
   "blocker": "no",
@@ -1072,7 +1072,7 @@
  },
  {
   "id": "KL-13",
-  "source": "CHANGELOG.md:3246",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**Load and admission** (audit H7, H9, H17): ORCA over gRPC trailers, a queue-cap gauge, priority from the request, preemption, fleet-wide admission, a tool-lo",
   "blocker": "no",
@@ -1081,7 +1081,7 @@
  },
  {
   "id": "KL-14",
-  "source": "CHANGELOG.md:3248",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**Push** (audit H14, SEC-14): the outbox reserves an event's rows before it is stored (see Fixed), which needs a task store with an event log and an outbox th",
   "blocker": "no",
@@ -1090,7 +1090,7 @@
  },
  {
   "id": "KL-15",
-  "source": "CHANGELOG.md:3250",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**Dependencies** (cargo-deny, run 43042602728 of 2026-11-11): RUSTSEC-2026-0459 (CVE-2026-119375: the C SQLite bundled by `libsqlite3-sys` 0.6.0 to 0.38.2, be",
   "blocker": "no",
@@ -1099,7 +1099,7 @@
  },
  {
   "id": "KL-16",
-  "source": "CHANGELOG.md:3252",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**Network** (audit B-25, B-28, B-29): the WebSocket upgrade's same-origin check does not defend against DNS rebinding (on HTTP, a listener bound to a loopback",
   "blocker": "no",
@@ -1108,7 +1108,7 @@
  },
  {
   "id": "KL-17",
-  "source": "CHANGELOG.md:3254",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**Swarm contract** (audit H19): schemas and vectors exist for every extension, but middleware and bindings for other SDKs are not built, and the two upstream ",
   "blocker": "no",
@@ -1117,7 +1117,7 @@
  },
  {
   "id": "KL-18",
-  "source": "CHANGELOG.md:3256",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**Deployment** (audit A15, A26, NEW-a-l-4a): readiness still checks the task pool only (documented); A26's effect on memory is not measured. There is no worka",
   "blocker": "no",
@@ -1126,7 +1126,7 @@
  },
  {
   "id": "KL-19",
-  "source": "CHANGELOG.md:3258",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**`ServeConfig` on gRPC and WebSocket** (audit G-09): `idle_timeout`, `header_read_timeout` and `allowed_hosts` are not applied to a gRPC listener (a quiet se",
   "blocker": "no",
@@ -1135,7 +1135,7 @@
  },
  {
   "id": "KL-20",
-  "source": "CHANGELOG.md:3259",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**A store outage longer than `store_write_retry`** (external review X-10): a turn's event writes are retried while the store answers that it is unavailable, f",
   "blocker": "no",
@@ -1144,7 +1144,7 @@
  },
  {
   "id": "KL-21",
-  "source": "CHANGELOG.md:3260",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**Event positions after a takeover** (audit E-F8, F13): events are broadcast before they are logged, and a replica that takes a turn over numbers from the end",
   "blocker": "no",
@@ -1153,7 +1153,7 @@
  },
  {
   "id": "KL-22",
-  "source": "CHANGELOG.md:3261",
+  "source": "CHANGELOG.md, [0.16.0], Known Limitations",
   "status": "DISCLOSED",
   "finding": "**Regulated use** (review rows X-19, A3 and E1, in the `findings.json` of `docs/audits/2026-11-11-external-review/`, `2026-11-12-adversarial-review/` and `202",
   "blocker": "no",

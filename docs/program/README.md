@@ -95,8 +95,9 @@ Ten findings decide the shape of the plan. Each names its evidence.
 6. **The throughput gap, as last measured, has two named, countable causes.** The figures are of
    2026-11-11, on a tree from before 0.16.0, and nothing has been re-measured since (PRF-07 does that). At
    one connection a2a-rs serves 7,757 blocking
-   sends per second at 107 µs of server CPU each; this tree serves 4,228 at 228 µs, and 0.14.1 served 6,090
-   at 157 µs (`docs/sdk-comparison-2026-11-11.md`). Of 257 wake-up writes sampled, 76 come from hyper's
+   sends per second at 107 µs of server CPU each and this tree 4,228 at 228 µs (table 1 of
+   `docs/sdk-comparison-2026-11-11.md`); 0.14.1 served 6,090 in table 2, which did not report CPU, and 5,379 at
+   157 µs in table 4, a later run. Of 257 wake-up writes sampled, 76 come from hyper's
    per-request header timer and 50 from a `timeout_at` around a watch receiver (E05 §2.3). The regression
    gate cannot see either: it compares two in-process benchmarks at a 50% threshold (E05 §2.7).
 7. **A fleet operator is missing the signals that say a fleet is unwell.** No admission queue or wait

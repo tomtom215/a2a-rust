@@ -115,7 +115,7 @@
     "id": "X-15",
     "section": "7",
     "claim": "the production-readiness measurement matrix is incomplete",
-    "status": "CONFIRMED, one row measured (F1); the rest open",
+    "status": "CONFIRMED, partly measured: R1 to R4 and C1 to C5 (2026-11-12) and the first half of F1 (2026-11-11); the rest open (corrected 2026-11-25: said \"one row measured (F1)\")",
     "evidence": "docs/readiness-bar.md: 'No row above (R1 to R7, C1 to C5, F1 to F5) has been measured'.",
     "action": "F1 measured (hung webhook: stream ends in 0.23 s; inline push fails the test). R1-R7, C1-C5, F2-F5 not measured (docs/readiness-bar.md, 2026-11-11)"
   },

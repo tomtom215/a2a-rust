@@ -48,6 +48,11 @@ an orphaned child, 2026-10-18), R3 (a delegation journal and reattach, G2) and R
 
 ### G1 — Cancellation does not cascade (R1)
 
+*Measured 2026-10-02 and kept as measured. Since then a parent that delegates through
+`a2a_protocol_client::delegation` cascades its cancels (G1-A, 2026-10-08) and a leased child stops when its
+parent stops renewing (G1-B, 2026-10-18); see* Next, in order. *A parent that calls `send_message` itself
+still orphans its children. Note added 2026-11-25.*
+
 Measured: 100% of children orphaned when their root is cancelled, unless
 every orchestrator writes the cascade itself. This is the gap that most
 directly answers "can it be controlled".

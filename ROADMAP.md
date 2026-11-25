@@ -122,8 +122,11 @@ The qualification matrix's "Not covered" list is item 4.
 5. `[0.17]` Network: a `Host` check for listeners that are not on loopback and
    an `Origin` check on HTTP, a DNS cache, a `fips` feature, CRL and OCSP
    (B-25, B-28, B-29, ADR 0041).
-6. `[0.17]` One set of trust roots on every client path; the gRPC client
-   ignores `SSL_CERT_FILE` (NEW-h-s0-7, B-20, B-03, H2).
+6. `[0.17]` One set of trust roots on every client path (B-20, B-03, H2).
+   (Corrected 2026-11-25: this said the gRPC client ignores `SSL_CERT_FILE`,
+   NEW-h-s0-7. It reads it and `SSL_CERT_DIR` since `6d746ddf`:
+   `default_client_tls` in `crates/a2a-protocol-client/src/transport/grpc.rs`,
+   tested by `crates/a2a-protocol-client/tests/grpc_env_roots_tests.rs`.)
 7. `[0.17]` Skill content pinning (S2), and skill names that differ only by
    look-alike characters (W2-LIVE-11).
 8. `[0.16.x]` The CLI says whether it sends telemetry and that it redacts
@@ -170,8 +173,11 @@ The qualification matrix's "Not covered" list is item 4.
 ### Developer experience and defaults
 
 1. `[0.16.x]` The documentation and CLI rows the 2026-11-01 triage left part
-   fixed or open: G/D-03 to G/D-11, NEW-g-docs-1, NEW-g-docs-2 (`a2a card`
-   ignores `--header`, `--timeout` and `--tenant`), NEW-g-docs-5, B-15, B-19.
+   fixed or open: G/D-03 to G/D-11, NEW-g-docs-1, NEW-g-docs-5, B-15, B-19.
+   (NEW-g-docs-2 was dropped from this list on 2026-11-25: `a2a card` sends
+   `--header` and is bounded by `--timeout` since `78fcd2cf`,
+   `tools/a2a-cli/src/commands.rs` `card`, tested by
+   `the_card_command_carries_the_header_and_honours_the_timeout`.)
 2. `[0.16.x]` deploy-agent: readiness that checks every pool (A15), the effect
    of A26 on memory, and A13, A27, NEW-a-l-1, NEW-a-l-3, NEW-a-l-4b.
 3. `[0.17]` `ServeConfig` applied to a gRPC and a WebSocket listener (G-09).
@@ -180,7 +186,10 @@ The qualification matrix's "Not covered" list is item 4.
 5. `[0.17]` Defaults and ergonomics the triage left part fixed: G-06, G-07,
    NEW-g-api-2.
 6. `[decision]` MSRV 1.94 against 1.85 (X-13); publishing the SLIMRPC binding
-   (X-16) and the CLI (X-17).
+   (X-16) and the CLI (X-17). (2026-11-25: publishing is decided, DEC-12 in
+   `docs/program/README.md` §4: the CLI first, each crate the maintainer's
+   act; the work is package ECO-01, which also carries item 5 of *Release
+   engineering* below. The MSRV is still a decision.)
 
 ### The book's structure
 
@@ -255,9 +264,11 @@ The qualification matrix's "Not covered" list is item 4.
     encrypts what its counting proxy reads), and its message then says to
     lower the constants. Refuse a server that accepts the SSLRequest. Found
     2026-11-22 on a local PostgreSQL 16 with `ssl = on` (`docs/handoff.md`).
-12. `[0.16.x]` `docs/readiness-bar.md` says "F1 is measured" in its
+12. **Done 2026-11-25.** `docs/readiness-bar.md` said "F1 is measured" in its
     2026-11-11 section, while its 2026-11-12 section and its
-    machine-readable block list F1 as not measured. Make them agree.
+    machine-readable block list F1 as not measured. The 2026-11-11 section
+    now says what was measured: the first half of F1 ("the send path is not
+    delayed"); the row stays under `not_measured` until both halves are.
 
 ### Antipatterns
 
@@ -1091,7 +1102,11 @@ This is the category most worth clearing before any external review.
   novel, but it is one more. Since 2026-08-10 the guideline is enforced as a
   ratchet by `scripts/check_file_lengths.sh`: the 77 are recorded in
   `.file-length-baseline` and the list may only shrink, so no further file can
-  cross 500 lines unnoticed the way this one did.
+  cross 500 lines unnoticed the way this one did. *(2026-11-25: these
+  figures are of 2026-08-10 and have moved. Measure the file with
+  `wc -l crates/a2a-protocol-server/src/handler/helpers.rs`, and the files
+  over the limit, `.rs`, `.sh` and `.py` since 2026-08-11, with
+  `grep -v '^#' .file-length-baseline | grep -c .`.)*
 * **~~Decide whether `A2aRouter` should route `/tenants/{tenant}/…`.~~
   Decided 2026-09-10: it does not, by design.** The built-in REST dispatcher
   strips that prefix and threads the tenant through; the axum adapter
@@ -1121,7 +1136,10 @@ This is the category most worth clearing before any external review.
   `release.yml` now refuses a tag that is not on `main` or not signed by a
   key in `.github/release-signers/` as it stands on `main`
   (`scripts/verify_tag_signature.sh`, with a ten-case `--self-test` the same
-  step runs). No key is committed yet, so the next release is blocked until
+  step runs). *(Superseded 2026-11-25: the maintainer's key was committed on
+  2026-10-25, `7e32313c`, in `.github/release-signers/allowed_signers`, and
+  `SECURITY.md` lists tags after `v0.14.1` as signed. The tag ruleset is a
+  repository setting, not re-checked here.)* No key is committed yet, so the next release is blocked until
   the maintainer adds theirs — deliberately, since a gate that passes
   unsigned tags while it waits is the gap itself. Remaining: that key, and a
   `v*` tag ruleset in the repository settings (`.github/release-signers/README.md`

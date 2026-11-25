@@ -35,6 +35,10 @@ decision (about 100 rows and 51 new findings) proceeds in the order in `PLAN.md`
 | G-10, the other 26 wire structs | decided 2026-11-03: they go into 0.16.0, as a pull request of their own | not built |
 | ADR 0035 (agent skills), ADR 0036 (steering) | decided 2026-11-03: implemented, and merged after the 0.16.0 tag | not built |
 
+*Superseded in part (noted 2026-11-25): the "Built" column is as of 2026-11-02 and was not kept up. F7's
+`HttpPool` (ADR 0032, built in part), F9's agent skills (ADR 0035) and F10's steering (ADR 0036) were built and
+shipped in 0.16.0; each ADR's Status line is the current state, and it wins over this table.*
+
 The 2026-11-03 rows are the maintainer's, relayed in a message at the start of the session that wrote this
 table; "accepted" is read as accepting the position written in the entry, so a different intent is a
 one-line edit here.

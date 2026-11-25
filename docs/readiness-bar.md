@@ -187,10 +187,10 @@ log line" half is covered by `tests/push_sender_tests.rs` and was not re-measure
 that figure stands for what it measured: client and server in one process on one worker. Over HTTP between two processes the same comparison
 reads differently: with the server on two cores this tree needed 232 µs of server CPU per request at one connection against 157 for 0.14.1 and was 18% to 29%
 slower in throughput (two runs); with the server on one core the gap was 4 to 12%
-(`docs/sdk-comparison-2026-11-11.md`, tables 2 and 3). The earlier line did not say the gap was absent, and it is now stated what it could not see: the
+(`docs/sdk-comparison-2026-11-11.md`, tables 2 and 3; corrected 2026-11-25: the 232 and 157 µs are table 4's, and the 18% and 29% are tables 4 and 2). The earlier line did not say the gap was absent, and it is now stated what it could not see: the
 cross-thread wake-ups of a runtime with more than one worker.
 
-**R1 to R7, C1 to C5, F2 to F5 are still unmeasured**; the throughput matrix above is not any of them (it is a closed-loop echo benchmark, not these load
+**R1 to R7, C1 to C5, F2 to F5 are still unmeasured** (on 2026-11-11; R1 to R4 and C1 to C5 were measured the next day, in the section below); the throughput matrix above is not any of them (it is a closed-loop echo benchmark, not these load
 profiles), and no claim here depends on them.
 
 ### 2026-11-12: L1, L3 and L4 over HTTP JSON-RPC (R1 to R4, C1 to C5)

@@ -83,6 +83,15 @@ that touches a gate re-proves it with `scripts/prove_gates_fail.sh` or `scripts/
   left with the reason.
 - **Out of scope.** The 41 unmarked rows of `docs/adopter-audit-2026-09-22.md` (FND-05). Restructuring any
   document (FND-05, FND-10).
+- **What is left (2026-11-25).** Every row of E06 §5 and E03 §7 has a disposition, and the four commands
+  of *Accept* exit 0 on the branch that carries them. Not yet met: the pull-request description that lists
+  each row's disposition, since no pull request is open; the package is `done` when one is, with that list
+  in it. Left by design, each with its owning package: C-03 (a decision, SPC-07), E03 D6 (COR-05), D7
+  (SWM-01 step 4), D10 (SWM-01 step 3). Not corrected here, because the rewrite of `docs/handoff.md` *Now*
+  is the closing session's: its bullet "Smaller defects found, not fixed", whose F1 half C-01 has fixed.
+  Found while doing this and not corrected: `docs/readiness-bar.md`, section of 2026-11-11, says that on one
+  core "the gap was 4 to 12%"; table 3 of `docs/sdk-comparison-2026-11-11.md` gives 6% at one connection and
+  4% at sixteen, and the 12% was not found there.
 
 ## FND-04: One build-free pre-commit command
 

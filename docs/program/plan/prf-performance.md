@@ -28,8 +28,8 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`.
    landed.
 
 The figures to beat, from `docs/sdk-comparison-2026-11-11.md` (not re-measured here): blocking send at one
-connection, a2a-rs 7,757 requests per second at 107 µs of server CPU; this tree 4,228 at 228 µs; 0.14.1
-6,090 at 157 µs. Wake-up writes per request: this tree 2.2, 0.14.1 0.11, a2a-rs 0.04.
+connection, a2a-rs 7,757 requests per second at 107 µs of server CPU and this tree 4,228 at 228 µs (table 1);
+0.14.1 6,090 in table 2, which did not report CPU, and 5,379 at 157 µs in table 4, a later run. Wake-up writes per request: this tree 2.2, 0.14.1 0.11, a2a-rs 0.04.
 
 ---
 

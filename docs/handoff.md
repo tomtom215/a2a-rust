@@ -89,7 +89,11 @@ State on 2026-11-22 (Europe/Berlin evening), the first session after 0.16.0 ship
   `check_doc_versions.py` on this branch's README wording, fixed), `doc` PASS, `clippy --matrix os=ubuntu-latest` PASS (14 steps),
   `features` PASS (911 s), `test-postgres --services-ready` PASS (6 steps) on PostgreSQL 16.15 **with `PGSSLMODE=disable`**, and the
   same job PASS on 18.7 and 19.0 (Docker images, SSL off). `official-tck` PASS at the new pin. `test --matrix rust=stable
-  --matrix os=ubuntu-latest`: steps 4 to 18 passed (the default-features run: 3,378 tests passed, 16 skipped); step 19,
+  --matrix os=ubuntu-latest`: steps 4 to 18 passed (corrected 2026-11-25: this said "the default-features run: 3,378 tests passed, 16
+  skipped", but that figure is the server-only steps', `-p a2a-protocol-server --features auth-jwt` and `auth-jwt,tls-rustls`;
+  the local run's own figure for that step is not in this file and cannot be re-derived. For scale, CI run 45663680911 on `92593fc9`,
+  job `Test (stable, ubuntu-latest)`, prints for `cargo nextest run --profile ci --workspace` 7,973 passed and 271 skipped, and
+  3,378 passed and 16 skipped for each of the two `auth-jwt` steps); step 19,
   `Test (all features)`, failed while `rustc` compiled the `multi_lang_team` example, with the message cut from the log, in the
   window where the session's disk allowance ran out. Re-run alone on an emptied `target/`
   (`cargo nextest run --profile ci --workspace --all-features`): 8,000 tests passed, 271 skipped, 0 failed. Step 20, `--no-default-features`, the same way: 7,968 passed, 271
@@ -105,8 +109,10 @@ State on 2026-11-22 (Europe/Berlin evening), the first session after 0.16.0 ship
 
 ### First, next
 
-1. Read CI on #220 (TCK pin) and #222 (PostgreSQL versions), each with #221 merged in, and close anything red; after #220 merges,
-   the next nightly `Official TCK` run should be green against upstream `main`.
+1. ~~Read CI on #220 (TCK pin) and #222 (PostgreSQL versions), each with #221 merged in, and close anything red.~~ Done: #220,
+   #221 and #222 are merged; the TCK pin is `5e6f37c` (`A2A_TCK_PIN`, `.github/workflows/official-tck.yml`) and `test-postgres`
+   runs PostgreSQL 16, 18 and 19 (`.github/workflows/ci.yml`). Whether the nightly `Official TCK` has been green since was not
+   checked when this line was corrected (2026-11-25).
 2. Phase 2 of the program: **done 2026-11-25.** The plan (`docs/program/README.md`) and the target sheet
    (`docs/program/target-sheet.md`) are written and approved. The next step is the first ready package:
    `python3 docs/program/tools/plan_check.py . --next`.
@@ -471,7 +477,11 @@ session start.
    three gates exit 0. Re-run after any further wire change.
 6. **After 0.15.0:** `benches/sdk-comparison/harness/agent-a2a-rust` is pinned
    `=0.14.1` and the results under `benches/sdk-comparison/results/` were
-   measured at 0.14.1, so moving the pin means re-measuring
+   measured at 0.14.1, so moving the pin means re-measuring *(superseded
+   2026-11-25: since `e089619c`, 2026-11-11, the harness is a path dependency
+   on this tree's `a2a-protocol-sdk`, and this tree's figures in
+   `docs/sdk-comparison-2026-11-11.md` were measured with it, 0.14.1 being
+   run there as a separate control)*
    (`benches/sdk-comparison/README.md`); decide whether to publish the SLIMRPC
    binding (it is not on crates.io, and `book/src/bindings/slimrpc.md` shows a
    path dependency until it is). Then debt, starting with the changelog's size
@@ -746,8 +756,11 @@ against the 0.16.0 work: check `CHANGELOG.md`'s `### Fixed` and the register's s
   caller left in a tenant's shared partition. `EncryptedTaskStore` leaves
   ids, states, timestamps, `metadata` and order unprotected, and its seal
   limit is per process while the true budget is per key across processes.
-- **Measurement:** `docs/readiness-bar.md` records no measurement of its rows
-  R1 to R7, C1 to C5 and F1 to F5 (WS3, WS4, WS5: each unmet, not assumed);
+- **Measurement:** `docs/readiness-bar.md` records R1 to R4 and C1 to C5 as
+  measured on 2026-11-12 (over HTTP JSON-RPC, under L1, L3 and L4) and the
+  first half of F1 on 2026-11-11; R5 to R7, F2 to F5 and F1's second half are not measured
+  (each unmet, not assumed; corrected 2026-11-25: this said none of R1 to R7,
+  C1 to C5 and F1 to F5 was measured);
   the 0.9–1.8 µs `ListTasks` gap at 10K tasks is unmeasured. The send
   slowdown is measured (2026-10-24, pinned core, interleaved rounds, five
   runs; the section "the CPU cost of a blocking send"): not slower than
@@ -816,8 +829,9 @@ against the 0.16.0 work: check `CHANGELOG.md`'s `### Fixed` and the register's s
   it was added). The CI run of the pull request is the check of those.
 - **Gates:** a mutation shard that starts after its PR merges grades
   nothing (low); the Windows stress-test connect failure, cause unknown; the
-  benchmark comparison harness pins `=0.14.1`, the newest release on
-  crates.io (checked 2026-10-20), and moves when 0.15.0 is published;
+  benchmark comparison harness pinned `=0.14.1`, the newest release on
+  crates.io (checked 2026-10-20); since 2026-11-11 (`e089619c`) it is a path
+  dependency on this tree (corrected 2026-11-25);
   `prove_workflow_gates_fail.py` needs `ssh-keygen`: a fresh cloud container
   has none, and `apt-get install openssh-client` finds no candidate until
   `apt-get update` has run (it installed 1:9.6p1 after one, 2026-10-24).

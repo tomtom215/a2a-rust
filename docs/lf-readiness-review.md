@@ -122,7 +122,10 @@ makes, and it is a materially stronger position than the document was stating.
 
 ## 4. Open, ranked by what a reviewer would raise first
 
-1. **No dependency-update automation.** No Dependabot, no Renovate. This is a
+1. *(Superseded, noted 2026-11-25: `.github/dependabot.yml` exists since
+   2026-09-09, `5f780ba8`, and `scripts/check_dco.sh` exempts Dependabot's
+   commits by exact author identity, PROVENANCE.md §3.2. The item is kept as
+   measured on 2026-08-26.)* **No dependency-update automation.** No Dependabot, no Renovate. This is a
    standard OpenSSF Scorecard finding. It was **not** added here because of a
    real conflict that needs a decision: `dco.yml` rejects any author matching
    `*[bot]@users.noreply.github.com`, so every Dependabot pull request would
@@ -144,7 +147,10 @@ makes, and it is a materially stronger position than the document was stating.
    unchanged). The input goes to `rustup toolchain install`, so a pinned
    action still installs whatever version the input names; the pin fixes
    the installer script, not the compiler.
-3. **Release tags are not signed.** Annotation is now enforced and working;
+3. *(Superseded, noted 2026-11-25: a maintainer key is committed in
+   `.github/release-signers/allowed_signers` since 2026-10-25, `7e32313c`,
+   and `SECURITY.md` lists tags after `v0.14.1` as signed. The item is kept as
+   measured on 2026-08-26.)* **Release tags are not signed.** Annotation is now enforced and working;
    signing needs a maintainer key and a documented way for adopters to obtain
    it. Already stated honestly in `SECURITY.md` and `ROADMAP.md`.
 4. **No PGP key for security reports.** Already stated honestly in
