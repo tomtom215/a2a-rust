@@ -35,9 +35,8 @@ Start a session at [`CLAUDE.md`](../CLAUDE.md), then [`docs/program/README.md`](
   ready. The plan's §5, *Order of work*, says how to choose among them. Nothing there is a quota: take a
   ready package, finish it to its Accept checks, record it, take the next; independent packages can run in
   parallel worktrees.
-- **Where the branch is.** `claude/magical-ptolemy-sur0er`, ahead of `main` by documents only (`git log
-  --oneline origin/main..HEAD`); no pull request is open, because none was asked for. The first code package
-  can branch from it or from `main` after it merges.
+- **Where it is.** On `main`: pull request #228 merged it on 2026-11-25 (`git log --oneline -1 origin/main
+  -- docs/program/README.md`). A package branches from `main`.
 - **Stale below.** Pull requests #220, #221 and #222 are merged (`git log --oneline -3 origin/main`), so
   item 1 of *First, next* is done. The rest of this section is as the session of 2026-11-22 left it;
   package FND-03 lists what in it and in other documents is stale and corrects it.

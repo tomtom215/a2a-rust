@@ -4,6 +4,11 @@
 > **Frozen audit input, 2026-11-25, of the tree at `2058058d`.** Not maintained. Written by a delegated
 > read-only audit for [`docs/program/README.md`](../README.md); its VERIFIED and INFERRED labels are the auditor's own.
 > Re-check an anchor before acting on it. `UPSTREAM/` is a local clone of the named upstream repository.
+>
+> **Read its absence claims as "not found by the searches named", not as fact** (note added 2026-11-25). Section 3
+> says for each capability what was searched; for a halt and for a delegation journal no search was run and
+> absence is inferred. Statements about other projects describe one reading of their repositories on one day
+> and are not a judgment of those projects.
 
 # 02 — Peer landscape: a2a-rust against a2a-rs, the official SDKs and the swarm stacks
 

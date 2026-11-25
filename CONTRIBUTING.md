@@ -353,8 +353,9 @@ it is better stated here than discovered halfway through a build.
 
 Before adding a dependency:
 
-1. Check `deny.toml` — `openssl-sys` and `reqwest` are banned.
-2. Verify the license is in the allowlist (`Apache-2.0 | MIT | BSD-2-Clause | BSD-3-Clause | ISC | Unicode-DFS-2016 | Unicode-3.0 | Zlib | CC0-1.0 | CDLA-Permissive-2.0`).
+1. Check `deny.toml`, section `[bans]`, for what is banned and under which wrappers (`reqwest` is, outside two
+   example-only dependencies). Read the file, not this line: the list has changed before.
+2. Verify the license is in the allowlist (`allow` under `[licenses]` in `deny.toml`).
 3. Ask what the job is. A **small, plain** one (a few lines, nothing security-sensitive, nothing
    easy to get subtly wrong) is done in-tree in pure Rust, to production grade, because every
    dependency adds compile time, supply-chain surface and constraints on downstream builds. A job

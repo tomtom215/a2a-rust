@@ -30,9 +30,11 @@ Build, connect, and orchestrate AI agents with a type-safe, async-first SDK span
 
 ## About
 
-The A2A protocol was originally developed by Google and [donated to the Linux Foundation](https://developers.googleblog.com/en/google-cloud-donates-a2a-to-linux-foundation/) in June 2025. The A2A project maintains its own [official SDKs](https://a2a-protocol.org/latest/sdk/), including a Rust one ([`a2aproject/a2a-rs`](https://github.com/a2aproject/a2a-rs); [docs/sdk-comparison-2026-10-02.md](docs/sdk-comparison-2026-10-02.md) measures the two side by side), and publishes the specification and conformance suite this implementation is measured against.
+The A2A protocol was originally developed by Google and [donated to the Linux Foundation](https://developers.googleblog.com/en/google-cloud-donates-a2a-to-linux-foundation/) in June 2025. The A2A project maintains its own [official SDKs](https://a2a-protocol.org/latest/sdk/), including a Rust one ([`a2aproject/a2a-rs`](https://github.com/a2aproject/a2a-rs)), and publishes the specification and conformance suite this implementation is measured against.
 
 **This is an independent project.** It is not affiliated with, endorsed by, or governed by the A2A project, the Linux Foundation, or Google, and it is not an official SDK. It tracks the published v1.0.1 specification (released 2026-05-28); the protocol version on the wire remains `1.0`, because §3.6 keeps patch numbers out of requests, responses and Agent Cards. It is graded against the A2A project's two official conformance suites, the Technology Compatibility Kit and ACTS; where it falls short of either, this repository records exactly where and why (see [Project Status](#project-status)).
+
+**Which Rust SDK?** If you want the A2A project's own implementation, use [`a2aproject/a2a-rs`](https://github.com/a2aproject/a2a-rs): it is the official SDK. This is an independent implementation with a different emphasis: its conformance evidence is kept in the repository, its default in-memory task store is bounded, and it carries controls for delegation trees (a cancel that cascades, leases, deadlines and budgets, a halt) as [extensions of its own](https://a2a-rust.com/reference/swarm-extensions.html), which other SDKs do not implement. The two speak the same protocol, and this repository's interop suite runs against a2a-rs among its peers.
 
 ## Features
 

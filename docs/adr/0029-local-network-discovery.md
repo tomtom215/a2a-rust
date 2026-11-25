@@ -67,3 +67,9 @@ four crates are a protocol implementation, not a runtime.
   empty link reported as such. That run found an announcement carrying
   `127.0.0.1`, which is why loopback is left out of card URLs.
 - Not run: discovery between containers on a Docker bridge, or across hosts.
+
+## Amendment, 2026-11-25: the pinned version
+
+The decision above names `mdns-sd` 0.21.6. `crates/a2a-protocol-discovery/Cargo.toml` pins `=0.21.7`. The
+rule is unchanged (an exact pin, an upgrade is a reviewed change); the number in the decision was not updated
+when the pin moved.

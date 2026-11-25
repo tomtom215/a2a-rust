@@ -154,7 +154,10 @@ of 2026-11-04 supersedes the recorded "decline in core" (H-D7).
   re-resolution interval is what it allows. A caller who has a better source
   implements `EndpointSource`.
 * **Load from the server** (`A2A-Load`, swarm report gap 7): no server sends
-  it yet; calls in flight are the client's own measure.
+  it yet; calls in flight are the client's own measure. *(Corrected
+  2026-11-25: a server does send a load signal since ADR 0046, accepted in
+  the same release, as `endpoint-load-metrics`. What is still not built is
+  the client reading it.)*
 * **Metrics through OpenTelemetry**: the state is exposed by
   `HttpPool::origins()` and transitions are logged (`tracing`), not exported
   as instruments.

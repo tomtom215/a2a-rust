@@ -3,6 +3,12 @@
 
 # a2a-rust and a2a-rs, compared on 2026-10-02
 
+> **A dated snapshot, two releases old. Do not quote it as the state of either SDK today** (banner added
+> 2026-11-25). It measured a2a-rust 0.14.1 against the crates.io releases of a2a-rs of 2026-10-02, on one
+> machine on one day. Both projects have changed since and nothing here has been re-measured. The method,
+> the workloads, the probes and the configuration of a2a-rs were chosen by this project and were not reviewed
+> by a2a-rs's maintainers, so read "where each one is better" as one side's reading.
+
 Both SDKs' latest crates.io releases, measured on one machine on one day, by
 procedures anyone can re-run from
 [`benches/sdk-comparison/`](../benches/sdk-comparison/). It supersedes the

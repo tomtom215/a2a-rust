@@ -48,7 +48,7 @@ E07 [engineering system and architecture map](evidence/07-engineering-system.md)
   the single `A2A_VERSION = "1.0"`, ADR 0033's "Proposed" status, the `timeout_at` in
   `crates/a2a-protocol-server/src/streaming/event_queue/applied.rs`, the continuation that clones the first message, `Delegated` with no
   artifacts, no SQLite lease store.
-- **Two audits ended early** when the session's usage limit was reached (E04 and E06). Both had written
+- **Two audits ended before their final pass** (E04 and E06). Both had written
   every section; E06's cross-references were being corrected when it stopped. Treat an E06 `partial` row as
   needing a re-check before you plan from it (E06 §2 says the same of the registers it was built from).
 - **Not done by anyone:** GitHub issues and pull-request threads upstream were not read (the clone has git
@@ -58,11 +58,13 @@ E07 [engineering system and architecture map](evidence/07-engineering-system.md)
 
 Ten findings decide the shape of the plan. Each names its evidence.
 
-1. **The swarm primitives are real, and unique among A2A SDKs; the layer above one child does not exist.**
+1. **The swarm primitives are real, and the peer audit found them in no other A2A SDK it searched; the layer
+   above one child does not exist.**
    Delegation with cascade cancel, leases, hop-shrinking budgets, lineage with root halt, a durable journal
    with reattach, steering, admission, a load signal, client balancing with ejection and hedging: all
-   compile in every build (E03 §1). None of the six official SDKs has lineage, cascade cancel, halt,
-   budgets, leases or a journal (E02 §3). But `Delegation` is the only orchestration type: a group of
+   compile in every build (E03 §1). A search of the six official SDKs found no lineage, cascade cancel,
+   hop-shrinking budget or parent-to-child lease; a halt and a delegation journal were not searched for and
+   are inferred absent, which is weaker (E02 §3 says which is which). But `Delegation` is the only orchestration type: a group of
    children (ADR 0033) is "Proposed. Nothing here is built", and there is no recovery driver (E03 §3 G2,
    G3). Three of the five delegating examples call `send_message` directly, so they demonstrate the gap
    the SDK exists to close (E03 §2).
@@ -78,7 +80,7 @@ Ten findings decide the shape of the plan. Each names its evidence.
    idempotency support from a peer's card, so a lease or a budget sent to a peer that ignores it degrades
    silently. This is a limit of reach, not of design: the controls use A2A's own extension mechanism and
    their contracts are written. A2A 1.1 adds no lineage, cascade, budget or lease
-   (E01 §3.2), so the gap stays open upstream: that is the opening for the drafts already in
+   (E01 §3.2), so the gap stays open upstream: which is the case for sending the drafts already in
    `docs/upstream/`.
 4. **A2A 1.1 is larger than the handoff records, and still moving.** Beyond `SendLiveMessage`, the timeline
    and `generation`: optimistic concurrency (`if_generation_match`, error `-32010`), long-polling
@@ -90,7 +92,9 @@ Ten findings decide the shape of the plan. Each names its evidence.
    skip an unknown stream payload instead of failing the stream; the negotiated version must be carried
    through the request path instead of validated and dropped; `generation` cannot be derived from the
    ADR 0012 `seq` and needs its own dense counter.
-6. **The throughput gap has two named, countable causes.** At one connection a2a-rs serves 7,757 blocking
+6. **The throughput gap, as last measured, has two named, countable causes.** The figures are of
+   2026-11-11, on a tree from before 0.16.0, and nothing has been re-measured since (PRF-07 does that). At
+   one connection a2a-rs serves 7,757 blocking
    sends per second at 107 µs of server CPU each; this tree serves 4,228 at 228 µs, and 0.14.1 served 6,090
    at 157 µs (`docs/sdk-comparison-2026-11-11.md`). Of 257 wake-up writes sampled, 76 come from hyper's
    per-request header timer and 50 from a `timeout_at` around a watch receiver (E05 §2.3). The regression

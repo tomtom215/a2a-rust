@@ -600,6 +600,11 @@ twice per send. Overriding it the way both already override
 
 ## Finding 8 — the single-writer refusal does not cross replicas
 
+*Fixed since this was written (note added 2026-11-25). Turn claims in a shared store (2026-10-28) make the
+refusal cross replicas. The test named below no longer exists; its successor is
+`the_single_writer_refusal_crosses_replicas` in `crates/a2a-protocol-server/tests/multi_replica.rs`, which
+asserts the opposite. The finding is kept as measured at the time.*
+
 Two replicas behind a load balancer sharing one Postgres is the first
 architecture anyone deploying this reaches for. `multi_replica.rs` already
 pinned what works across it — a task created on one is readable on the other,

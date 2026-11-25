@@ -2,7 +2,7 @@
 
 # Rust A2A SDKs — technical and governance assessment
 
-**Prepared for:** Linux Foundation / A2A project technical leadership
+**Written for:** a reader weighing the Rust A2A SDKs. It was first addressed to Linux Foundation and A2A project technical leadership; neither asked for it, reviewed it or endorses it (audience line corrected 2026-11-25)
 **Date:** 27 July 2026
 **Supersedes:** the earlier `a2a-rust` v0.6.0 capability comparison
 

@@ -3,6 +3,14 @@
 
 # SDK comparison, 2026-11-11: a2a-rust against a2a-rs on the same host
 
+> **A dated snapshot. Do not quote it as the state of either SDK today** (banner added 2026-11-25).
+> It measured one echo workload on one shared 4-vCPU virtual machine on 2026-11-11: a2a-rust at
+> `da17606c`, a tree from before the 0.16.0 release, against the crates.io releases of a2a-rs of that day.
+> Both projects have changed since and nothing here has been re-measured. The method, the workload and the
+> configuration of a2a-rs were chosen by this project and were not reviewed by a2a-rs's maintainers. It is
+> kept because the plan's performance work starts from its profiles; a current measurement is package PRF-07
+> of [`docs/program`](program/README.md).
+
 Written because an independent review of 2026-11-09 said, correctly, that no current
 head-to-head existed: [`sdk-comparison-2026-10-02.md`](sdk-comparison-2026-10-02.md)
 measured a2a-rust 0.14.1. This measures this tree. **On this workload a2a-rs is the
