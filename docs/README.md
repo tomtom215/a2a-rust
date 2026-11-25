@@ -11,7 +11,6 @@ is on docs.rs.
 
 - **Asking whether it is ready for production?** [readiness-bar.md](readiness-bar.md) — what that would have to mean, written before measuring, and what has been measured against it
 - **About to quote a claim this project makes?** [claims-ledger-2026-09-24.md](claims-ledger-2026-09-24.md) — every overstated claim found from 0.6.0 on, checked against the published artifacts, and what backs the ones that stand
-- **Comparing this SDK with the official one?** [sdk-comparison-2026-11-11.md](sdk-comparison-2026-11-11.md) is the current head-to-head on one host, including where a2a-rs is the faster server. [sdk-comparison-2026-10-02.md](sdk-comparison-2026-10-02.md) is the wider, older one — both crates.io releases measured on one machine: official conformance and interop suites, throughput, memory, a live model, black-box tenant/auth/persistence probes; where each one is better, and the harness to re-run it
 
 ## Conformance and compliance
 
@@ -48,6 +47,8 @@ Dated records, kept as written; the documents above supersede them.
 | [implementation/spec-compliance-gaps.md](implementation/spec-compliance-gaps.md) | Gap tracking against v1.0.0, March 2026, all resolved; current status is [compliance/spec-ledger.md](compliance/spec-ledger.md) |
 | [implementation/type-mapping.md](implementation/type-mapping.md) | A2A spec to Rust type mapping |
 | [implementation/v1-upgrade-plan.md](implementation/v1-upgrade-plan.md) | Migration plan to v1.0.0 |
+| [sdk-comparison-2026-11-11.md](sdk-comparison-2026-11-11.md) | One echo workload on one shared host: a tree from before 0.16.0 against a2a-rs's crates.io releases of that day. A dated snapshot: not re-measured since, and not a statement about either SDK today |
+| [sdk-comparison-2026-10-02.md](sdk-comparison-2026-10-02.md) | a2a-rust 0.14.1 against a2a-rs's releases of that day: conformance suites, throughput, memory, probes. A dated snapshot, two releases old |
 | [rust-sdk-assessment.md](rust-sdk-assessment.md) | Technical and governance assessment of the Rust A2A SDKs, 2026-08-26 |
 | [v0.9.0-post-release-review.md](v0.9.0-post-release-review.md) | A critical read after the 0.9.0 release |
 | [lf-readiness-review.md](lf-readiness-review.md) | What a critical external reviewer would find |
