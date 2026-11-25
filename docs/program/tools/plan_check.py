@@ -4,6 +4,7 @@
 """Check docs/program mechanically, and keep status.json in step with plan/*.md.
 
     python3 docs/program/tools/plan_check.py .           # check; exit 1 on an error
+    python3 docs/program/tools/plan_check.py . --next    # what is ready to start now
     python3 docs/program/tools/plan_check.py . --write   # rewrite ids, titles, deps and gates in
                                                          # status.json; status, landed and decisions
                                                          # are kept as they are
@@ -109,6 +110,25 @@ else:
     cur = json.loads((prog/'status.json').read_text())
     a = {p['id']:(p['deps'],p['gates'],p['title']) for p in cur['packages']}; b = {k:(v['deps'],v['gates'],v['title']) for k,v in pk.items()}
     if a != b: errs.append('status.json differs from plan/*.md')
+if '--next' in sys.argv:
+    cur = json.loads((prog/'status.json').read_text())
+    st = {p['id']: p for p in cur['packages']}; dec = cur.get('decisions', {})
+    WAIT = {'SPC-10': 'an upstream A2A 1.1 tag that is not a release candidate', 'ECO-07': 'Goose serving A2A'}
+    done = lambda i: st[i]['status'] in ('done', 'dropped')
+    ready, waiting, held = [], [], []
+    for i, p in sorted(st.items()):
+        if done(i): continue
+        undecided = [g for g in p['gates'] if not str(dec.get(g, '')).startswith('decided')]
+        open_deps = [d for d in p['deps'] if not done(d)]
+        if undecided: held.append(f"  {i}  undecided {', '.join(undecided)}")
+        elif open_deps: continue
+        elif i in WAIT: waiting.append(f"  {i}  waits on {WAIT[i]}")
+        else: ready.append(f"  {i}  [{p['status']}]  {p['title']}  ({p['file']})")
+    print(f"ready to start ({len(ready)}):"); print('\n'.join(ready))
+    print(f"ready but for an upstream event ({len(waiting)}):"); print('\n'.join(waiting))
+    if held: print(f"held by an undecided gate ({len(held)}):"); print('\n'.join(held))
+    print(f"done: {sum(1 for i in st if done(i))} of {len(st)}")
+    sys.exit(0)
 print(f'packages {len(pk)}; by workstream {dict(collections.Counter(p["workstream"] for p in pk.values()))}')
 print(f'decisions {len(decs)}; gated packages {sum(1 for p in pk.values() if p["gates"])}; ungated with no deps {sum(1 for p in pk.values() if not p["gates"] and not p["deps"])}')
 print(f'paths checked {checked}; missing {len(missing)}')

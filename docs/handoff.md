@@ -19,16 +19,28 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-**2026-11-25: the plan the "Phase 2" item below asks for is written and waits for the maintainer.**
-[`docs/program/README.md`](program/README.md) is the plan of record for the work after 0.16.0: what a deep
-dive of the SDK, the swarm features, A2A 1.1, the peer SDKs, observability, performance, scale and the
-engineering system found; fourteen decisions it asks of the maintainer (its §4); the work packages by
-workstream under `docs/program/plan/`, with their status in `docs/program/status.json`; the proposed target
-sheet; and the seven audits it rests on, frozen under `docs/program/evidence/`. Nothing in it is built and
-nothing was measured for it: the audits read the tree at `2058058d` and built nothing. A session picking up
-work starts at that file's §6. Pull requests #220, #221 and #222 are merged (`git log --oneline -3
-origin/main`), so item 1 of *First, next* below is done; the block below is otherwise as the session of
-2026-11-22 left it, and `docs/program/plan/fnd-foundation.md` (FND-03) lists what in it is stale.
+**2026-11-25: the plan for the work after 0.16.0 is written and approved, and its decisions are made.**
+Start a session at [`CLAUDE.md`](../CLAUDE.md), then [`docs/program/README.md`](program/README.md) §6.
+
+- **What exists.** `docs/program/`: the findings of a deep dive (the SDK, the swarm features, A2A 1.1, the
+  peer SDKs, observability, performance, scale, the engineering system); the work packages by workstream
+  under `plan/`; their status in `status.json`; the target sheet; the seven audits behind them, frozen under
+  `evidence/`; and `tools/plan_check.py`, which checks all of it. Count the packages and what is done with
+  the tool, not from this file.
+- **What is decided.** All fourteen decisions of the plan's §4, each as recommended, on 2026-11-25; they
+  are under *Decisions the maintainer made* below and in `status.json`. No package waits on the maintainer.
+- **What is built.** One package: FND-01, the `CLAUDE.md` at the repository root. Everything else is
+  `todo`. The audits built and measured nothing; every anchor in the plan is of `2058058d`.
+- **What to do first.** `python3 docs/program/tools/plan_check.py . --next` lists every package that is
+  ready. The plan's §5, *Order of work*, says how to choose among them. Nothing there is a quota: take a
+  ready package, finish it to its Accept checks, record it, take the next; independent packages can run in
+  parallel worktrees.
+- **Where the branch is.** `claude/magical-ptolemy-sur0er`, ahead of `main` by documents only (`git log
+  --oneline origin/main..HEAD`); no pull request is open, because none was asked for. The first code package
+  can branch from it or from `main` after it merges.
+- **Stale below.** Pull requests #220, #221 and #222 are merged (`git log --oneline -3 origin/main`), so
+  item 1 of *First, next* is done. The rest of this section is as the session of 2026-11-22 left it;
+  package FND-03 lists what in it and in other documents is stale and corrects it.
 
 State on 2026-11-22 (Europe/Berlin evening), the first session after 0.16.0 shipped. Re-run every command named; copy no figure.
 
@@ -96,11 +108,12 @@ State on 2026-11-22 (Europe/Berlin evening), the first session after 0.16.0 ship
 
 1. Read CI on #220 (TCK pin) and #222 (PostgreSQL versions), each with #221 merged in, and close anything red; after #220 merges,
    the next nightly `Official TCK` run should be green against upstream `main`.
-2. Phase 2 of the program: **written 2026-11-25, not yet approved.** The plan is `docs/program/README.md` and the target sheet
-   `docs/program/target-sheet.md`. The maintainer's answers to that file's §4 come first; the packages that need none are its
-   "Wave 0".
-3. The A2A v1.1.0-rc question for the maintainer is DEC-02 of the plan. The delta is larger than this file's summary above and
-   upstream has moved since the rc: `docs/program/evidence/01-spec-v1.1-delta.md`.
+2. Phase 2 of the program: **done 2026-11-25.** The plan (`docs/program/README.md`) and the target sheet
+   (`docs/program/target-sheet.md`) are written and approved. The next step is the first ready package:
+   `python3 docs/program/tools/plan_check.py . --next`.
+3. A2A 1.1: **decided 2026-11-25, track it now** (DEC-02). The delta is larger than this file's summary above
+   and upstream has moved since the rc: `docs/program/evidence/01-spec-v1.1-delta.md`; the packages are in
+   `docs/program/plan/spc-spec.md`.
 
 ### Environment facts that still hold
 
@@ -837,6 +850,43 @@ read `cargo deny check advisories` after the update, not before.
 
 Kept under this heading because `release.yml` and `packaging/README.md` cite
 it.
+
+- **2026-11-25, the plan of record and its fourteen decisions** (`docs/program/README.md` §4 has each with
+  its reason; `docs/program/status.json` carries them for `plan_check.py`). The maintainer approved the plan
+  and accepted every recommendation:
+  - **DEC-01, the swarm layer:** three client-side layers in the existing crates (a turn-scoped delegate,
+    ADR 0033's group, a recovery driver), with no wire change and no registry, scheduler or DSL. ADR 0033
+    is to be accepted; ADR 0030's "not built: a recovery driver" is reversed. The earlier "what not to
+    chase" line stands for everything beyond those layers.
+  - **DEC-02, A2A 1.1:** track it now. A delta ledger and the forward-compatible changes at once; 1.1 types
+    behind an off-by-default unstable feature; live messaging, `timeline_length`, timestamps and list
+    re-ordering held until upstream tags a release that is not a candidate. This answers ROADMAP's
+    conformance item 8.
+  - **DEC-03, the target sheet:** the quantities and procedures are approved; every threshold stays
+    PROPOSED until its first measurement.
+  - **DEC-04, commits:** authored as Tom F. with one `Signed-off-by` and no other trailer (the 2026-10-08
+    decision, reaffirmed). `CLAUDE.md` at the root states it for a session.
+  - **DEC-05:** pin the toolchain a session and CI lint with, in a file CI writes and `preflight.sh` reads
+    (ROADMAP release item 8).
+  - **DEC-06:** send the two upstream drafts, lineage and halt, and deadline and budget (ROADMAP
+    conformance item 7). A session makes them ready; sending is the maintainer's act.
+  - **DEC-07:** split `CHANGELOG.md` by release, keeping `[Unreleased]`, the newest release and an index
+    (ROADMAP book item 4).
+  - **DEC-08:** a delegation always carries an idempotency key.
+  - **DEC-09:** lineage is attached automatically inside the turn-scoped delegate only.
+  - **DEC-10:** an opt-in authenticated halt route, off by default, refused under the production profile
+    without an authenticating interceptor.
+  - **DEC-11:** `JsonRpcDispatcher` serves `/health` and `/ready`.
+  - **DEC-12:** publish the CLI first; publishing is the maintainer's act.
+  - **DEC-13:** a group does not retry; it reports which members are retryable (ADR 0033 as written).
+  - **DEC-14:** depth 16 stays the loop bound, with a width limit added; no agent path in lineage.
+  - **Also that day:** the first middleware for another SDK targets a2a-rs, then Go (ECO-04); a Goose A2A
+    agent joins the interop runs once Goose serves A2A (ECO-07); the cross-language work follows the
+    delegation defects directly; packages SWM-13, SWM-14, SWM-15 and ECO-06 were added; a pull request may
+    carry several independent packages; and no plan document states an estimate, a quota or a limit on what
+    one session takes on.
+  - **Not decided, and not asked:** the evidence gate against the nightly job (ROADMAP release item 1), the
+    spec-added field rule (conformance item 6) and the fleet inference quota S3.
 
 - **2026-11-06, answers to the decision sheet on the official TCK, the dependency-source skips, stale-if-error, the gate injections and the ledgers** (all done in this branch unless stated):
   - **TCK: option D.** Pull requests, pushes and manual runs grade against a pinned `a2a-tck` commit (`70f6f73`); the nightly run floats on upstream `main` as a drift alarm that gates no pull request.

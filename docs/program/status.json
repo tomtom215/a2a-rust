@@ -11,20 +11,20 @@
   ],
   "note": "Status lives here only. Edit status, landed and decisions by hand; ids, titles, deps and gates mirror plan/*.md and are rewritten by docs/program/tools/plan_check.py --write.",
   "decisions": {
-    "DEC-01": "undecided",
-    "DEC-02": "undecided",
-    "DEC-03": "undecided",
-    "DEC-04": "undecided",
-    "DEC-05": "undecided",
-    "DEC-06": "undecided",
-    "DEC-07": "undecided",
-    "DEC-08": "undecided",
-    "DEC-09": "undecided",
-    "DEC-10": "undecided",
-    "DEC-11": "undecided",
-    "DEC-12": "undecided",
-    "DEC-13": "undecided",
-    "DEC-14": "undecided"
+    "DEC-01": "decided 2026-11-25: three client-side layers in the existing crates (a turn-scoped delegate, ADR 0033's group, a recovery driver); no registry, scheduler or DSL; ADR 0033 accepted; ADR 0030's 'no recovery driver' reversed",
+    "DEC-02": "decided 2026-11-25: track A2A 1.1 now: delta ledger and forward-compatible changes at once, 1.1 types behind an off-by-default unstable feature, the unsettled parts held until a non-rc tag",
+    "DEC-03": "decided 2026-11-25: target sheet approved: quantities and procedures; every threshold stays PROPOSED until first measured",
+    "DEC-04": "decided 2026-11-25: commits are authored as Tom F. with one Signed-off-by and no other trailer; a CLAUDE.md at the root states it",
+    "DEC-05": "decided 2026-11-25: pin the lint toolchain in a file CI writes and preflight.sh reads",
+    "DEC-06": "decided 2026-11-25: send the lineage-and-halt and the deadline-and-budget drafts upstream; a session makes them ready, the maintainer sends",
+    "DEC-07": "decided 2026-11-25: split CHANGELOG.md by release, keeping [Unreleased], the newest release and an index",
+    "DEC-08": "decided 2026-11-25: a delegation always carries an idempotency key",
+    "DEC-09": "decided 2026-11-25: lineage is attached automatically inside the turn-scoped delegate only",
+    "DEC-10": "decided 2026-11-25: an opt-in authenticated halt route, off by default, refused under the production profile without an authenticator",
+    "DEC-11": "decided 2026-11-25: JsonRpcDispatcher serves /health and /ready",
+    "DEC-12": "decided 2026-11-25: publish the CLI first; the publishing itself is the maintainer's act",
+    "DEC-13": "decided 2026-11-25: a group does not retry; it reports which members are retryable (ADR 0033 as written)",
+    "DEC-14": "decided 2026-11-25: depth 16 stays the loop bound; add a width limit; no agent path in lineage"
   },
   "packages": [
     {
@@ -422,8 +422,8 @@
       ],
       "release": "none",
       "breaking": false,
-      "status": "todo",
-      "landed": null
+      "status": "done",
+      "landed": "branch claude/magical-ptolemy-sur0er, 2026-11-25 (no pull request yet)"
     },
     {
       "id": "FND-02",

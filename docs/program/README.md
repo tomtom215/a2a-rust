@@ -4,9 +4,10 @@
 # The post-0.16.0 program: plan of record
 
 Written 2026-11-25 against `main` at `2058058d` (the merge of #222; `v0.16.0` is `334fa45c`). It is the
-"Phase 2" plan that `docs/handoff.md` asks for: **a plan and a target sheet for the maintainer's approval.**
-Nothing in it is built. Nothing in it is in `ROADMAP.md`, which takes only committed items; a work package
-moves there when the maintainer approves it.
+"Phase 2" plan that `docs/handoff.md` asks for. **The maintainer approved it on 2026-11-25** and decided all
+fourteen of its decisions (§4), so every package is work the repository has committed to; `ROADMAP.md`,
+*After 0.16.0*, points here rather than restating it. Almost nothing in it is built yet: `status.json` says
+what is.
 
 This directory is written so that a fresh session with no memory of any earlier one can pick up one work
 package and land it. Read this file, then the one workstream file your package is in. You do not need the
@@ -140,13 +141,16 @@ carried across languages.
 8. **The evidence bar does not drop.** Zero surviving mutants in changed lines, a failing test before a fix,
    the provers. Simplifications remove copies and couplings, never a check.
 
-## 4. Decisions the maintainer owes
+## 4. Decisions
 
-A package names its gates in `status.json`. A gated package is not started until the decision is recorded in
-`docs/handoff.md`, *Decisions the maintainer made*, and its `status` here is set. "Recommended" is this
-plan's advice with its reason; it is not a default a session may assume.
+**All fourteen were decided by the maintainer on 2026-11-25, each as recommended.** They are recorded in
+`docs/handoff.md`, *Decisions the maintainer made*, and in `status.json` under `decisions`. No package is
+waiting on any of them: do not ask again. The third column is what was decided and why.
 
-| Id | Decision | Recommended, and why | Gates |
+A package still names its gates in `status.json`, so that a future decision can be added the same way: a
+package whose gate is not recorded as decided is not started.
+
+| Id | Decision | Decided 2026-11-25, and why | Gates |
 |---|---|---|---|
 | DEC-01 | **Scope of a first-class swarm layer.** The request of 2026-11-25 asks for swarms as the differentiator; "What not to chase" forbids a runtime. | Three client-side layers over what exists (a turn-scoped delegate, ADR 0033's group, a recovery driver), in the existing crates, with no wire change and no registry, scheduler or DSL. Accept ADR 0033. Layer C reverses ADR 0030's "not built: a recovery driver"; the live proof found three defects in the loop adopters were told to write (E03 §6.2). | SWM-02, SWM-04, SWM-05, SWM-07 |
 | DEC-02 | **A2A 1.1: track it now or wait** (ROADMAP conformance item 8). | Track it. The three forward-compatible changes and a delta ledger carry no risk; types go behind an off-by-default unstable feature; live messaging, `timeline_length`, timestamps and list re-ordering wait for a non-rc tag (E01 §6). | every SPC package but SPC-01, SPC-04, SPC-12 and SPC-13; ECO-05 |
@@ -163,11 +167,21 @@ plan's advice with its reason; it is not a default a session may assume.
 | DEC-13 | **A group may retry** (E03 §6.4 Q4; ADR 0033 says no). | Keep ADR 0033: the group reports which members are retryable, the caller loops. Revisit with a named adopter need. | SWM-04 |
 | DEC-14 | **Loop detection** by an agent path in lineage, or depth 16 as the only bound (E03 §6.4 Q9). | Keep depth as the bound and add a width limit (SWM-06); an agent path leaks identities to every hop. | SWM-06 |
 
-Twenty-seven decisions that predate this plan are listed, with their recorded options and what each blocks,
-in E06 §6. This plan does not restate them. Three gate packages here: the evidence gate against the nightly
-job (E06 §6 row 12, gates FND-09), the fleet inference quota S3 (row 16, gates nothing built here; OBS-07 is
-the accounting half that needs no decision), and the spec-added field rule (row 5, to be answered with
-DEC-02).
+Also decided on 2026-11-25: the first middleware for another SDK targets a2a-rs, then Go (ECO-04); a Goose
+A2A agent joins the interop runs once Goose serves A2A (ECO-07); and the four packages SWM-13, SWM-14,
+SWM-15 and ECO-06 are part of the plan.
+
+**Still open, and what each touches.** Twenty-seven decisions predate this plan (E06 §6, with their recorded
+options). Three touch a package here, and none stops the package's other steps:
+
+- The evidence gate against the nightly job (E06 §6 row 12): step 1 of FND-09 only. Do steps 2 to 5.
+- The spec-added field rule, minor or patch (row 5): SPC-07 records the question for the maintainer; it
+  blocks no code.
+- The fleet inference quota S3 (row 16): nothing here; OBS-07 is the accounting half and needs no decision.
+
+**Acts that stay the maintainer's** whatever was decided: publishing a crate or a binary, sending or posting
+anything upstream, tagging a release, repository settings. A session prepares each to the point where one
+command or one click remains, and says which.
 
 ## 5. The workstreams
 
@@ -185,44 +199,65 @@ DEC-02).
 
 ### Order of work
 
-The order is by dependency, not by date. `status.json` is authoritative for dependencies; this is the
-reading of it. Within a wave, packages are independent and can be separate sessions.
+The order is by dependency only. Nothing here is a schedule, a quota or a limit on how much one session
+takes on: take the next package that is ready, finish it to its Accept checks, take the next.
 
-- **Wave 0, needs no decision, unblocks the rest.** FND-02 (the changelog citation that breaks the ledger
-  gate on every entry), FND-03 (the stale claims, so no session plans from a wrong row), FND-04 (a
-  build-free pre-commit command), COR-01 (X-10), COR-02 (the parked cancel), PRF-01's count harness once
-  DEC-03 is answered, SPC-01, SPC-04, SPC-12, OBS-01, DVX-01, DVX-02, DVX-04, SWM-01.
-- **Wave 1, the delegation defects.** COR-03 to COR-09. COR-03, COR-04 and COR-05 gate SWM-02; COR-06 and
-  COR-07 gate SWM-05.
-- **Wave 1b, reach, directly after the defects.** SWM-13 and SWM-14 (a caller knows which controls a peer
-  declares, and nothing degrades silently), ECO-06 (the extension contracts gated), ECO-04 (the
-  middleware for a2a-rs, then Go), and ECO-02 once DEC-06 is answered. ECO-07 (a Goose A2A agent in the
-  interop runs) waits on Goose shipping A2A. These make the controls hold, or say that they do not,
-  on every edge of a mixed-language tree; they come before composition because a group over an edge that
-  degrades silently hides the loss N times.
-- **Wave 2, composition.** SWM-02, then SWM-04 and SWM-05, with SWM-03 beside them; SWM-09 (the book part
-  and the rewritten example) closes the wave. PRF-02 to PRF-06 and OBS-02 to OBS-06 run beside it; they
-  touch different modules.
-- **Wave 3, proof.** SCL-01 to SCL-08, SWM-10 (the swarm at scale), PRF-07 (re-measure and publish), ECO-03
-  (the refreshed comparison).
-- **Wave 4, 1.1.** With DEC-02: SPC-02 and SPC-03 (the reference text and the delta ledger), SPC-05 to
-  SPC-09 behind a feature, then SPC-10 when upstream tags a release.
-- **Any time, each its own decision.** ECO-01, FND-06, FND-09, FND-10. SWM-15 (the tasks of a job) fits
-  beside SWM-06.
+**What is ready is computed, not listed here:**
+
+```sh
+python3 docs/program/tools/plan_check.py . --next
+```
+
+prints every package whose dependencies are done and whose gates are decided, and the ones waiting only on
+an upstream event. Read it at the start of a session and again after each package lands.
+
+The shape of the dependency graph, for choosing among ready packages:
+
+- **Cheapest multipliers first.** FND-02 (the changelog citation that breaks the ledger gate on every
+  entry), FND-03 (the stale claims, so no session plans from a wrong row), FND-04 (a build-free pre-commit
+  command), FND-08 (one mutation filter), FND-12 (touch-point manifests). Each makes every later package
+  cheaper.
+- **The two open correctness rows.** COR-01 (X-10, the one data-loss path) and COR-02.
+- **The delegation defects.** COR-03 to COR-09. COR-03, COR-04 and COR-05 gate SWM-02; COR-06 and COR-07
+  gate SWM-05.
+- **Reach, directly after the defects.** SWM-13 and SWM-14 (a caller knows which controls a peer declares,
+  and nothing degrades silently), ECO-06 (the extension contracts gated), ECO-04 (the middleware for
+  a2a-rs, then Go), ECO-02 (the upstream drafts made ready to send). They come before composition because
+  a group over an edge that degrades silently hides the loss N times.
+- **Composition.** SWM-02, then SWM-04 and SWM-05, with SWM-03 beside them; SWM-09 (the book part and the
+  rewritten example) closes it.
+- **Beside all of the above, in other modules:** PRF-01 first and then PRF-02 to PRF-06; OBS-01 first and
+  then OBS-02 to OBS-08; DVX-01 to DVX-10; SPC-01 to SPC-09 and SPC-11 to SPC-13.
+- **Proof.** SCL-01 to SCL-08, SWM-10 (the swarm at scale), PRF-07 (re-measure and publish), ECO-03 (the
+  refreshed comparison).
+- **Waiting on an upstream event, not on anyone here:** SPC-10 (a 1.1 tag that is not a release
+  candidate), ECO-07 (Goose serving A2A).
+
+**Doing several at once.** Packages in different workstreams touch different modules and can be worked in
+parallel: separate sessions, or one session delegating independent packages to sub-agents, each in its own
+git worktree. Two facts bound it, and both are measured, not assumed: a full workspace build has filled a
+session's disk allowance before (delete `target/debug/{deps,build,incremental}` between large jobs, and give
+each worktree its own `CARGO_TARGET_DIR` only if the disk has room), and a push cancels the CI run in flight
+on that branch, so push once per complete change.
 
 A release note for the planner: COR and FND packages are `[0.16.x]` material by `STABILITY.md` §3 unless
-their section says "breaking". Each package states its own release line; DVX-07 is the one that is breaking by design.
+their section says "breaking". Each package states its own release line; DVX-07 is the one that is breaking
+by design.
 
 ## 6. Session protocol
 
-One work package per pull request, unless a package says it pairs with another.
+A package is the unit of work and of evidence: its own commits, its own failing-test-first record, its own
+Accept output. A pull request may carry one package or several. Carry several when they are independent, so
+that a red check or a surviving mutant is attributable to one of them; the mutation gate grades the lines
+the whole pull request changed, and one run then covers them all.
 
 ### Before the first edit
 
 1. Read this file's §3 and §6, `status.json` for your package, the package's section, and the evidence
    sections it names. Read `docs/handoff.md` from *Now* to *Environment facts that still hold*.
-2. Check the gates: every `gates` id of your package must be recorded as decided. If one is not, stop and
-   report; do not build on the recommended answer.
+2. Check the gates: every `gates` id of your package must be recorded as decided in `status.json`
+   (`plan_check.py --next` does this for you). All fourteen are, as of 2026-11-25. If a later gate is not,
+   stop and report.
 3. Check the dependencies: every `deps` id must have `status: "done"`.
 4. Set up the container: E07 §A2 "Step 0" is the ordered recipe (the toolchain CI uses, `git fetch
    --unshallow --tags origin`, PostgreSQL with `PGSSLMODE=disable`, `CARGO_INCREMENTAL=0
@@ -269,7 +304,7 @@ One work package per pull request, unless a package says it pairs with another.
 
 ### Stop and ask the maintainer when
 
-- a gate is undecided, or the work would need a decision this file does not list;
+- the work would need a decision that is not recorded (not one of the fourteen: those are made);
 - the fix needs a breaking change the package did not declare;
 - an Accept check cannot be met without weakening a test, an assertion or a tolerance;
 - a measurement contradicts the premise of the package (report the measurement; that is the result).

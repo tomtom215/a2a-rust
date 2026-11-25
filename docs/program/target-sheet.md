@@ -1,10 +1,11 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
 
-# Target sheet (proposed)
+# Target sheet
 
-Proposed 2026-11-25 for the maintainer's approval (DEC-03 in [`README.md`](README.md)); the handoff's
-"Phase 2" asks for it. It is section 4 of the observability, performance and scale audit
+Approved by the maintainer on 2026-11-25 (DEC-03 in [`README.md`](README.md)): the quantities and the
+procedures are approved; every threshold stays PROPOSED until its first measurement. It is section 4 of the
+ observability, performance and scale audit
 ([`evidence/05-observability-perf-scale.md`](evidence/05-observability-perf-scale.md)), moved here so it can
 be edited as targets are approved and measured. Paths in the Procedure columns are abbreviated as in that
 audit: `tests/…` is under `crates/a2a-protocol-server/tests/`, `srv/…` under
@@ -12,8 +13,7 @@ audit: `tests/…` is under `crates/a2a-protocol-server/tests/`, `srv/…` under
 
 How to read it:
 
-- **Every threshold is PROPOSED. None is a measurement.** A threshold becomes a target when the maintainer
-  approves it, and a result when a package in [`plan/scl-scale.md`](plan/scl-scale.md) or
+- **Every threshold is PROPOSED. None is a measurement.** A threshold becomes a result when a package in [`plan/scl-scale.md`](plan/scl-scale.md) or
   [`plan/prf-performance.md`](plan/prf-performance.md) measures it and records the command, the host and
   three runs.
 - **"Container"** is the 4-vCPU, 15-GB shared cloud container a session runs in. It can measure counts,

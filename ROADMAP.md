@@ -19,6 +19,13 @@ that need a maintainer decision before any work starts.
 
 ## After 0.16.0
 
+**Since 2026-11-25 the plan for this work is [`docs/program/README.md`](docs/program/README.md)**, approved
+by the maintainer that day with the decisions it needed (`docs/handoff.md`, *Decisions the maintainer
+made*). It carries every item below that is still open as a work package with its evidence and acceptance
+checks, plus the work the items below did not name; `docs/program/status.json` holds the status. The list
+below is kept as written on 2026-11-18; where it says `[decision]` and the handoff records the decision,
+the decision is made.
+
 The backlog for 0.16.x and 0.17, written on 2026-11-18 from
 [`docs/audits/0.16.0-release/findings.json`](docs/audits/0.16.0-release/findings.json):
 every register row that was open when 0.16.0 was prepared, and the release's
