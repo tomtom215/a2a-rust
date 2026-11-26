@@ -349,9 +349,9 @@ impl RequestHandler {
     /// Asks the replica running `task_id`, if another one is, to cancel it
     /// at its next renewal. A failure is logged: the store already says
     /// `Canceled`, and that executor's next write is refused regardless.
-    pub(crate) async fn request_remote_cancel(&self, task_id: &TaskId) {
+    pub(crate) async fn request_remote_cancel(&self, task_id: &TaskId) -> RemoteTurn {
         let Some(claims) = &self.turn_claims else {
-            return;
+            return RemoteTurn::Unknown;
         };
         match claims
             .store
@@ -360,13 +360,28 @@ impl RequestHandler {
         {
             Ok(true) => {
                 trace_info!(task_id = %task_id, "cancel handed to the replica running the task");
+                RemoteTurn::Running
             }
-            Ok(false) => {}
+            Ok(false) => RemoteTurn::None,
             Err(_e) => {
                 trace_warn!(task_id = %task_id, error = %_e, "cancel not handed to the replica running the task");
+                RemoteTurn::Unknown
             }
         }
     }
+}
+
+/// What [`RequestHandler::request_remote_cancel`] learned of a turn on
+/// another replica.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemoteTurn {
+    /// A live claim was marked: its owner cancels the turn, and its
+    /// processor tells the task's webhooks and log that it ended.
+    Running,
+    /// No turn holds a claim on the task: nothing else will tell them.
+    None,
+    /// No claim store, or it could not be asked.
+    Unknown,
 }
 
 /// What a send goes on with after one attempt at the claim.

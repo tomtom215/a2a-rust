@@ -80,6 +80,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   other write of a turn is. It was written once, so a store unavailable for
   any moment lost it; appending parts to an artifact and replacing one were
   already retried. A push written twice is safe: it is compare-and-append.
+- **A cancel of a task no turn is running is told to its webhooks and its
+  log** (register E-F25, X-11). `CancelTask` of a task parked between turns
+  stored `canceled` and wrote no event, so a stream subscribed on another
+  replica learned of it only at its next poll (up to the reattach ceiling,
+  4 s by default), and its webhooks were not told. It now records the ending
+  in the outbox and appends it to the log, as the claim reaper does, and the
+  append wakes such a stream at once. A task whose turn may be running on
+  another replica is left to that turn, which tells them itself.
 
 ## [0.16.0] - 2026-11-19
 

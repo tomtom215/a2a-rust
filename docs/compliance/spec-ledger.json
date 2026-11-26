@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:13359 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:13367 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -520,7 +520,7 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1549 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1827 InMemoryQueueReader::next_live",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:204 TerminalTracking::cancel_with",
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:28 RequestHandler::on_cancel_task",
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:29 RequestHandler::on_cancel_task",
     "crates/a2a-protocol-server/src/handler/messaging/execute.rs:279 RequestHandler::executor_future"
    ],
    "test_evidence": [
@@ -799,11 +799,11 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:28 RequestHandler::on_cancel_task"
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:29 RequestHandler::on_cancel_task"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:258 cancel_task_terminal_state_returns_not_cancelable",
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:408 a_task_that_finished_after_the_re_read_is_not_cancelable"
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:311 cancel_task_terminal_state_returns_not_cancelable",
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:461 a_task_that_finished_after_the_re_read_is_not_cancelable"
    ],
    "notes": "",
    "auditor": "A",
@@ -818,10 +818,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:28 RequestHandler::on_cancel_task"
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:29 RequestHandler::on_cancel_task"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:244 cancel_task_not_found_returns_error"
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:297 cancel_task_not_found_returns_error"
    ],
    "notes": "",
    "auditor": "A",
@@ -1626,10 +1626,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:28 RequestHandler::on_cancel_task"
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:29 RequestHandler::on_cancel_task"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:258 cancel_task_terminal_state_returns_not_cancelable",
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:311 cancel_task_terminal_state_returns_not_cancelable",
     "crates/a2a-protocol-server/tests/spec_s3_contexts.rs:176 duplicate_cancel_after_purge_returns_task_not_found",
     "crates/a2a-protocol-server/tests/handler_conformance/cancel_and_push.rs:31 a_second_cancel_has_the_same_effect_as_the_first"
    ],
@@ -1916,7 +1916,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:25 RequestHandler::on_get_task",
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:28 RequestHandler::on_cancel_task",
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:29 RequestHandler::on_cancel_task",
     "crates/a2a-protocol-server/src/handler/push_config.rs:287 RequestHandler::on_get_push_config",
     "crates/a2a-protocol-server/src/handler/messaging/continuation.rs:71 RequestHandler::resolve_context_id"
    ],
@@ -9734,7 +9734,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:709 SyncCollector::process_event",
-    "crates/a2a-protocol-server/src/handler/event_processing/mod.rs:270 merge_append",
+    "crates/a2a-protocol-server/src/handler/event_processing/mod.rs:271 merge_append",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:152 process_event_with"
    ],
    "test_evidence": [
@@ -11293,7 +11293,7 @@
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/jsonrpc/response.rs:53 parse_params",
     "crates/a2a-protocol-server/src/handler/ids.rs:84 task_id_param",
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:28 RequestHandler::on_cancel_task",
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:29 RequestHandler::on_cancel_task",
     "crates/a2a-protocol-types/src/generated/params.rs:135 CancelTaskParams",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:137 TaskQueryParams::try_from",
     "crates/a2a-protocol-types/src/proto/convert/requests.rs:165 TaskIdParams::from"

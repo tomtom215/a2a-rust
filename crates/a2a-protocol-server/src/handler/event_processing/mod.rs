@@ -11,6 +11,7 @@
 
 mod background;
 pub use background::deliver_push_bg;
+pub mod ending;
 pub use background::{PushLanes, ends_turn};
 #[cfg(test)]
 mod stale_reads;

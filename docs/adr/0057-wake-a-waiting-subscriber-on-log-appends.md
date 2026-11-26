@@ -254,3 +254,19 @@ the store's own connect options and used by the reattach hook's two reads only.
 - Cancel latency across replicas matters: announce from `CancelTask`.
 - The measurement of (c) at a subscriber count it was not run at shows a
   foreground effect.
+
+## Amendment, 2026-11-26: a cancel of a task no turn runs is appended (COR-02)
+
+The step this ADR named for cancel latency is built, as an append rather than a
+`publish_cancel`-style message: a `CancelTask` of a task no turn runs (parked
+between turns, or left by a replica that is gone) now records the `canceled`
+status in the outbox and appends it to the log after it is stored, as the claim
+reaper does for an ending it completes (`handler::event_processing::ending`).
+The append is what this ADR's wake already listens for, so a stream on another
+replica ends at it: `a_cancel_of_a_parked_task_ends_a_long_wait_on_the_other_replica`
+in `tests/log_wake_e2e.rs` asserts the end within one second against an 8 s
+ceiling. "No turn runs" is the claim store saying no live claim holds the task,
+or, without turn claims, the task having been interrupted when the cancel
+arrived; a task whose turn may be running elsewhere is left to that turn's
+processor, so the ending is not told twice. A task the reaper ends is not
+changed by this, and the status saves still announce nothing.
