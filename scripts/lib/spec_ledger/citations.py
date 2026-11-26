@@ -18,7 +18,11 @@ line has to be where that thing is:
   in an inline module); a free item by its bare name.
 * **Other implementation evidence** (Markdown, TOML, YAML, JSON, proto) is
   `path:line "fragment"`, and the fragment must appear on that line. A
-  directory may be cited whole as `path/`.
+  Markdown file may instead be cited `path "fragment"`, with no line: the
+  fragment (a heading, say) must occur on exactly one line of the file,
+  found when the check runs, so an edit above it moves nothing. This is the
+  form for a file that grows at the top, such as `CHANGELOG.md` under
+  `[Unreleased]` (FND-02). A directory may be cited whole as `path/`.
 * **Test evidence** is `path:line name`, optionally followed by a
   parenthesised remark, and the cited line must hold `fn name`: the `fn` line
   itself, not the `#[test]`-family attribute above it. A doctest's `fn` in a
@@ -40,6 +44,7 @@ from spec_ledger import rust_items
 
 RUST_IMPL = re.compile(r"(?P<path>[\w./+-]+\.rs):(?P<line>\d+) (?P<sym>[A-Za-z_][\w]*(?:::[A-Za-z_]\w*)*)")
 QUOTED = re.compile(r'(?P<path>[\w./+-]+):(?P<line>\d+) "(?P<frag>.+)"')
+ANCHORED = re.compile(r'(?P<path>[\w./+-]+\.md) "(?P<frag>.+)"')
 DIRECTORY = re.compile(r"(?P<path>[\w./+-]+)/")
 TEST = re.compile(
     r"(?P<path>[\w./+-]+\.rs):(?P<line>\d+) (?P<name>[A-Za-z_]\w*)(?P<remark> \(.*\))?"
@@ -84,6 +89,9 @@ def check_impl(root: Path, ev: str) -> str | None:
     m = QUOTED.fullmatch(ev)
     if m and not m["path"].endswith(".rs"):
         return _check_fragment(root, m)
+    m = ANCHORED.fullmatch(ev)
+    if m:
+        return _check_anchored(root, m)
     m = DIRECTORY.fullmatch(ev)
     if m and (root / m["path"]).is_dir():
         return None
@@ -105,6 +113,19 @@ def _check_fragment(root: Path, m: re.Match[str]) -> str | None:
     return f"line {n} does not contain {m['frag']!r}{found}"
 
 
+def _check_anchored(root: Path, m: re.Match[str]) -> str | None:
+    path = root / m["path"]
+    if not path.is_file():
+        return "no such file"
+    where = _fragment_lines(path, m["frag"])
+    if len(where) == 1:
+        return None
+    if not where:
+        return f"{m['frag']!r} is not in {m['path']}"
+    return (f"{m['frag']!r} is on {len(where)} lines of {m['path']} ({', '.join(map(str, where))}); "
+            "a citation with no line needs a fragment that occurs once")
+
+
 def check_test(root: Path, ev: str) -> str | None:
     """Why `ev` is not a valid test citation, or None."""
     m = TEST.fullmatch(ev)
@@ -122,6 +143,9 @@ def check_test(root: Path, ev: str) -> str | None:
     m = QUOTED.fullmatch(ev)
     if m and not m["path"].endswith(".rs"):
         return _check_fragment(root, m)
+    m = ANCHORED.fullmatch(ev)
+    if m:
+        return _check_anchored(root, m)
     return "not `path:line fn_name` (Rust) or `path:line \"fragment\"` (anything else)"
 
 

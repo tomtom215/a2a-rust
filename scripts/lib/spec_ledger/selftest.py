@@ -46,7 +46,7 @@ mod again {
 }
 '''
 
-DOC = "# Title\n\nThe card MUST be served over TLS.\n"
+DOC = "# Title\n\nThe card MUST be served over TLS.\n\n## Twice\n\n## Twice\n"
 
 # (citation, is a test citation, expected: None for valid, else a fragment of the refusal)
 CASES = [
@@ -71,6 +71,15 @@ CASES = [
     ("src/lib.rs:15 it_works", True, "line 15 is not the `fn it_works` line (it is at 16)"),
     ("src/lib.rs:16 missing", True, "no `fn missing` in src/lib.rs"),
     ("src/lib.rs it_works", True, "not `path:line fn_name`"),
+    # FND-02: a Markdown citation with no line holds wherever its fragment
+    # moves, and only while the fragment is on exactly one line.
+    ('doc.md "MUST be served over TLS"', False, None),
+    ('doc.md "# Title"', True, None),
+    ('doc.md "MUST be served over UDP"', False, "'MUST be served over UDP' is not in doc.md"),
+    ('doc.md "## Twice"', False, "is on 2 lines of doc.md (5, 7)"),
+    ('doc.md "## Twice"', True, "a citation with no line needs a fragment that occurs once"),
+    ('src/lib.rs "Thing"', False, "not `path:line Symbol`"),
+    ('nope.md "Title"', False, "no such file"),
 ]
 
 

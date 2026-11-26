@@ -222,7 +222,9 @@ The qualification matrix's "Not covered" list is item 4.
    `continue-on-error`, or the nightly job stops being able to fail.
 2. `[0.16.x]` `docs/compliance/spec-ledger.json` cites `CHANGELOG.md` by line
    number, so every release preparation breaks `check_spec_ledger.py`. Cite
-   the heading.
+   the heading. (Done 2026-11-26, FND-02: a Markdown citation may name a
+   fragment with no line, `CHANGELOG.md "## [0.5.0] - 2026-04-02"`, resolved
+   when the check runs and refused when absent or on more than one line.)
 3. `[0.16.x]` `scripts/check_provenance_manifest.py`, which `release.yml`
    runs once per tag, gave a wrong answer once on 2026-11-18: of 17
    measurements of one commit (`df6852d7`), one counted 2130 passing commits
