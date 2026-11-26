@@ -181,9 +181,24 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
      replica must stay retryable).
 - **Touch.** `C/retry.rs`, `C/origin.rs`, `C/error/`, `C/delegation/outcome.rs` if a halt surfaces there,
   tests under `crates/a2a-protocol-client/tests/`, `CHANGELOG.md`.
-- **Accept.** The per-binding tests fail before, pass after. A plain 503 with no halt reason is still
-  retried (a test). The incremental mutation gate has no survivor in `retry.rs` and `origin.rs`.
+- **Accept.** The per-binding tests fail before, pass after. A 503 with `Retry-After` and no halt reason
+  is still retried (a test); a bare 503 is not, for a non-idempotent call (decision D-1, 2026-11-26: it
+  read "a plain 503 with no halt reason is still retried"). The incremental mutation gate has no survivor
+  in `retry.rs` and `origin.rs`.
 - **Out of scope.** Middleware for other SDKs (ECO-04).
+- **Done (2026-11-26).** The trace, per binding, of what a halt produced before the change (read, then
+  confirmed by the test): JSON-RPC and WebSocket, `Protocol(InternalError)` with the `HALTED` detail in
+  `data`, not retried; HTTP+JSON, `UnexpectedStatus { 503 }` (the reader found no A2A code in the
+  standard reason and dropped the body), retryable; gRPC, `HttpClient("gRPC unavailable: …")`,
+  retryable. Now all four give `Protocol` with the detail (`T/halt.rs`, `C/transport/grpc.rs`,
+  `C/transport/rest/request.rs`), read by `ClientError::is_halted`; a protocol error is not retried and
+  counts as an answer for ejection (`C/origin.rs`, test `a_halt_is_an_answer_not_a_failure`). D-1 is in
+  `C/retry.rs` `safe_to_retry_non_idempotent`. Accept: `crates/a2a-protocol-sdk/tests/binding_equivalence/halt.rs`
+  fails before the change on HTTP+JSON (`UnexpectedStatus { status: 503, … }`) and, with only the gRPC
+  fix taken out, on gRPC (`HttpClient("gRPC unavailable: halted: stop everything")`); it passes after on
+  all four, one attempt each. `non_idempotent_retried_on_503_only_with_retry_after` and
+  `only_429_and_503_with_retry_after_are_safe_for_non_idempotent` replace the two tests that asserted
+  the old rule.
 
 ## COR-06: An ambiguous delegation start is recoverable (E03 R5)
 
@@ -207,15 +222,20 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
   agent ran one task. It fails before the change.
 - **Out of scope.** Deriving a child key from the parent's (E03 §6.4 Q7; needs its own ADR against
   ADR 0026).
-- **Held (2026-11-26), for the maintainer.** DEC-08's reason, "a peer that ignores it is no worse off",
-  does not hold for this SDK's own server: `S/handler/messaging/idempotency.rs` `send_key_of` refuses a
-  keyed send with `UnsupportedOperation` when the store cannot honour keys, which is the `TaskStore`
-  trait's default (`S/store/task_store/mod.rs`, `supports_idempotency` returns `false`); every shipped
-  store honours them. ADR 0026 gives the same reason for sending a key only to a peer known to honour it.
-  Sending always therefore stops delegation to a server with a third-party store that keeps the default.
-  The choice is the maintainer's: send always and accept that; send always and resend unkeyed on that
-  refusal (which the decision's "always" excludes); or keep ADR 0026's rule. The continuation half (one
-  key per continuation, register X2-1) is fixed without it.
+- **Done (2026-11-26).** DEC-08 as amended by the maintainer on 2026-11-26: send always, and resend
+  once without the key on the typed refusal. The section's *Held* note (DEC-08's reason did not hold for
+  this SDK's server, whose `TaskStore` default refuses keys) led to the amendment. `C/delegation/keys.rs`
+  keys every start, and takes a key the start added off on `idempotency::refuses_keys`; a caller's key is
+  never taken off. The server's refusal carries the typed detail (`S/handler/messaging/idempotency.rs`).
+  `DelegationOptions::resending` sends a record's message again under its key, with no unkeyed
+  fallback: a refusal then says the agent cannot deduplicate. A record whose start fell back still names
+  the key (the journal has no way to change it); a resend under it is refused, which says so. Accept:
+  `crates/a2a-protocol-client/tests/delegation_journal/resend.rs` loses the first response at a TCP relay,
+  resends from the record, and the agent ran one task; with the start's key taken away (the behaviour
+  before, for a client not known to honour keys) it fails at "the record has the key". The
+  `delegation::keys` tests fail the same way. `crates/a2a-protocol-client/tests/delegation_journal/records.rs`
+  `an_unkeyed_message_to_an_agent_not_known_to_honour_keys_is_recorded_with_a_fresh_one` replaces the test
+  that asserted the old rule.
 
 ## COR-07: Journal records have an owner that is enforced (E03 R4)
 

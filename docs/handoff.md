@@ -19,27 +19,29 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-**2026-11-26: an external review was triaged; two batches of work from it are merged (#230, #231), the third is in review.**
+**2026-11-26: an external review was triaged; three batches of work from it are merged (#230, #231, #232), the fourth is in review.**
 Start a session at [`CLAUDE.md`](../CLAUDE.md), then [`docs/program/README.md`](program/README.md) §6.
 
 - **The external review of 2026-11-25** (an outside reviewer, no build or run: source, CI logs, documents) was checked row by
   row against `92593fc9`: [`docs/program/evidence/08-external-review-triage.md`](program/evidence/08-external-review-triage.md).
   Its defects are real and, but for three, already in the plan; its 24 proposed packages (EXT-01 to EXT-24) are mapped there onto
-  the plan's packages. **Six decisions it raises are the maintainer's and are open** (its §8, D-1 to D-6): no package that
-  depends on one is started. D-1 (whether a bare 503 is safe to re-send for a non-idempotent call) changes COR-05's Accept; until
-  it is decided COR-05 is built as written.
+  the plan's packages. **Six decisions it raised are the maintainer's** (its §8, D-1 to D-6). D-1 was decided on 2026-11-26
+  (option b: a bare 503 is not re-sent for a non-idempotent call; one with `Retry-After` is) and is built in COR-05; D-2 to
+  D-6 are open, and no package that depends on one is started.
 - **Merged 2026-11-26, #230:** the triage; floors for what the published crates reach through other crates
   (`scripts/check_advisory_floors.py` walks the whole graph); the Dependabot updates of 2026-11-23 to 25 (#223, #224,
   #225, #227, superseded: the maintainer closes them); `mdns-sd` 0.22.0 (ADR 0029); FND-03.
 - **Merged 2026-11-26, #231:** COR-01 (a task's ending the store did not take is written again; a breaker), COR-02 (a
   cancel of a task no turn runs is told to its webhooks and log), and the waivers that no longer waived anything removed.
-- **In review, branch `claude/lucid-shannon-y7kvu8`:** COR-03 (a handed-off child carries what is left of its budget, and
+- **Merged 2026-11-26, #232:** COR-03 (a handed-off child carries what is left of its budget, and
   the parent is charged every turn's spend), COR-04 (a canceled task says who stopped it: extension `cancel/v1`), and
-  register X2-1 (a retried continuation is the same request). `status.json` gives COR-03 and COR-04 `landed: null`: set
-  them to this pull request's number when it merges.
-- **COR-06 is held for the maintainer** (its plan section, *Held*): DEC-08's "send the key always" stops delegation to a
-  server of this SDK whose third-party store keeps the `TaskStore` default of not honouring keys, which ADR 0026 named as
-  the reason for its rule. Nothing of COR-06 is built.
+  register X2-1 (a retried continuation is the same request); a stub race in the client's tests; and a shorter CI (the
+  1.94 test cells and the single-feature legs on Linux only, nextest from its release archive): 59 minutes from start to
+  the last check, where the run before it took 132.
+- **In review, branch `claude/lucid-shannon-y7kvu8`:** COR-05 (a halt is final on every binding; D-1's 503
+  rule) and COR-06 (DEC-08 as amended on 2026-11-26: a delegation always keys its message and takes a key it added off,
+  once, on the server's typed refusal; `DelegationOptions::resending` recovers a lost start from its journal record).
+  `status.json` gives both `landed: null`.
 - **What is built of the plan:** count with `python3 docs/program/tools/plan_check.py . --next`, not from this file.
 
 Small defects found and not yet fixed (each low):
@@ -51,6 +53,11 @@ Small defects found and not yet fixed (each low):
   They are unused by the code on purpose (see the comment above them); the lint cannot be silenced per dependency, and
   turning it off for a crate would hide a dependency that is unused by mistake, so the warnings stand.
 - Whether the nightly `Official TCK` has been green since #220 merged was not checked.
+- The full `test` job alone fills this container's disk allowance: its feature legs accumulate in `target/` with no
+  cleanup between them, and the run ends in a linker failure (`No space left on device`), not a test, at the all-features
+  or no-default-features leg (twice on 2026-11-26, once with a second tree building beside it and once without). Run it,
+  then the remaining legs (no default features and the three doctest runs) by hand after `rm -rf target/debug`, and build
+  one tree at a time.
 - `plan_check.py .` lists path citations in `docs/program/plan/*.md` it cannot resolve (its `MISSING` lines; it exits 0): bare
   file names such as `mod.rs` or `retry.rs` that name no single file. Each needs its crate prefix (`S/`, `C/`, `T/`).
 
@@ -58,9 +65,8 @@ Small defects found and not yet fixed (each low):
 ### First, next
 
 1. Read CI on this branch's pull request; close anything red in one push.
-2. The next ready packages: `python3 docs/program/tools/plan_check.py . --next`. COR-07 is the next correctness one;
-   COR-05 waits on decision D-1 only for its 503 rule, and COR-06 on the maintainer's answer to its *Held* note.
-3. The maintainer's decisions D-1 to D-6 (triage §8), and the open E06 §6 row 12, which EXT-02 and EXT-13 need.
+2. The next ready packages: `python3 docs/program/tools/plan_check.py . --next`. COR-07 is the next correctness one.
+3. The maintainer's decisions D-2 to D-6 (triage §8), and the open E06 §6 row 12, which EXT-02 and EXT-13 need.
 
 ### Environment facts that still hold
 
