@@ -601,6 +601,18 @@ impl GrpcTransport {
     /// and stays a transport error a send is not repeated on.
     fn unavailable_to_error(status: &tonic::Status) -> ClientError {
         use tonic_types::StatusExt as _;
+        // A halt answers `UNAVAILABLE` too, with its typed detail: it is the
+        // operator's decision, not a fault, and is never retried (COR-05).
+        let halted = with_detail_data(
+            a2a_protocol_types::A2aError::new(
+                a2a_protocol_types::ErrorCode::InternalError,
+                status.message(),
+            ),
+            status,
+        );
+        if a2a_protocol_types::halt::is_halted(&halted) {
+            return ClientError::Protocol(halted);
+        }
         status
             .get_details_retry_info()
             .and_then(|i| i.retry_delay)

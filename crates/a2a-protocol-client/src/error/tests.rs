@@ -388,3 +388,26 @@ fn a_zero_drop_count_is_reported_as_zero_not_as_absent() {
     assert!(lagged.is_stream_lagged());
     assert_eq!(lagged.dropped_event_count(), Some(0));
 }
+
+/// COR-05: only the typed `HALTED` detail makes a halt; the prose, a bare
+/// 503 and any other error do not.
+#[test]
+fn only_the_typed_detail_is_a_halt() {
+    let halted = ClientError::Protocol(A2aError::with_data(
+        ErrorCode::InternalError,
+        "halted: oncall",
+        a2a_protocol_types::halt::halted_detail(),
+    ));
+    assert!(halted.is_halted());
+    for not_a_halt in [
+        ClientError::Protocol(A2aError::internal("halted: oncall")),
+        ClientError::UnexpectedStatus {
+            status: 503,
+            body: "halted: oncall".to_owned(),
+            retry_after: None,
+        },
+        ClientError::HttpClient("gRPC unavailable: halted: oncall".to_owned()),
+    ] {
+        assert!(!not_a_halt.is_halted(), "{not_a_halt:?}");
+    }
+}

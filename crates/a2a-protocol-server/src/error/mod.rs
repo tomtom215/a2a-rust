@@ -364,20 +364,17 @@ impl ServerError {
     }
 }
 
-/// The `ErrorInfo` `reason` a halt refusal carries (ADR 0049).
-pub const HALTED_REASON: &str = "HALTED";
+/// The `ErrorInfo` `reason` a halt refusal carries (ADR 0049); the same as
+/// [`a2a_protocol_types::halt::HALTED_REASON`], which a caller reads it by.
+pub const HALTED_REASON: &str = a2a_protocol_types::halt::HALTED_REASON;
 
 /// The `ErrorInfo` `domain` of the reasons this SDK defines, where A2A
 /// defines none (ADR 0049).
-pub const A2A_RUST_ERROR_DOMAIN: &str = "a2a-rust.com";
+pub const A2A_RUST_ERROR_DOMAIN: &str = a2a_protocol_types::halt::A2A_RUST_ERROR_DOMAIN;
 
 /// The typed detail of a halt refusal.
 fn halted_detail() -> serde_json::Value {
-    serde_json::json!({
-        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
-        "reason": HALTED_REASON,
-        "domain": A2A_RUST_ERROR_DOMAIN,
-    })
+    a2a_protocol_types::halt::halted_detail()
 }
 
 /// How long a caller refused by [`ServerError::Overloaded`] is asked to wait

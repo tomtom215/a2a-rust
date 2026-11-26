@@ -85,6 +85,19 @@ fn what_says_the_origin_failed() {
     }
 }
 
+/// COR-05: a halted server is answering as its operator asked; its refusal
+/// does not count toward ejecting it, whichever binding carried it.
+#[test]
+fn a_halt_is_an_answer_not_a_failure() {
+    let halted = ClientError::Protocol(a2a_protocol_types::A2aError::with_data(
+        a2a_protocol_types::ErrorCode::InternalError,
+        "halted: oncall",
+        a2a_protocol_types::halt::halted_detail(),
+    ));
+    assert!(halted.is_halted());
+    assert_eq!(outcome_of::<()>(&Err(halted)), Outcome::Success);
+}
+
 #[test]
 fn an_origin_is_scheme_host_and_port() {
     assert_eq!(

@@ -297,19 +297,32 @@ fn decode_success_body(method: &str, body_bytes: &[u8]) -> ClientResult<serde_js
 ///
 /// The exact A2A code is recovered from the `google.rpc.ErrorInfo` detail's
 /// `reason`; bodies without a recognizable A2A reason return `None` so the
-/// caller can fall back to the raw HTTP status.
+/// caller can fall back to the raw HTTP status. A halt (this SDK's `HALTED`
+/// beside the standard reason, which names no A2A code) is an internal error
+/// with its details, so a caller reads it as a halt (COR-05).
 pub fn parse_aip193_error(body: &[u8]) -> Option<a2a_protocol_types::A2aError> {
     let value: serde_json::Value = serde_json::from_slice(body).ok()?;
     let error = value.get("error")?;
     let message = error.get("message")?.as_str()?.to_owned();
     let details = error.get("details")?.as_array()?;
+    let data = serde_json::Value::Array(details.clone());
     let reason = details.iter().find_map(|d| {
         (d.get("@type")?.as_str()? == "type.googleapis.com/google.rpc.ErrorInfo")
             .then(|| d.get("reason")?.as_str())
             .flatten()
     })?;
-    let code = a2a_protocol_types::ErrorCode::from_a2a_reason(reason)?;
-    Some(a2a_protocol_types::A2aError::new(code, message))
+    let code = a2a_protocol_types::ErrorCode::from_a2a_reason(reason).or_else(|| {
+        let probe = a2a_protocol_types::A2aError::with_data(
+            a2a_protocol_types::ErrorCode::InternalError,
+            "",
+            data.clone(),
+        );
+        a2a_protocol_types::halt::is_halted(&probe)
+            .then_some(a2a_protocol_types::ErrorCode::InternalError)
+    })?;
+    // The details stay with the error, as the JSON-RPC and gRPC transports
+    // keep them.
+    Some(a2a_protocol_types::A2aError::with_data(code, message, data))
 }
 
 #[cfg(test)]

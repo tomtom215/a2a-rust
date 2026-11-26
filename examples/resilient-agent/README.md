@@ -20,7 +20,7 @@ fails and the sentence has to be rewritten rather than quietly becoming a lie.
 | Act | What it demonstrates (asserted) | What the SDK does **not** do (also asserted) |
 |---|---|---|
 | **1 — Durability** | A task streamed to completion through one handler comes back **byte-identical** (`serde_json` value equality: status, history, artifacts, timestamps) from a *fresh* handler with fresh `SqliteTaskStore` / `SqlitePushConfigStore` pools over the same file, and its push config is still listed. Zero `Metrics::on_persistence_error` reports along the way | Resume an executor. A task whose executor was cut off after its first artifact chunk reads back `Working` with exactly that chunk — and is still `Working` 500 ms later on the new handler. Restarting with tasks in flight leaves them in flight forever unless something outside the SDK reconciles them |
-| **2 — Failure injection** | An executor failing its first N attempts yields N `Failed` tasks then a `Completed` one, each `Failed` task's status message carrying the executor's error text, and `GetTask` returning the same; the executor is invoked exactly once per send even with a 5-retry client `RetryPolicy`; a follow-up message on a `Failed` task is refused. A webhook refusing its first M deliveries produces exactly M `failed` outcomes at `Metrics::on_push_delivery` with a one-attempt sender, and M+1 attempts absorb them. A proxy faulting its first K requests: `GetTask` over dropped connections is retried, `SendMessage` over 503s is retried | Retry the executor — the retry is the caller's, and it is a **new task**. Re-queue a `failed` push delivery. Retry `SendMessage` over a dropped connection (ambiguous: the work may have run). At the shipped defaults, run the push sender's own retries at all: `HttpPushSender::new()` schedules 98 s per delivery against a 5 s `push_delivery_timeout` |
+| **2 — Failure injection** | An executor failing its first N attempts yields N `Failed` tasks then a `Completed` one, each `Failed` task's status message carrying the executor's error text, and `GetTask` returning the same; the executor is invoked exactly once per send even with a 5-retry client `RetryPolicy`; a follow-up message on a `Failed` task is refused. A webhook refusing its first M deliveries produces exactly M `failed` outcomes at `Metrics::on_push_delivery` with a one-attempt sender, and M+1 attempts absorb them. A proxy faulting its first K requests: `GetTask` over dropped connections is retried, `SendMessage` over 503s with `Retry-After` is retried | Retry the executor — the retry is the caller's, and it is a **new task**. Re-queue a `failed` push delivery. Retry `SendMessage` over a dropped connection (ambiguous: the work may have run). At the shipped defaults, run the push sender's own retries at all: `HttpPushSender::new()` schedules 98 s per delivery against a 5 s `push_delivery_timeout` |
 | **3 — Horizontal scaling** | Two replicas with in-memory stores: `GetTask` on B for A's task is `TaskNotFound`. Two over a shared `PostgresTaskStore`: B reads A's task, identical to A's read; B's subscription to a task running on A ends with `Completed`. Two limiters at 5 per window admit 10 alone and **5** sharing `PostgresRateLimitCounter` | Share event queues. B's subscriber sees the terminal state and **0** of the 2 artifact frames A streamed — a client that reconnects to the other replica mid-stream keeps a correct task and loses the frames in between |
 
 A "replica" or a "restart" here is a second `RequestHandler` with its own
@@ -167,11 +167,12 @@ re-queued. And that schedule is bounded by the handler's
 The act computes that arithmetic rather than waiting five seconds to watch it.
 
 **Proxy faulting its first K requests** (`faulting_proxy`, K=2), twice: once
-dropping the accepted connection unanswered, once answering `503`.
-`RetryPolicy` classes both as retryable
+dropping the accepted connection unanswered, once answering `503` with
+`Retry-After: 0`. `RetryPolicy` classes both as retryable
 (`crates/a2a-protocol-client/src/retry.rs`, `is_retryable`), but re-sends a
-non-idempotent method only when the failure proves the server never processed
-it (`safe_to_retry_non_idempotent`: `429` and `503`). Numbers from the run:
+non-idempotent method only when the failure says the server refused it before
+any work (`safe_to_retry_non_idempotent`: `429`, and `503` with `Retry-After`;
+a bare `503` may come from a proxy after the request ran). Numbers from the run:
 `GetTask` over dropped connections — faulted 2, forwarded 1, ok. `SendMessage`
 over dropped connections — faulted 1, forwarded 0, error surfaced to the
 caller. `SendMessage` over `503`s — faulted 2, forwarded 1, ok. The executor

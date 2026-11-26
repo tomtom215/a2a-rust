@@ -74,6 +74,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A halt is final on every binding** (COR-05, E03 R2). Over gRPC a halted
+  server's `UNAVAILABLE` was read as a dropped connection and retried; over
+  HTTP+JSON the `HALTED` detail was dropped and the refusal read as a bare 503.
+  Both now give a protocol error that `ClientError::is_halted` recognises,
+  which is never retried and does not count toward ejecting the server, as
+  JSON-RPC and WebSocket already did.
+
 - **A continuation sent again is the same request** (register X2-1). A
   `Delegation` retrying a hand-off continuation whose send failed gave each
   attempt a new message id and idempotency key, so a server that had taken

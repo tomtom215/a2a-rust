@@ -262,6 +262,15 @@ impl std::error::Error for ClientError {
 }
 
 impl ClientError {
+    /// Whether this is a halted server's refusal: an operator stopped the
+    /// server, the tenant or the job (`a2a_protocol_types::halt`, COR-05). It
+    /// is final: never retried, and it does not count against the server's
+    /// health. The same on every binding.
+    #[must_use]
+    pub fn is_halted(&self) -> bool {
+        matches!(self, Self::Protocol(e) if a2a_protocol_types::halt::is_halted(e))
+    }
+
     /// Server-requested retry delay, if this error carries one: a
     /// `Retry-After` header on a `429`/`503`, or a `RetryInfo` detail on a
     /// protocol error. The retry layer prefers this over its computed backoff.

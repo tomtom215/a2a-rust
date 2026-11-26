@@ -21,10 +21,11 @@
 //!    the shipped defaults that schedule is cut short by the handler's
 //!    5-second bound.
 //! 3. A **proxy** that faults its first K requests, once by dropping the
-//!    connection and once with `503`. The client's `RetryPolicy` rides out
-//!    both on an idempotent `GetTask`; on `SendMessage` it rides out only the
-//!    `503`, because a dropped connection is ambiguous and a re-send could
-//!    run the work twice.
+//!    connection and once with `503` and `Retry-After`. The client's
+//!    `RetryPolicy` rides out both on an idempotent `GetTask`; on
+//!    `SendMessage` it rides out only the refusing `503`, because a dropped
+//!    connection is ambiguous and a re-send could run the work twice (a `503`
+//!    without `Retry-After` is ambiguous too, and is not re-sent).
 //!
 //! [`Metrics::on_push_delivery`]: a2a_protocol_server::metrics::Metrics::on_push_delivery
 
@@ -432,7 +433,8 @@ async fn client_retry_inner() -> Result<String, String> {
     }
     let (send_drop_faulted, send_drop_forwarded) = (drops.faulted(), drops.forwarded());
 
-    // (d) Same policy, 503, SendMessage: refused up front, so safe to retry.
+    // (d) Same policy, 503 with Retry-After, SendMessage: refused up front,
+    // so safe to retry.
     let (status_url, statuses) = faulting_proxy(
         agent_url.clone(),
         PROXY_FAULTS,

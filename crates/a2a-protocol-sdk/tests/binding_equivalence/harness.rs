@@ -166,6 +166,8 @@ pub fn handler(secured: bool, extended: bool, seen: &Seen) -> Arc<RequestHandler
 /// Where each binding of one agent listens.
 pub struct Agent {
     pub seen: Seen,
+    /// The handler every binding serves, for a test that halts it.
+    pub handler: Arc<RequestHandler>,
     jsonrpc: SocketAddr,
     http_json: SocketAddr,
     grpc: SocketAddr,
@@ -218,6 +220,7 @@ pub async fn serve(secured: bool, extended: bool) -> Agent {
     };
     Agent {
         seen,
+        handler,
         jsonrpc,
         http_json,
         grpc,
@@ -247,6 +250,12 @@ impl Agent {
 
     /// This SDK's client for `binding`, presenting `token` when given one.
     pub async fn client(&self, binding: Binding, token: Option<&str>) -> A2aClient {
+        self.builder(binding, token).await.build().expect("client")
+    }
+
+    /// The builder [`client`](Self::client) builds, for a test that adds to
+    /// it.
+    pub async fn builder(&self, binding: Binding, token: Option<&str>) -> ClientBuilder {
         let builder = match binding {
             Binding::JsonRpc => {
                 ClientBuilder::new(self.url(binding)).with_protocol_binding("JSONRPC")
@@ -275,14 +284,13 @@ impl Agent {
                 ClientBuilder::new(&url).with_custom_transport(transport)
             }
         };
-        let builder = match token {
+        match token {
             Some(t) => builder
                 .with_interceptor(BearerAuthInterceptor::new(
                     Arc::new(Static(t.to_owned())) as Arc<dyn TokenProvider>
                 )),
             None => builder,
-        };
-        builder.build().expect("client")
+        }
     }
 
     /// Forgets the calls recorded so far, returning them.
