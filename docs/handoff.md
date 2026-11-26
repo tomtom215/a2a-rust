@@ -19,7 +19,7 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-**2026-11-26: an external review was triaged, and the first batch of work from it is in review.**
+**2026-11-26: an external review was triaged; the first batch of work from it is merged (#230), the second is in review.**
 Start a session at [`CLAUDE.md`](../CLAUDE.md), then [`docs/program/README.md`](program/README.md) §6.
 
 - **The external review of 2026-11-25** (an outside reviewer, no build or run: source, CI logs, documents) was checked row by
@@ -28,12 +28,13 @@ Start a session at [`CLAUDE.md`](../CLAUDE.md), then [`docs/program/README.md`](
   the plan's packages. **Six decisions it raises are the maintainer's and are open** (its §8, D-1 to D-6): no package that
   depends on one is started. D-1 (whether a bare 503 is safe to re-send for a non-idempotent call) changes COR-05's Accept; until
   it is decided COR-05 is built as written.
-- **In review, branch `claude/lucid-shannon-y7kvu8`:** the triage; floors for what the published crates reach through other
-  crates (`scripts/check_advisory_floors.py` now walks the whole graph); the four Dependabot updates of 2026-11-23 to 25 folded in
-  (#223, #224, #225, #227, which the maintainer closes once this merges); `mdns-sd` 0.22.0 reviewed (ADR 0029); FND-03; the
-  gate-reachability check reading tracked manifests only.
-- **Next, built on a local branch:** COR-01 (an ending the store did not take is written again; a breaker for the events behind
-  an outage), with paused-clock tests. Then COR-02.
+- **Merged 2026-11-26, #230:** the triage; floors for what the published crates reach through other crates
+  (`scripts/check_advisory_floors.py` walks the whole graph); the Dependabot updates of 2026-11-23 to 25 (#223, #224,
+  #225, #227, superseded: the maintainer closes them); `mdns-sd` 0.22.0 (ADR 0029); FND-03.
+- **In review, branch `claude/lucid-shannon-y7kvu8`:** COR-01 (a task's ending the store did not take is written
+  again; a breaker; a new artifact retried like every other write), COR-02 (a cancel of a task no turn runs is told to
+  its webhooks and log), and the waivers that no longer waived anything removed. `status.json` gives COR-01 and
+  COR-02 `landed: null`: set them to this pull request's number when it merges.
 - **What is built of the plan:** count with `python3 docs/program/tools/plan_check.py . --next`, not from this file.
 
 Small defects found and not yet fixed (each low):
@@ -41,15 +42,16 @@ Small defects found and not yet fixed (each low):
 - `statement_count` counts nothing over TLS: with a PostgreSQL whose `ssl = on`, sqlx's `prefer` encrypts the session, the test's
   counting proxy sees no plaintext, every count is 0, and the failure says to "update the constants", which would be wrong. Run
   with `PGSSLMODE=disable`. Fix: refuse, in the test, a server that answers the SSLRequest with `S`.
-- `cargo-deny` 0.22.1 (local) reports the `RUSTSEC-2026-0543` ignore in `deny.toml` as "advisory not encountered", on `main` as
-  well; the entry was added under 0.20.2, which found the advisory. Which version CI's `cargo-deny-action` runs, and what it
-  reports, is read from the next CI log before the entry is touched.
+- Cargo 1.100 warns `unused dependency` on each advisory floor in the published manifests (`cargo::unused_dependencies`).
+  They are unused by the code on purpose (see the comment above them); the lint cannot be silenced per dependency, and
+  turning it off for a crate would hide a dependency that is unused by mistake, so the warnings stand.
 - Whether the nightly `Official TCK` has been green since #220 merged was not checked.
 
 ### First, next
 
 1. Read CI on this branch's pull request; close anything red in one push.
-2. COR-01, then COR-02 (`docs/program/plan/cor-correctness.md`).
+2. The next ready packages: `python3 docs/program/tools/plan_check.py . --next`. COR-03 (the continuation's budget) and
+   COR-06/COR-07 are the correctness ones; COR-05 waits on decision D-1 only for its 503 rule.
 3. The maintainer's decisions D-1 to D-6 (triage §8), and the open E06 §6 row 12, which EXT-02 and EXT-13 need.
 
 ### Environment facts that still hold

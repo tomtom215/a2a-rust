@@ -36,7 +36,7 @@
       "gates": [],
       "release": "0.16.x",
       "breaking": false,
-      "status": "todo",
+      "status": "done",
       "landed": null
     },
     {
@@ -48,7 +48,7 @@
       "gates": [],
       "release": "0.16.x",
       "breaking": false,
-      "status": "todo",
+      "status": "done",
       "landed": null
     },
     {
@@ -447,7 +447,7 @@
       "release": "0.16.x",
       "breaking": false,
       "status": "done",
-      "landed": null
+      "landed": 230
     },
     {
       "id": "FND-04",
