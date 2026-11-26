@@ -262,7 +262,10 @@ The qualification matrix's "Not covered" list is item 4.
    its own (S6).
 8. `[decision]` Pin the toolchain a session and CI lint with. On 2026-11-18
    the session image's `stable` was 1.97.0 and CI's 1.100.0, and their clippy
-   disagreed.
+   disagreed. (Done 2026-11-26, FND-06: `.github/ci-stable.txt` names it;
+   `ci.yml`'s three lint jobs install it and `scripts/preflight.sh` refuses
+   another `rustc` unless `PREFLIGHT_ANY_TOOLCHAIN=1`. The tests still run on
+   `stable`.)
 9. **Taken in 2026-11-22** (branch `claude/admiring-sagan-2yed5v-deps`):
    Dependabot pull requests #213, #216 and #217, with #216's Alertmanager pin
    moved in `install_tools.sh` as well.

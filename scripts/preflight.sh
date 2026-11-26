@@ -27,6 +27,8 @@
 #   scripts/preflight.sh --list       # show the CI gate inventory and exit
 #   scripts/preflight.sh --fail-fast  # stop at the first failing gate
 #   scripts/preflight.sh --force      # skip the free-space precheck
+# Every tier runs under the toolchain .github/ci-stable.txt names, as CI's lint
+# jobs do, and refuses another `rustc` unless PREFLIGHT_ANY_TOOLCHAIN=1.
 #
 # What `--full` needs that a laptop may not have, all measured 2026-08-19 and
 # all reported by the precheck before any gate runs:
@@ -440,6 +442,7 @@ if [ ! -f "$CI_YML" ]; then
     exit 2
 fi
 
+check_toolchain
 check_free_disk
 report_external_prerequisites
 report_dirty_worktree

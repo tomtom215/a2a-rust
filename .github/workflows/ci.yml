@@ -75,9 +75,18 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The lint jobs (this one's rustfmt, `clippy`, `features`) run the toolchain
+      # `.github/ci-stable.txt` names, not whatever `stable` is that day: a lint's
+      # verdict is its version's, and `scripts/preflight.sh` refuses to run under
+      # another, so a session and CI judge with one rustfmt and one clippy (FND-06,
+      # DEC-05). Moving to a new stable is a change to that file. The tests keep
+      # `stable`, so a new release that breaks the build is still seen at once.
+      - name: Read the lint toolchain pin
+        id: pin
+        run: echo "version=$(tr -d '[:space:]' < .github/ci-stable.txt)" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
-          toolchain: stable
+          toolchain: ${{ steps.pin.outputs.version }}
           components: rustfmt
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -600,9 +609,15 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # `matrix.rust` stays `stable` because it names the check (`Clippy (stable,
+      # <os>)`, the name the intended required checks use); the clippy that runs
+      # is the pin's (see `static-checks`).
+      - name: Read the lint toolchain pin
+        id: pin
+        run: echo "version=$(tr -d '[:space:]' < .github/ci-stable.txt)" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
-          toolchain: ${{ matrix.rust }}
+          toolchain: ${{ steps.pin.outputs.version }}
           components: clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       # protoc is bundled via the `protoc-bin-vendored` crate (see the
@@ -662,9 +677,13 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The pinned clippy, as in `clippy` (see `static-checks`).
+      - name: Read the lint toolchain pin
+        id: pin
+        run: echo "version=$(tr -d '[:space:]' < .github/ci-stable.txt)" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
         with:
-          toolchain: stable
+          toolchain: ${{ steps.pin.outputs.version }}
           components: clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Install cargo-hack

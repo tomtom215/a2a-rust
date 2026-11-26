@@ -53,7 +53,11 @@ NON_GATE_JOBS='^(nightly|deny|semver)$'
 # `Install mdBook` downloads the pinned mdBook into the runner's PATH; it
 # renders no verdict, and a contributor running the book gate locally has
 # their own mdBook (the gate step after it is what is run and proven).
-SKIP_STEPS='^(Install SPIRE|Install cargo-hack|Install cargo-nextest|Install mdBook)$'
+# `Read the lint toolchain pin` copies `.github/ci-stable.txt` into a step
+# output for the toolchain action; it judges nothing (a version that does not
+# exist fails the install after it), and preflight.sh checks the same file
+# against the local `rustc` before any gate runs.
+SKIP_STEPS='^(Install SPIRE|Install cargo-hack|Install cargo-nextest|Install mdBook|Read the lint toolchain pin)$'
 
 # Actions that prepare a runner and render no verdict about this repository:
 # checking out, installing a toolchain, restoring a cache, installing Python

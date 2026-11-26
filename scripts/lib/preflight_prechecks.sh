@@ -51,6 +51,36 @@ FLOOR_GB_default=4
 FLOOR_GB_fmt=0
 FLOOR_GB_quick=0
 
+# The toolchain CI lints with is the one `.github/ci-stable.txt` names
+# (FND-06, DEC-05). A lint's verdict is its version's: this container's
+# `stable` was 1.97.0 while CI's was 1.100.0, and their clippy disagreed (the
+# handoff's *Environment facts*, 2026-11). So a run under another `rustc` is
+# refused before any gate, naming both versions, unless
+# PREFLIGHT_ANY_TOOLCHAIN=1 says to run anyway; then it says what the run
+# cannot show.
+check_toolchain() {
+    local pin_file="$REPO_ROOT/.github/ci-stable.txt" pin have
+    pin=$(tr -d '[:space:]' <"$pin_file" 2>/dev/null || true)
+    if [ -z "$pin" ]; then
+        printf 'preflight: %s is missing or empty; it names the toolchain CI lints with\n' \
+            "${pin_file#"$REPO_ROOT"/}" >&2
+        exit 2
+    fi
+    have=$(rustc -V 2>/dev/null | awk '{print $2}')
+    [ "$have" = "$pin" ] && return 0
+    if [ "${PREFLIGHT_ANY_TOOLCHAIN:-0}" = 1 ]; then
+        printf '\033[33mpreflight: rustc is %s and CI lints with %s; running anyway (PREFLIGHT_ANY_TOOLCHAIN=1):\n' \
+            "${have:-not found}" "$pin" >&2
+        printf '           a lint that passes here may fail in CI, and the reverse.\033[0m\n' >&2
+        return 0
+    fi
+    printf 'preflight: rustc is %s, and CI lints with %s (.github/ci-stable.txt).\n' "${have:-not found}" "$pin" >&2
+    printf '  Install it: rustup toolchain install %s --profile minimal -c clippy -c rustfmt\n' "$pin" >&2
+    printf '  then run:   RUSTUP_TOOLCHAIN=%s scripts/preflight.sh ...\n' "$pin" >&2
+    printf '  or set PREFLIGHT_ANY_TOOLCHAIN=1 to run under %s anyway.\n' "${have:-this toolchain}" >&2
+    exit 2
+}
+
 check_free_disk() {
     [ "$FORCE" -eq 1 ] && return 0
 

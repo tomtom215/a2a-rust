@@ -616,6 +616,15 @@ scripts/preflight.sh --full   # every gate ci.yml runs
 scripts/preflight.sh --list   # the gate inventory, and what each tier covers
 ```
 
+Every tier runs under the toolchain CI lints with, which
+[`.github/ci-stable.txt`](.github/ci-stable.txt) names (`ci.yml`'s rustfmt and
+clippy jobs install that version, not the day's `stable`). Under another
+`rustc` the script stops before any gate and names both versions; install the
+pinned one (`rustup toolchain install $(cat .github/ci-stable.txt) --profile
+minimal -c clippy -c rustfmt`) and run with `RUSTUP_TOOLCHAIN` set to it, or set
+`PREFLIGHT_ANY_TOOLCHAIN=1` to run anyway, knowing a lint verdict may then differ
+from CI's. Moving the pin is a change to that file, in its own pull request.
+
 `--full` means it: it includes the gates with external prerequisites, and those
 fail without them rather than being quietly skipped. A live PostgreSQL at
 `A2A_TEST_POSTGRES_URL` for the two postgres suites, and `spire-server` /
