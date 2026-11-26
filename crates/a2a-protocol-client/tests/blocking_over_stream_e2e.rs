@@ -196,7 +196,7 @@ const BINDINGS: [&str; 2] = ["JSONRPC", "HTTP+JSON"];
 
 /// The defect, reproduced: a blocking send is silent until the turn ends, so
 /// a proxy with an idle timeout shorter than the turn cuts it.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_plain_blocking_send_is_cut_by_a_proxy_with_a_short_idle_timeout() {
     let proxied = idle_cutting_proxy(serve().await, Duration::from_millis(600)).await;
     for binding in BINDINGS {
@@ -212,7 +212,7 @@ async fn a_plain_blocking_send_is_cut_by_a_proxy_with_a_short_idle_timeout() {
 }
 
 /// The fix: the same turn, carried over a stream, crosses the same proxy.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_send_carried_over_a_stream_crosses_the_same_proxy() {
     let proxied = idle_cutting_proxy(serve().await, Duration::from_millis(600)).await;
     for binding in BINDINGS {

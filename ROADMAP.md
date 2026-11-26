@@ -250,6 +250,10 @@ The qualification matrix's "Not covered" list is item 4.
    tolerates a pause of 500 ms. Make the test independent of a pause of the
    machine, without widening the window or retrying it (`CI2` in
    `docs/audits/0.16.0-release/findings.json`).
+   (Done 2026-11-26, FND-09 step 4: the test and its "cut" twin run on
+   tokio's paused clock, which a stopped process does not advance; 200 of
+   200 runs passed with a 1 s SIGSTOP landing in 190 of them, where 40 of 40
+   failed before.)
 5. `[0.16.x]` The first publish of `a2a-protocol-slimrpc`, and a build of it
    on its declared MSRV (`RELEASING.md`).
 6. `[decision]` An absolute coverage floor in `codecov.yml`
