@@ -3,6 +3,7 @@
 
 //! [`Outcome`] and [`Delegated`]: what became of a delegated task.
 
+use a2a_protocol_types::cancel_cause::{CancelCause, cause_of};
 use a2a_protocol_types::failure::{FailureClass, class_of};
 use a2a_protocol_types::{Message, TaskState, TaskStatus};
 
@@ -23,7 +24,8 @@ pub enum Outcome {
         /// Its failure class.
         class: FailureClass,
     },
-    /// The child reached `canceled`, whoever asked for it.
+    /// The child reached `canceled`; [`cancel_cause`](Self::cancel_cause)
+    /// says who stopped it, when its server said.
     Canceled(TaskStatus),
     /// The child is waiting for the parent: `input-required` or
     /// `auth-required`. It was not cancelled; continue it by sending a
@@ -68,6 +70,18 @@ impl Outcome {
             _ => return None,
         })
     }
+
+    /// Who stopped a [`Canceled`](Self::Canceled) child: a `CancelTask`, an
+    /// operator's halt or a lapsed lease (extension `cancel/v1`). `None` for
+    /// any other outcome, and for a canceled status that names no cause this
+    /// version knows, as one from another SDK does: never guessed.
+    #[must_use]
+    pub fn cancel_cause(&self) -> Option<CancelCause> {
+        match self {
+            Self::Canceled(status) => status.message.as_ref().and_then(cause_of),
+            _ => None,
+        }
+    }
 }
 
 /// A delegation that has ended: the child's id, if it was learned, and its
@@ -79,4 +93,32 @@ pub struct Delegated {
     pub task_id: Option<String>,
     /// What became of it.
     pub outcome: Outcome,
+}
+
+#[cfg(test)]
+mod tests {
+    use a2a_protocol_types::cancel_cause::{CancelCause, set_cause};
+    use a2a_protocol_types::{Message, TaskState, TaskStatus};
+
+    use super::Outcome;
+
+    /// COR-04: a canceled child says who stopped it when its server wrote a
+    /// cause, and `None` when a peer wrote none.
+    #[test]
+    fn a_canceled_child_says_who_stopped_it_and_a_bare_one_says_nothing() {
+        let bare = Outcome::of(TaskStatus::new(TaskState::Canceled)).unwrap();
+        assert!(matches!(bare, Outcome::Canceled(_)));
+        assert_eq!(bare.cancel_cause(), None);
+        let mut note = Message::agent_text("m", "halted");
+        set_cause(&mut note, CancelCause::Halted);
+        let halted =
+            Outcome::of(TaskStatus::new(TaskState::Canceled).with_message(note.clone())).unwrap();
+        assert_eq!(halted.cancel_cause(), Some(CancelCause::Halted));
+        let failed = Outcome::of(TaskStatus::new(TaskState::Failed).with_message(note)).unwrap();
+        assert_eq!(
+            failed.cancel_cause(),
+            None,
+            "only a canceled child has a cause"
+        );
+    }
 }

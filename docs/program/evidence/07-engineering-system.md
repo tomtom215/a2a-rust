@@ -151,7 +151,7 @@ Format: **rule** — source — gate (or "unenforced").
 
 ### A1.10 MSRV vs stable
 
-85. **MSRV 1.94** (`Cargo.toml:38`); test matrix `rust: [stable, 1.94] × 3 OS` (`ci.yml` job `test`); clippy runs on **stable only** ×3 OS. MSRV is raised only in a minor (`STABILITY.md:166-177`).
+85. **MSRV 1.94** (`Cargo.toml:38`); test matrix `rust: [stable, 1.94] × 3 OS` (`ci.yml` job `test`; since 2026-11-26 the 1.94 cells and the single-feature legs are Linux only); clippy runs on **stable only** ×3 OS. MSRV is raised only in a minor (`STABILITY.md:166-177`).
 86. **Pitfalls**: CI's `stable` floats (1.100.0 on 2026-11-22; session image had 1.97.0 whose clippy "reports 255 errors CI's does not", `handoff.md:96-97,245`). **Do not `#[allow]` a lint the older toolchain does not know** (`unknown_lints` fails) — avoid the lint instead (`handoff.md:229-232`). Cargo 1.100 warns `unused dependency` for `book-tests` (false positive, left alone). Nightly clippy is informational but previews stable lints (`handoff.md:1485-1488`). MSRV leg locally: `rustup toolchain install 1.94 --profile minimal` and `cargo +1.94 check --all-targets` into its own target dir (`handoff.md:1144`). Edition 2024, resolver 3 (`Cargo.toml:7,37`).
 
 ### A1.11 ADRs

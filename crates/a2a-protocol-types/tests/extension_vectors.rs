@@ -15,6 +15,7 @@ use a2a_protocol_types::approval::{
     APPROVAL_EXTENSION_URI, APPROVAL_METADATA_KEY, ApprovalDecision, ApprovalRequest,
 };
 use a2a_protocol_types::budget::{BUDGET_EXTENSION_URI, BUDGET_METADATA_KEY, Budget, BudgetStatus};
+use a2a_protocol_types::cancel_cause::{CANCEL_EXTENSION_URI, CANCEL_METADATA_KEY, cause_of};
 use a2a_protocol_types::failure::{FAILURE_EXTENSION_URI, FAILURE_METADATA_KEY, class_of};
 use a2a_protocol_types::idempotency::{
     IDEMPOTENCY_EXTENSION_URI, IDEMPOTENCY_METADATA_KEY, key_of,
@@ -65,6 +66,10 @@ fn idempotency(md: &Value) -> Result<Value, String> {
 
 fn failure(md: &Value) -> Result<Value, String> {
     Ok(class_of(&message(md)).map_or(Value::Null, |c| Value::from(c.as_str())))
+}
+
+fn cancel_cause(md: &Value) -> Result<Value, String> {
+    Ok(cause_of(&message(md)).map_or(Value::Null, |c| Value::from(c.as_str())))
 }
 
 fn approval_request(md: &Value) -> Result<Value, String> {
@@ -137,7 +142,7 @@ macro_rules! vectors {
 
 #[test]
 fn every_published_vector_reads_as_it_says() {
-    let suites: [Suite; 8] = [
+    let suites: [Suite; 9] = [
         (
             vectors!("lease-v1/vectors.json"),
             LEASE_EXTENSION_URI,
@@ -172,6 +177,13 @@ fn every_published_vector_reads_as_it_says() {
             FAILURE_METADATA_KEY,
             failure,
             7,
+        ),
+        (
+            vectors!("cancel-v1/vectors.json"),
+            CANCEL_EXTENSION_URI,
+            CANCEL_METADATA_KEY,
+            cancel_cause,
+            5,
         ),
         (
             vectors!("approval-v1/request.vectors.json"),

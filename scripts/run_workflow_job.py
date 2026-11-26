@@ -173,7 +173,8 @@ def evaluate_if(cond, failed_so_far: bool, event: str, outcomes: dict | None = N
 
 
 def terms(cond: str, failed: bool, event: str, outcomes: dict):
-    """Terms joined by `&&` and `||` (no parentheses): status functions, the event name, a step's outcome."""
+    """Terms joined by `&&` and `||` (no parentheses): status functions, the event name, a step's outcome,
+    and `runner.os`, which is `Linux` here: this runner refuses any other platform's job."""
     any_true = False
     for alternative in cond.split("||"):
         all_true = True
@@ -186,11 +187,13 @@ def terms(cond: str, failed: bool, event: str, outcomes: dict):
             elif t == "failure()":
                 v = failed
             else:
-                m = re.fullmatch(r"(github\.event_name|steps\.[A-Za-z0-9_-]+\.(?:outcome|conclusion))\s*(==|!=)\s*'([^']*)'", t)
+                m = re.fullmatch(r"(github\.event_name|runner\.os|steps\.[A-Za-z0-9_-]+\.(?:outcome|conclusion))\s*(==|!=)\s*'([^']*)'", t)
                 if not m:
                     return None
                 if m.group(1) == "github.event_name":
                     actual = event
+                elif m.group(1) == "runner.os":
+                    actual = "Linux"
                 else:
                     _, step_id, which = m.group(1).split(".")
                     actual = (outcomes.get(step_id) or {}).get(which)

@@ -215,7 +215,7 @@ impl Delegation {
             }
         };
         this.renewal = lease.map(|ttl| Renewal::spawn(client, tenant, ttl, &this.origin, None));
-        this.budget = budget.map(|grant| (grant, None));
+        this.budget = budget.map(super::child_budget::ChildBudget::new);
         if let Some((journal, id)) = record {
             this = this.with_journal(journal, id);
         }

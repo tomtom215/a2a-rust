@@ -1168,5 +1168,41 @@
   "blocker": "no",
   "basis": "read",
   "evidence": "First error: crates/a2a-protocol-client/tests/blocking_over_stream_e2e.rs:223:37, JSONRPC: HttpClient(\"client error (SendRequest): connection closed before message completed\"). The job's log shows 3 tests completing in the five seconds 23:46:06 to 23:46:10 UTC, none of them in :06, :07 or :09, where 897 completed in the eight seconds before (8 to 294 a second), and the four tests of this binary, in flight then, ran 1.6 to 5.1 s longer than in the job's other steps, so the runner paused for about six seconds. The test's proxy cuts a connection silent for 600 ms and the server's keep-alive comments come every 100 ms, so a pause over 500 ms fails it. The same test passed in the job's seven other steps and in all eight steps of Test (1.94, ubuntu-latest). A timing-sensitive test and a paused runner, not a defect a user of 0.16.0 hits; no library or test code was changed for it. A risk to the tag: a recurrence on the merge commit turns ci.yml red until the failed job is re-run. Planned: ROADMAP.md, After 0.16.0, Release engineering, item 4. The notes: not named in the 0.16.0 section."
+ },
+ {
+  "id": "CI3",
+  "source": "PR #231, run 45771964482, job 139746562702 (mutation shard 9/40, unmutated baseline)",
+  "status": "OPEN",
+  "finding": "turn_claims backends::postgres::postgres_a_steering_message_reaches_the_executor_on_the_replica_that_holds_the_claim failed once: the executor read the first steering message, not the second, within 10 s",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "PostgreSQL 18, 2026-11-26: 'the executor read [\"from B, first\"], not [\"from B, first\", \"from B, second\"], within 10s' (crates/a2a-protocol-server/tests/turn_claims/steering.rs:104). The same unmutated tree passed as the baseline of the run's other shards, and the re-run of the shard passed. Not reproduced locally on PostgreSQL 16: 50 of 50 alone, 30 of 30 with four cores saturated, 5 of 5 runs of the whole turn_claims binary. Both stores acknowledge steering by exact seq, so a lost-ack race was ruled out by reading. Conjectured, not shown: a 3 s turn claim lapses under load and the second message is handed to no holder; the test does not assert the second send's receipt. Next: assert the receipt, and log the claim's lapse in the test."
+ },
+ {
+  "id": "X2-1",
+  "source": "docs/program/evidence/08-external-review-triage.md (R-ADV-01)",
+  "status": "fixed (with COR-03; recorded 2026-11-26)",
+  "finding": "A hand-off continuation retried after an error is sent with a new message id and a new idempotency key",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "crates/a2a-protocol-client/src/delegation/continuation.rs, continuation(): a new MessageId and fresh_key() on every call, and continue_handed_back() calls it once per retry, retrying on any error. A continuation whose response was lost is therefore re-sent as a different logical request. Whether a peer then runs the turn twice was not reproduced. Planned with COR-06 (one logical continuation, one key). Fixed 2026-11-26, apart from COR-06: continue_handed_back() fixes one message id and key per hand-off and sends every retry with them (a later hand-off gets new ones); delegation/continuation_tests.rs a_continuation_sent_again_is_the_same_request loses the first continuation's response and fails before the fix with a new id and key on the resend."
+ },
+ {
+  "id": "X2-2",
+  "source": "docs/program/evidence/08-external-review-triage.md (N-2)",
+  "status": "OPEN",
+  "finding": "A continuation's save can overwrite an event another replica's still-running turn folded; only a compare-and-set write would refuse the stale save",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "docs/compliance/spec-ledger.json, §3.5.2 (PARTIAL), the note's last paragraph: 'Still open: the task itself keeps the lost update, and the continuing turn's first fold stores a position past it again, so a subscriber starting after that fold still misses it; only a compare-and-set write would refuse the stale save.' tests/stale_write_position covers the position, not the lost update. In no package of docs/program/ on 2026-11-26."
+ },
+ {
+  "id": "X2-3",
+  "source": "docs/program/evidence/08-external-review-triage.md (N-1)",
+  "status": "OPEN",
+  "finding": "rpc.client.call.duration's error.type and rpc.status_code take a code the peer chose (JSON-RPC's as_i32), so a hostile peer can grow the series count",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "crates/a2a-protocol-client/src/call_span.rs, Status::failed: (E::Protocol(e), Some(\"jsonrpc\")) => e.code.as_i32().to_string(). Not measured. Belongs in OBS-01's hostile arm beside server.address."
  }
 ]

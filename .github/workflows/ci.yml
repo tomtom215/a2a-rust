@@ -675,11 +675,27 @@ jobs:
     # each cut off mid-run — read exactly like a hang somewhere else entirely.
     # A red matrix should say which cells are red, not hide five to save a
     # runner-minute. Same reason fuzz, mutants and tck already set it.
+    #
+    # The MSRV (1.94) runs on Linux only, and so do the single-feature legs;
+    # macOS and Windows run the three legs that compile every feature between
+    # them (default, all, none) and the doctests. Run 45814698991 (2026-11-26)
+    # measured the cost of doing everything everywhere: the four non-Linux
+    # jobs ran 109-123 minutes each, about 70 of them in the thirteen
+    # single-feature legs (each a fresh build), and the slowest decided when CI
+    # finished (132 minutes); the Linux jobs waited 44-51 minutes for a runner
+    # meanwhile. What a toolchain version breaks is the compiler's, not the
+    # platform's, and a feature gate that breaks is caught by the Linux legs,
+    # the feature matrix and the clippy jobs on all three platforms.
     strategy:
       fail-fast: false
       matrix:
         rust: [stable, "1.94"]
         os: [ubuntu-latest, macos-latest, windows-latest]
+        exclude:
+          - rust: "1.94"
+            os: macos-latest
+          - rust: "1.94"
+            os: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-15
@@ -698,42 +714,55 @@ jobs:
       # version is the one the mutation gate pins, read from its install
       # script so the two cannot drift. 2026-10-28: the whole workspace with
       # every feature, 5,851 tests, passed under nextest as under `cargo test`.
+      # Installed from its release archive, checked against a pinned digest
+      # (`scripts/ci/install_nextest.sh`): building it took 6-7 minutes on
+      # Windows and macOS.
       - name: Install cargo-nextest
         shell: bash
-        run: |
-          version=$(sed -n 's/^CARGO_NEXTEST_VERSION=//p' scripts/install_cargo_mutants.sh)
-          test -n "$version"
-          cargo install --locked cargo-nextest --version "$version"
+        run: scripts/ci/install_nextest.sh "$HOME/.cargo/bin"
       - name: Test (default features)
         run: cargo nextest run --profile ci --workspace
       - name: Test (signing feature)
+        if: runner.os == 'Linux'
         run: cargo nextest run --profile ci --workspace --features signing
       - name: Test (tracing feature)
+        if: runner.os == 'Linux'
         run: cargo nextest run --profile ci --workspace --features tracing
       - name: Test (tls-rustls feature)
+        if: runner.os == 'Linux'
         run: cargo nextest run --profile ci -p a2a-protocol-client --features tls-rustls
       - name: Test (tls-rustls feature, server — live-TLS push E2E)
+        if: runner.os == 'Linux'
         run: cargo nextest run --profile ci -p a2a-protocol-server --features tls-rustls
       - name: Test (sqlite feature)
+        if: runner.os == 'Linux'
         run: cargo nextest run --profile ci -p a2a-protocol-server --features sqlite
       - name: Test (postgres feature)
+        if: runner.os == 'Linux'
         run: cargo nextest run --profile ci -p a2a-protocol-server --features postgres
       - name: Test (axum feature)
+        if: runner.os == 'Linux'
         run: cargo nextest run --profile ci -p a2a-protocol-server --features axum
       - name: Test (tool-loop feature)
+        if: runner.os == 'Linux'
         run: cargo nextest run --profile ci -p a2a-protocol-server --features tool-loop
       - name: Test (skills feature)
+        if: runner.os == 'Linux'
         run: cargo nextest run --profile ci -p a2a-protocol-server --features skills
       # Dedicated websocket/grpc legs: --all-features also compiles these,
       # but a feature-specific regression (missing gate, dep drift) only
       # surfaces when the feature is built in isolation.
       - name: Test (websocket feature)
+        if: runner.os == 'Linux'
         run: cargo nextest run --profile ci --workspace --features websocket
       - name: Test (grpc feature)
+        if: runner.os == 'Linux'
         run: cargo nextest run --profile ci --workspace --features grpc
       - name: Test (auth-jwt feature)
+        if: runner.os == 'Linux'
         run: cargo nextest run --profile ci -p a2a-protocol-server --features auth-jwt
       - name: Test (auth-jwt + tls-rustls — live-TLS JWKS E2E)
+        if: runner.os == 'Linux'
         run: cargo nextest run --profile ci -p a2a-protocol-server --features auth-jwt,tls-rustls
       - name: Test (all features)
         run: cargo nextest run --profile ci --workspace --all-features

@@ -123,6 +123,7 @@ pub mod artifact;
 pub mod audit;
 pub mod auth_rejection;
 pub mod budget;
+pub mod cancel_cause;
 pub mod delegation_journal;
 pub mod error;
 pub mod events;

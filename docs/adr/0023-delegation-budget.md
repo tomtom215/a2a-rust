@@ -162,3 +162,22 @@ Option 2.
   - the tool loop stopping on tokens;
   - a two-hop end-to-end run in which the grandchild's deadline is inside
     the parent's.
+
+## Amendment, 2026-11-26: a continuation carries what is left (COR-03)
+
+*Scope* says a continuing message brings its own budget. For a hand-off
+continuation (ADR 0054) that budget was the first message's, computed at grant
+time, so each continuation gave the child its whole grant again. The client now
+computes a continuation's budget from the live grant
+(`a2a-protocol-client` `delegation::child_budget`): the grant's time less the
+time since it was made, and each granted meter less what the handed-back turns
+reported spending. A meter a turn did not report cannot be known; it is carried
+as granted, and the settlement keeps its whole reservation. Every turn ends by
+the grant's one deadline, and no continuation is sent once that deadline has
+passed. Each turn reports its own spend, so the settlement charges the sum over
+the turns.
+
+Tests that must fail without the change:
+`a_continuation_carries_what_is_left_and_every_turn_is_charged` and
+`no_continuation_reaches_past_the_grant` (`delegation/continuation_tests.rs`),
+and the unit tests in `delegation/child_budget_tests.rs`.

@@ -37,6 +37,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   advisory. The `RUSTSEC-2026-0459` exception in `deny.toml` is removed:
   `sqlx` 0.9.1 allows `libsqlite3-sys` 0.40.
 
+### Added
+
+- **A canceled task says who stopped it** (E03 R3). A parent could not tell a
+  lapsed lease from an operator's halt from a caller's `CancelTask`: all three
+  end `canceled`, and the delegation outcome said "whoever asked for it". The
+  server now writes the cause on every canceled status it ends
+  (`a2a_protocol_types::cancel_cause::CancelCause`: `cancel-requested`,
+  `halted`, `lease-lapsed`), as the new extension
+  `https://a2a-rust.com/extensions/cancel/v1` with schema and vectors under
+  `crates/a2a-protocol-types/extensions/cancel-v1/`, and
+  `Outcome::cancel_cause` reads it. A canceled status with no cause, as one
+  from another SDK, reads as `None`. The server does not declare the URI on
+  its agent card, so a signed card keeps building.
+
 ### Changed
 
 - **`a2a-protocol-discovery` uses `mdns-sd` 0.22.0** (was 0.21.7). Since 0.22.0
@@ -59,6 +73,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   2026-11-19 on that stale baseline (`docs/official-tck-findings.md` §27).
 
 ### Fixed
+
+- **A continuation sent again is the same request** (register X2-1). A
+  `Delegation` retrying a hand-off continuation whose send failed gave each
+  attempt a new message id and idempotency key, so a server that had taken
+  the lost one saw a second request and could run the turn twice. Every
+  attempt at one continuation now carries the same id and key; the next
+  hand-off is a new continuation with new ones.
+
+- **A handed-off child no longer gets its budget again** (E03 R1). A
+  `Delegation` whose child handed its turn back sent the first message again,
+  with the budget it carried at grant time, and the server opens an account
+  from each message: every continuation restarted the child's deadline and
+  filled its meters, so a child could outlive its parent's deadline. A
+  continuation now carries what is left of the grant, its time less the time
+  since the grant and each meter less what the handed-back turns reported
+  spending, and none is sent once the grant's time has run out. The settlement
+  charges the parent the sum of every turn's spend, where it charged the last
+  turn's alone and refunded the rest. A meter a handed-back turn did not report
+  is carried as granted and its whole reservation is kept.
 
 - **A store outage longer than `store_write_retry` no longer leaves a task
   unfinished** (Known Limitation of 0.16.0, register X-10). The ending a turn

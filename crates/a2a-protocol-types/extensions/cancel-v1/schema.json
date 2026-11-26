@@ -1,0 +1,12 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://a2a-rust.com/extensions/cancel/v1/schema.json",
+ "title": "Cancel cause (cancel/v1)",
+ "description": "Who stopped a canceled task, a token on its status message. A receiver reads an unrecognised token as no cause: there is no catch-all a caller could act on. The enum lists the causes of v1.",
+ "type": "string",
+ "enum": [
+  "cancel-requested",
+  "halted",
+  "lease-lapsed"
+ ]
+}

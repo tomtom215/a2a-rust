@@ -37,7 +37,7 @@
       "release": "0.16.x",
       "breaking": false,
       "status": "done",
-      "landed": null
+      "landed": 231
     },
     {
       "id": "COR-02",
@@ -49,7 +49,7 @@
       "release": "0.16.x",
       "breaking": false,
       "status": "done",
-      "landed": null
+      "landed": 231
     },
     {
       "id": "COR-03",
@@ -60,7 +60,7 @@
       "gates": [],
       "release": "0.16.x",
       "breaking": false,
-      "status": "todo",
+      "status": "done",
       "landed": null
     },
     {
@@ -72,7 +72,7 @@
       "gates": [],
       "release": "0.17",
       "breaking": false,
-      "status": "todo",
+      "status": "done",
       "landed": null
     },
     {

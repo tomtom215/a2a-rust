@@ -51,7 +51,7 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
   with the breaker beside it (`S/handler/event_processing/background/processor/pending.rs`); only an
   ending whose write gave up on an unavailable store is kept, since one the store refused has been ruled
   on (found when the first version hung two `terminal_truth` tests). Found while testing it and fixed:
-  a new artifact was the one fold write not retried. Accept: the tests in `background/outage_tests.rs`
+  a new artifact was the one fold write not retried. Accept: the tests in `S/handler/event_processing/background/outage_tests.rs`
   fail with the fix taken out and pass with it (outputs in the commit message); the mutation gate on
   the diff, 61 mutants in three shards, left none missed or timed out. Correction to this Accept,
   measured: `restart_live.py`'s 4 s outage, and a 40 s one, never reach X-10. sqlx waits in `acquire`
@@ -109,6 +109,19 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
 - **Accept.** The test fails before, passes after. A property the test states in words: over k hand-offs,
   the sum of deadlines given to the child never exceeds the parent's grant.
 - **Out of scope.** Budgets across replicas of the parent.
+- **Done (2026-11-26).** `C/delegation/child_budget.rs` keeps the live grant and what each handed-back
+  turn reported; a continuation carries the grant's time less the time since it was made and each meter
+  less the reported spend, no continuation is sent once that time is gone, and the settlement charges the
+  sum over the turns (it charged the last turn's alone, refunding the rest). A meter a turn did not report
+  is carried as granted and keeps its whole reservation. The tests are in the unit harness
+  (`C/delegation/continuation_tests.rs`, `C/delegation/child_budget_tests.rs`), not `tests/delegation_budget_tests.rs`
+  as *Do* said: its scripted transport and paused clock drive a hand-off, which the integration file's
+  peers do not. Accept: `a_continuation_carries_what_is_left_and_every_turn_is_charged` fails before the
+  change (the continuation carried the whole grant, 56 999 ms, where 55 999 ms were left) and passes
+  after; the property is `no_continuation_reaches_past_the_grant` (three hand-offs, each continuation's
+  time plus the time gone equals the grant) with `no_continuation_is_sent_after_the_grant_runs_out`
+  (3 sends where 2 are due, without the check). Mutation gate on the client diff: 16 mutants, 12 caught,
+  4 unviable, none missed. The same change fixed register X2-1 (a retried continuation's identity).
 
 ## COR-04: `Canceled` says who stopped the child (E03 R3)
 
@@ -134,6 +147,19 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
 - **Accept.** The three tests fail before, pass after. The golden-vector test for the extension passes.
   `cargo semver-checks` reports no break. A peer that sends `canceled` with no cause yields `None` (a test).
 - **Out of scope.** A cause on `Failed` (it has `FailureClass`).
+- **Done (2026-11-26).** A new extension, cancel/v1 (`T/cancel_cause.rs`, schema and vectors in
+  `crates/a2a-protocol-types/extensions/cancel-v1/`): the failure extension's schema could not carry it,
+  since its carrier is the failed status and a reader takes an unknown token as `internal`. The server
+  stamps the cause on every `Canceled` its writer passes on (`S/handler/cancel_cause.rs`), from marks on
+  the turn: the lease watch marks a lapse before it stops the turn as a halt does, and `CancelTask` marks
+  the running turn and its own writer's. The executor timeout ends `Failed`, class `budget-exhausted`
+  (`S/handler/messaging/execute.rs`), so it has no cancel cause. The URI is not declared on the agent card:
+  adding it would refuse a signed card built for 0.16 (`S/builder.rs` `advertise`), the hand-off marker's
+  precedent. Accept: `a_cancel_task_says_a_caller_asked` (running and parked), `a_halt_says_so_on_the_canceled_status`
+  and `a_lapsed_lease_says_so_on_the_canceled_status` fail with the stamp removed (cause `None`), and the
+  lease test reads `Halted` with only the lapse mark removed; `extension_vectors` runs the new vectors
+  and `scripts/check_extension_vectors.py` passes; `cargo semver-checks` on the four crates: no semver update
+  required; `Outcome::cancel_cause` is `None` for a bare `canceled` (`C/delegation/outcome.rs` test).
 
 ## COR-05: The client does not retry into a halt (E03 R2)
 
@@ -181,6 +207,15 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
   agent ran one task. It fails before the change.
 - **Out of scope.** Deriving a child key from the parent's (E03 §6.4 Q7; needs its own ADR against
   ADR 0026).
+- **Held (2026-11-26), for the maintainer.** DEC-08's reason, "a peer that ignores it is no worse off",
+  does not hold for this SDK's own server: `S/handler/messaging/idempotency.rs` `send_key_of` refuses a
+  keyed send with `UnsupportedOperation` when the store cannot honour keys, which is the `TaskStore`
+  trait's default (`S/store/task_store/mod.rs`, `supports_idempotency` returns `false`); every shipped
+  store honours them. ADR 0026 gives the same reason for sending a key only to a peer known to honour it.
+  Sending always therefore stops delegation to a server with a third-party store that keeps the default.
+  The choice is the maintainer's: send always and accept that; send always and resend unkeyed on that
+  refusal (which the decision's "always" excludes); or keep ADR 0026's rule. The continuation half (one
+  key per continuation, register X2-1) is fixed without it.
 
 ## COR-07: Journal records have an owner that is enforced (E03 R4)
 

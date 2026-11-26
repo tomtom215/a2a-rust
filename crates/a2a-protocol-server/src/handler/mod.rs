@@ -20,6 +20,7 @@
 //! | `shutdown` | Ending in-flight work, then graceful shutdown with optional timeout |
 
 pub(crate) mod budget;
+mod cancel_cause;
 mod capability;
 pub(crate) mod claims;
 mod concurrency;

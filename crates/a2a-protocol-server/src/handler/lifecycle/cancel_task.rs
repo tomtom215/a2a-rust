@@ -76,7 +76,10 @@ impl RequestHandler {
                         let tokens = self.cancellation_tokens.read().await;
                         tokens
                             .get(&task_id)
-                            .map(|entry| entry.token.cancel())
+                            .map(|entry| {
+                                entry.turn.request_cancel();
+                                entry.token.cancel();
+                            })
                             .is_some()
                     };
 
@@ -120,9 +123,11 @@ impl RequestHandler {
                     // after a hook that wrote no terminal state, so the live queue's
                     // streams close on it (§3.1.2) whether or not the hook is the
                     // default one.
+                    let asked = super::super::ExecutorTurn::default();
+                    asked.request_cancel();
                     let writer = TerminalTracking::new(
                         self.event_queue_manager.writer_for_cancel(&task_id).await,
-                        std::sync::Arc::default(),
+                        std::sync::Arc::new(asked),
                     );
                     writer.cancel_with(self.executor.as_ref(), &ctx).await?;
 
@@ -145,6 +150,12 @@ impl RequestHandler {
 
                     let mut updated = current;
                     updated.status = TaskStatus::with_timestamp(TaskState::Canceled);
+                    crate::handler::cancel_cause::stamp_status(
+                        &mut updated.status,
+                        &updated.id,
+                        &updated.context_id,
+                        Some(a2a_protocol_types::cancel_cause::CancelCause::CancelRequested),
+                    );
                     // The re-read above narrows the window; this closes it. The store
                     // refuses to move a terminal task (`store::terminal`), so a task
                     // that finished between the re-read and this write — on this

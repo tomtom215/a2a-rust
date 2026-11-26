@@ -26,6 +26,8 @@ use crate::transport::Transport;
 struct Scripted {
     scripts: Vec<Vec<StreamResponse>>,
     sends: Arc<Mutex<Vec<serde_json::Value>>>,
+    /// The sends, by index, whose response is lost: recorded, then failed.
+    lost: Vec<usize>,
 }
 
 impl Transport for Scripted {
@@ -54,6 +56,9 @@ impl Transport for Scripted {
                 sends.push(params);
                 (sends.len() - 1).min(self.scripts.len() - 1)
             };
+            if self.lost.contains(&n) {
+                return Err(ClientError::Transport("the response was lost".into()));
+            }
             let (tx, rx) = tokio::sync::mpsc::channel(16);
             for ev in self.scripts[n].clone() {
                 tx.try_send(Ok(ev)).unwrap();
@@ -85,28 +90,43 @@ async fn run(
     scripts: Vec<Vec<StreamResponse>>,
     options: DelegationOptions,
 ) -> (Outcome, Vec<serde_json::Value>, Duration) {
+    Box::pin(run_losing(scripts, options, Vec::new(), None)).await
+}
+
+/// [`run`], losing the responses to the sends in `lost`, with the first
+/// message keyed `key` when given.
+async fn run_losing(
+    scripts: Vec<Vec<StreamResponse>>,
+    options: DelegationOptions,
+    lost: Vec<usize>,
+    key: Option<&str>,
+) -> (Outcome, Vec<serde_json::Value>, Duration) {
     let sends = Arc::new(Mutex::new(Vec::new()));
     let client = Arc::new(
         ClientBuilder::new("http://stub.invalid")
             .with_custom_transport(Scripted {
                 scripts,
                 sends: Arc::clone(&sends),
+                lost,
             })
             .build()
             .unwrap(),
     );
-    let message = Message::new(
+    let mut message = Message::new(
         a2a_protocol_types::message::MessageId::new("first"),
         MessageRole::User,
         vec![Part::text("do it")],
     );
+    if let Some(key) = key {
+        idempotency::set_key(&mut message, key).unwrap();
+    }
     let started = tokio::time::Instant::now();
     let mut params = MessageSendParams::new(message);
     params.tenant = Some("acme".to_owned());
     let child = Delegation::start_with(client, params, options)
         .await
         .unwrap();
-    let outcome = child.wait(std::future::pending()).await.outcome;
+    let outcome = Box::pin(child.wait(std::future::pending())).await.outcome;
     let sends = sends.lock().unwrap().clone();
     (outcome, sends, started.elapsed())
 }
@@ -212,4 +232,177 @@ fn only_a_working_marked_status_is_handed_back() {
     assert!(marked(TaskState::Working, true));
     assert!(!marked(TaskState::Working, false));
     assert!(!marked(TaskState::Completed, true));
+}
+
+/// A status update that hands the turn back (or not) and reports `spent`
+/// tokens.
+fn reporting(state: TaskState, handed_back: bool, spent: u64) -> StreamResponse {
+    let StreamResponse::StatusUpdate(mut update) = status(state, handed_back) else {
+        unreachable!()
+    };
+    let report = a2a_protocol_types::budget::BudgetStatus::new(
+        None,
+        std::collections::BTreeMap::new(),
+        std::collections::BTreeMap::from([("tokens".to_owned(), spent)]),
+    );
+    report.attach_to(&mut update.metadata);
+    StreamResponse::StatusUpdate(update)
+}
+
+/// COR-03: a continuation carries what the child has left, not its grant
+/// again, and the parent is charged what every turn spent. Before the fix
+/// the continuation carried the whole granted time and 100 tokens, and the parent was
+/// charged the last turn's 20 only.
+#[tokio::test(start_paused = true)]
+async fn a_continuation_carries_what_is_left_and_every_turn_is_charged() {
+    use a2a_protocol_types::budget::{Budget, BudgetHandle};
+    let parent = BudgetHandle::start(
+        &Budget::new()
+            .with_time(Duration::from_secs(60))
+            .with_meter("tokens", 1000)
+            .unwrap(),
+    );
+    let grant = parent
+        .grant(
+            &Budget::new()
+                .with_time(Duration::from_secs(60))
+                .with_meter("tokens", 100)
+                .unwrap(),
+        )
+        .unwrap();
+    let granted_ms = grant.budget().remaining_ms.expect("the grant has a time");
+    let (outcome, sends, _) = Box::pin(run(
+        vec![
+            vec![
+                status(TaskState::Working, false),
+                reporting(TaskState::Working, true, 30),
+            ],
+            vec![reporting(TaskState::Completed, false, 20)],
+        ],
+        DelegationOptions::new().with_budget(grant),
+    ))
+    .await;
+    assert!(matches!(outcome, Outcome::Completed(_)), "{outcome:?}");
+    let carried = a2a_protocol_types::budget::Budget::read(
+        &serde_json::from_value(message_of(&sends[1]).clone()).unwrap(),
+    )
+    .unwrap()
+    .expect("the continuation carries a budget");
+    assert_eq!(
+        carried.remaining_ms,
+        Some(granted_ms - 1000),
+        "the grant less the 1 s wait"
+    );
+    assert_eq!(
+        carried.meters.get("tokens"),
+        Some(&70),
+        "100 less the 30 reported"
+    );
+    assert_eq!(parent.remaining("tokens"), Some(950), "charged 30 + 20");
+}
+
+/// COR-03's property: over k hand-offs, the time each continuation gives the
+/// child, added to the time already gone when it is sent, never exceeds the
+/// grant: every turn ends by the grant's one deadline.
+#[tokio::test(start_paused = true)]
+async fn no_continuation_reaches_past_the_grant() {
+    use a2a_protocol_types::budget::{Budget, BudgetHandle};
+    let parent = BudgetHandle::start(&Budget::new().with_time(Duration::from_secs(60)));
+    let grant = parent
+        .grant(&Budget::new().with_time(Duration::from_secs(60)))
+        .unwrap();
+    let granted_ms = grant.budget().remaining_ms.expect("the grant has a time");
+    let handed_back = || vec![status(TaskState::Working, true)];
+    let (outcome, sends, _) = Box::pin(run(
+        vec![
+            handed_back(),
+            handed_back(),
+            handed_back(),
+            vec![status(TaskState::Completed, false)],
+        ],
+        DelegationOptions::new()
+            .with_budget(grant)
+            .with_hand_off(HandOffPolicy::new(
+                3,
+                Duration::from_secs(1),
+                Duration::from_secs(8),
+            )),
+    ))
+    .await;
+    assert!(matches!(outcome, Outcome::Completed(_)), "{outcome:?}");
+    // The waits are 1, 2 and 4 s: the continuations are sent at 1, 3 and 7 s.
+    for (send, sent_at_ms) in sends[1..].iter().zip([1000, 3000, 7000]) {
+        let carried = Budget::read(&serde_json::from_value(message_of(send).clone()).unwrap())
+            .unwrap()
+            .expect("a continuation carries a budget");
+        assert_eq!(carried.remaining_ms, Some(granted_ms - sent_at_ms));
+    }
+}
+
+/// A continuation due after the grant's deadline is not sent: the server
+/// would refuse a budget with no time left.
+#[tokio::test(start_paused = true)]
+async fn no_continuation_is_sent_after_the_grant_runs_out() {
+    use a2a_protocol_types::budget::{Budget, BudgetHandle};
+    let parent = BudgetHandle::start(&Budget::new().with_time(Duration::from_secs(60)));
+    let grant = parent
+        .grant(&Budget::new().with_time(Duration::from_secs(2)))
+        .unwrap();
+    assert_eq!(grant.budget().remaining_ms, Some(2000));
+    let (outcome, sends, _) = Box::pin(run(
+        vec![
+            vec![status(TaskState::Working, true)],
+            vec![status(TaskState::Working, true)],
+            vec![status(TaskState::Completed, false)],
+        ],
+        DelegationOptions::new()
+            .with_budget(grant)
+            .with_hand_off(HandOffPolicy::new(
+                3,
+                Duration::from_secs(1),
+                Duration::from_secs(8),
+            )),
+    ))
+    .await;
+    // Sent at 0 s and 1 s; the next is due at 3 s, past the 2 s deadline.
+    assert_eq!(sends.len(), 2, "{outcome:?}");
+    // The delegation falls to resume, which reads the task: the harness's
+    // `GetTask` answers `canceled`.
+    assert!(matches!(outcome, Outcome::Canceled(_)), "{outcome:?}");
+}
+
+/// X2-1: a continuation whose response was lost is sent again as the same
+/// request, its message id and idempotency key unchanged, so a server that
+/// took the first is not asked to run the turn twice; the next hand-off is a
+/// new continuation. Before the fix each retry had a new id and key.
+#[tokio::test(start_paused = true)]
+async fn a_continuation_sent_again_is_the_same_request() {
+    let first_key = "k".repeat(64);
+    let (outcome, sends, _) = Box::pin(run_losing(
+        vec![
+            vec![status(TaskState::Working, true)],
+            vec![],
+            vec![status(TaskState::Working, true)],
+            vec![status(TaskState::Completed, false)],
+        ],
+        DelegationOptions::new(),
+        vec![1],
+        Some(&first_key),
+    ))
+    .await;
+    assert!(matches!(outcome, Outcome::Completed(_)), "{outcome:?}");
+    assert_eq!(sends.len(), 4);
+    let id = |n: usize| message_of(&sends[n])["messageId"].clone();
+    let key = |n: usize| {
+        let m: Message = serde_json::from_value(message_of(&sends[n]).clone()).unwrap();
+        idempotency::key_of(&m).unwrap().unwrap().to_owned()
+    };
+    assert_eq!(key(0), first_key);
+    assert_eq!(
+        (id(1), key(1)),
+        (id(2), key(2)),
+        "the lost send, sent again"
+    );
+    assert_ne!(key(1), first_key);
+    assert_ne!((id(3), key(3)), (id(2), key(2)), "the next hand-off");
 }
