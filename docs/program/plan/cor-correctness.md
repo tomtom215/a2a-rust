@@ -51,7 +51,7 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
   with the breaker beside it (`S/handler/event_processing/background/processor/pending.rs`); only an
   ending whose write gave up on an unavailable store is kept, since one the store refused has been ruled
   on (found when the first version hung two `terminal_truth` tests). Found while testing it and fixed:
-  a new artifact was the one fold write not retried. Accept: the tests in `background/outage_tests.rs`
+  a new artifact was the one fold write not retried. Accept: the tests in `S/handler/event_processing/background/outage_tests.rs`
   fail with the fix taken out and pass with it (outputs in the commit message); the mutation gate on
   the diff, 61 mutants in three shards, left none missed or timed out. Correction to this Accept,
   measured: `restart_live.py`'s 4 s outage, and a 40 s one, never reach X-10. sqlx waits in `acquire`
@@ -207,6 +207,15 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
   agent ran one task. It fails before the change.
 - **Out of scope.** Deriving a child key from the parent's (E03 §6.4 Q7; needs its own ADR against
   ADR 0026).
+- **Held (2026-11-26), for the maintainer.** DEC-08's reason, "a peer that ignores it is no worse off",
+  does not hold for this SDK's own server: `S/handler/messaging/idempotency.rs` `send_key_of` refuses a
+  keyed send with `UnsupportedOperation` when the store cannot honour keys, which is the `TaskStore`
+  trait's default (`S/store/task_store/mod.rs`, `supports_idempotency` returns `false`); every shipped
+  store honours them. ADR 0026 gives the same reason for sending a key only to a peer known to honour it.
+  Sending always therefore stops delegation to a server with a third-party store that keeps the default.
+  The choice is the maintainer's: send always and accept that; send always and resend unkeyed on that
+  refusal (which the decision's "always" excludes); or keep ADR 0026's rule. The continuation half (one
+  key per continuation, register X2-1) is fixed without it.
 
 ## COR-07: Journal records have an owner that is enforced (E03 R4)
 

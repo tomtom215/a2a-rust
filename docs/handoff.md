@@ -19,7 +19,7 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-**2026-11-26: an external review was triaged; the first batch of work from it is merged (#230), the second is in review.**
+**2026-11-26: an external review was triaged; two batches of work from it are merged (#230, #231), the third is in review.**
 Start a session at [`CLAUDE.md`](../CLAUDE.md), then [`docs/program/README.md`](program/README.md) §6.
 
 - **The external review of 2026-11-25** (an outside reviewer, no build or run: source, CI logs, documents) was checked row by
@@ -31,10 +31,15 @@ Start a session at [`CLAUDE.md`](../CLAUDE.md), then [`docs/program/README.md`](
 - **Merged 2026-11-26, #230:** the triage; floors for what the published crates reach through other crates
   (`scripts/check_advisory_floors.py` walks the whole graph); the Dependabot updates of 2026-11-23 to 25 (#223, #224,
   #225, #227, superseded: the maintainer closes them); `mdns-sd` 0.22.0 (ADR 0029); FND-03.
-- **In review, branch `claude/lucid-shannon-y7kvu8`:** COR-01 (a task's ending the store did not take is written
-  again; a breaker; a new artifact retried like every other write), COR-02 (a cancel of a task no turn runs is told to
-  its webhooks and log), and the waivers that no longer waived anything removed. `status.json` gives COR-01 and
-  COR-02 `landed: null`: set them to this pull request's number when it merges.
+- **Merged 2026-11-26, #231:** COR-01 (a task's ending the store did not take is written again; a breaker), COR-02 (a
+  cancel of a task no turn runs is told to its webhooks and log), and the waivers that no longer waived anything removed.
+- **In review, branch `claude/lucid-shannon-y7kvu8`:** COR-03 (a handed-off child carries what is left of its budget, and
+  the parent is charged every turn's spend), COR-04 (a canceled task says who stopped it: extension `cancel/v1`), and
+  register X2-1 (a retried continuation is the same request). `status.json` gives COR-03 and COR-04 `landed: null`: set
+  them to this pull request's number when it merges.
+- **COR-06 is held for the maintainer** (its plan section, *Held*): DEC-08's "send the key always" stops delegation to a
+  server of this SDK whose third-party store keeps the `TaskStore` default of not honouring keys, which ADR 0026 named as
+  the reason for its rule. Nothing of COR-06 is built.
 - **What is built of the plan:** count with `python3 docs/program/tools/plan_check.py . --next`, not from this file.
 
 Small defects found and not yet fixed (each low):
@@ -46,12 +51,15 @@ Small defects found and not yet fixed (each low):
   They are unused by the code on purpose (see the comment above them); the lint cannot be silenced per dependency, and
   turning it off for a crate would hide a dependency that is unused by mistake, so the warnings stand.
 - Whether the nightly `Official TCK` has been green since #220 merged was not checked.
+- `plan_check.py .` lists path citations in `docs/program/plan/*.md` it cannot resolve (its `MISSING` lines; it exits 0): bare
+  file names such as `mod.rs` or `retry.rs` that name no single file. Each needs its crate prefix (`S/`, `C/`, `T/`).
+
 
 ### First, next
 
 1. Read CI on this branch's pull request; close anything red in one push.
-2. The next ready packages: `python3 docs/program/tools/plan_check.py . --next`. COR-03 (the continuation's budget) and
-   COR-06/COR-07 are the correctness ones; COR-05 waits on decision D-1 only for its 503 rule.
+2. The next ready packages: `python3 docs/program/tools/plan_check.py . --next`. COR-07 is the next correctness one;
+   COR-05 waits on decision D-1 only for its 503 rule, and COR-06 on the maintainer's answer to its *Held* note.
 3. The maintainer's decisions D-1 to D-6 (triage §8), and the open E06 §6 row 12, which EXT-02 and EXT-13 need.
 
 ### Environment facts that still hold
