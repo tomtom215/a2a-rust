@@ -31,6 +31,7 @@ The words MUST, SHOULD and MAY are used as in RFC 2119.
 | [Steering](#steering-v1) | `Message.extensions` on a `SendMessage` naming a running task; the receipt in the response task's `metadata["a2a-rust.com/steering"]` | A message to a working task is refused, as before |
 | [Idempotency key](#idempotency-v1) | `Message.metadata["a2a-rust.com/idempotency-key"]` | A retried send can start a second child |
 | [Failure class](#failure-v1) | The failed status message's `metadata["a2a-rust.com/failure"]` | A caller cannot tell a retryable failure from a final one |
+| [Cancel cause](#cancel-v1) | The canceled status message's `metadata["a2a-rust.com/cancel"]` | A parent cannot tell a halt from a lapsed lease from a `CancelTask` |
 | [Approval](#approval-v1) | `metadata["a2a-rust.com/approval"]` on the asking status and the answering message | An action runs without the bound approval |
 | [Provenance](#provenance-v1) | `metadata["a2a-rust.com/provenance"]` on a message or an artifact | Content loses its AI-generated marker and its signature |
 | [Hand-off marker](#the-hand-off-marker) | The working status message's `metadata["a2a-rust.com/hand-off"]` | A caller does not know to send the turn again after a deploy |
@@ -286,6 +287,27 @@ class token. Files: `failure-v1/`.
   failed. Nothing is refused.
 * The same token MAY ride in a JSON-RPC error's `data` object under the same
   key.
+
+## Cancel v1
+
+URI `https://a2a-rust.com/extensions/cancel/v1`; metadata key
+`a2a-rust.com/cancel` on the canceled task's status message; the value is a
+cause token. Files: `cancel-v1/`. The server writes it on every
+`TASK_STATE_CANCELED` status whose cause it knows, and gives a status without
+a message one; it does not declare the URI on its agent card, since a signed
+card without the entry would then be refused at build.
+
+| Cause | What stopped the task |
+|---|---|
+| `cancel-requested` | A caller's `CancelTask` |
+| `halted` | An operator's halt of the server, the tenant or the job |
+| `lease-lapsed` | The task's lease, not renewed within its time to live |
+
+* **Reader.** It MUST read an unrecognised token, or a value that is not a
+  string, as no cause. There is no catch-all to act on, and a guessed cause
+  is worse than none. No cause is not an error: the task's state still says
+  it was canceled. Nothing is refused. In this SDK
+  `Outcome::cancel_cause` returns it for a delegated child.
 
 ## Approval v1
 

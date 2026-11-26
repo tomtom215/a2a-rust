@@ -278,3 +278,19 @@ async fn a_root_halt_is_recorded_with_its_root() {
     assert_eq!(halts[0].detail["action"], "halt");
     assert_eq!(halts[1].detail["action"], "resume");
 }
+
+/// COR-04: the canceled status says an operator halted the task.
+#[tokio::test]
+async fn a_halt_says_so_on_the_canceled_status() {
+    let h = handler();
+    let id = start(&h, "acme").await.unwrap();
+    reaches(&h, "acme", &id, TaskState::Working).await;
+    h.halt(HaltScope::Tenant("acme".into()), "oncall", "runaway spend")
+        .await;
+    reaches(&h, "acme", &id, TaskState::Canceled).await;
+    let cause = crate::handler::cancel_cause::tests::cause(&h, Some("acme"), &id).await;
+    assert_eq!(
+        cause,
+        Some(a2a_protocol_types::cancel_cause::CancelCause::Halted)
+    );
+}

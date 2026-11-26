@@ -147,6 +147,19 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
 - **Accept.** The three tests fail before, pass after. The golden-vector test for the extension passes.
   `cargo semver-checks` reports no break. A peer that sends `canceled` with no cause yields `None` (a test).
 - **Out of scope.** A cause on `Failed` (it has `FailureClass`).
+- **Done (2026-11-26).** A new extension, cancel/v1 (`T/cancel_cause.rs`, schema and vectors in
+  `crates/a2a-protocol-types/extensions/cancel-v1/`): the failure extension's schema could not carry it,
+  since its carrier is the failed status and a reader takes an unknown token as `internal`. The server
+  stamps the cause on every `Canceled` its writer passes on (`S/handler/cancel_cause.rs`), from marks on
+  the turn: the lease watch marks a lapse before it stops the turn as a halt does, and `CancelTask` marks
+  the running turn and its own writer's. The executor timeout ends `Failed`, class `budget-exhausted`
+  (`S/handler/messaging/execute.rs`), so it has no cancel cause. The URI is not declared on the agent card:
+  adding it would refuse a signed card built for 0.16 (`S/builder.rs` `advertise`), the hand-off marker's
+  precedent. Accept: `a_cancel_task_says_a_caller_asked` (running and parked), `a_halt_says_so_on_the_canceled_status`
+  and `a_lapsed_lease_says_so_on_the_canceled_status` fail with the stamp removed (cause `None`), and the
+  lease test reads `Halted` with only the lapse mark removed; `extension_vectors` runs the new vectors
+  and `scripts/check_extension_vectors.py` passes; `cargo semver-checks` on the four crates: no semver update
+  required; `Outcome::cancel_cause` is `None` for a bare `canceled` (`C/delegation/outcome.rs` test).
 
 ## COR-05: The client does not retry into a halt (E03 R2)
 

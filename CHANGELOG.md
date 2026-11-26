@@ -37,6 +37,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   advisory. The `RUSTSEC-2026-0459` exception in `deny.toml` is removed:
   `sqlx` 0.9.1 allows `libsqlite3-sys` 0.40.
 
+### Added
+
+- **A canceled task says who stopped it** (E03 R3). A parent could not tell a
+  lapsed lease from an operator's halt from a caller's `CancelTask`: all three
+  end `canceled`, and the delegation outcome said "whoever asked for it". The
+  server now writes the cause on every canceled status it ends
+  (`a2a_protocol_types::cancel_cause::CancelCause`: `cancel-requested`,
+  `halted`, `lease-lapsed`), as the new extension
+  `https://a2a-rust.com/extensions/cancel/v1` with schema and vectors under
+  `crates/a2a-protocol-types/extensions/cancel-v1/`, and
+  `Outcome::cancel_cause` reads it. A canceled status with no cause, as one
+  from another SDK, reads as `None`. The server does not declare the URI on
+  its agent card, so a signed card keeps building.
+
 ### Changed
 
 - **`a2a-protocol-discovery` uses `mdns-sd` 0.22.0** (was 0.21.7). Since 0.22.0

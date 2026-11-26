@@ -481,3 +481,16 @@ async fn a_lapse_is_counted() {
     reaches(&h, &id, TaskState::Canceled, Duration::from_secs(5)).await;
     assert_eq!(lapses.0.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
+
+/// COR-04: the canceled status says the lease lapsed, not that it was halted.
+#[tokio::test]
+async fn a_lapsed_lease_says_so_on_the_canceled_status() {
+    let h = leased(InMemoryLeaseStore::new(), tasks());
+    let id = start(&h, Some(TTL)).await.unwrap();
+    reaches(&h, &id, TaskState::Canceled, Duration::from_secs(5)).await;
+    let cause = crate::handler::cancel_cause::tests::cause(&h, None, &id).await;
+    assert_eq!(
+        cause,
+        Some(a2a_protocol_types::cancel_cause::CancelCause::LeaseLapsed)
+    );
+}

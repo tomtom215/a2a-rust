@@ -418,6 +418,7 @@ impl TerminalTracking {
                 _ => {}
             }
         }
+        super::super::cancel_cause::stamp(&mut event, self.turn.cancel_cause());
         super::super::budget::report(&mut event, self.budget.as_ref());
         let terminal = is_terminal(&event);
         #[cfg(feature = "tracing")]

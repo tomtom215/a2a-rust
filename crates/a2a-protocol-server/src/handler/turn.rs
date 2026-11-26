@@ -27,6 +27,13 @@ pub struct ExecutorTurn {
     /// cancelled, so an executor that returns on the token sees it, and its
     /// task is ended `Failed`, failure class `transient`, never `Canceled`.
     pub(crate) lapsed: std::sync::atomic::AtomicBool,
+    /// The turn's lease was not renewed in time (`handler::lease`). Set with
+    /// [`halted`](Self::halted), which stops the turn; this says why.
+    lease_lapsed: std::sync::atomic::AtomicBool,
+    /// A `CancelTask` asked for this turn's task to be canceled. Set before
+    /// the task's token is cancelled, so the `Canceled` the executor writes
+    /// says who asked (`handler::cancel_cause`).
+    cancel_requested: std::sync::atomic::AtomicBool,
     /// Where steering messages for this turn wait (ADR 0036): `Some` when
     /// the handler takes steering. Closed when the executor returns.
     inbox: Option<Arc<crate::steering::Inbox>>,
@@ -84,6 +91,31 @@ impl ExecutorTurn {
     /// Whether a halt stopped this turn.
     pub(crate) fn is_halted(&self) -> bool {
         self.halted.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Marks the turn stopped by a lapsed lease; the caller stops it as a
+    /// halt does next.
+    pub(crate) fn lapse_lease(&self) {
+        self.lease_lapsed
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    /// Whether a lapsed lease stopped this turn.
+    pub(crate) fn is_lease_lapsed(&self) -> bool {
+        self.lease_lapsed.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Marks the turn's task as canceled by a `CancelTask`; the caller
+    /// cancels its token next.
+    pub(crate) fn request_cancel(&self) {
+        self.cancel_requested
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    /// Whether a `CancelTask` asked for this turn's task to be canceled.
+    pub(crate) fn is_cancel_requested(&self) -> bool {
+        self.cancel_requested
+            .load(std::sync::atomic::Ordering::Acquire)
     }
 
     /// Marks the turn's claim lapsed; the caller cancels its token next.

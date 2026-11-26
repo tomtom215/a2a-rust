@@ -1,0 +1,36 @@
+{
+ "description": "Conformance vectors for https://a2a-rust.com/extensions/cancel/v1. Each 'valid' value reads as the cause in 'reads'. Nothing is refused: each 'tolerated' value, which a sender must not write, is read as 'reads' (null: no cause, which is not an error; the task's state still says it was canceled). Run by crates/a2a-protocol-types/tests/extension_vectors.rs, each value read through the SDK's own reader, and checked against the schema beside it.",
+ "uri": "https://a2a-rust.com/extensions/cancel/v1",
+ "metadataKey": "a2a-rust.com/cancel",
+ "carrier": "Message.metadata of the canceled task's status message",
+ "valid": [
+  {
+   "name": "cancel-requested",
+   "value": "cancel-requested",
+   "reads": "cancel-requested"
+  },
+  {
+   "name": "halted",
+   "value": "halted",
+   "reads": "halted"
+  },
+  {
+   "name": "lease-lapsed",
+   "value": "lease-lapsed",
+   "reads": "lease-lapsed"
+  }
+ ],
+ "invalid": [],
+ "tolerated": [
+  {
+   "name": "an unrecognised token reads as no cause",
+   "value": "budget-spent",
+   "reads": null
+  },
+  {
+   "name": "not a string reads as no cause",
+   "value": 7,
+   "reads": null
+  }
+ ]
+}

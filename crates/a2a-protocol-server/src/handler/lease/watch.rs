@@ -154,6 +154,7 @@ async fn check(watch: Weak<LeaseWatch>, store: Arc<dyn LeaseStore>) {
                         if let Some(metrics) = watch.metrics.get() {
                             metrics.on_lease(crate::metrics::control::lease::LAPSED);
                         }
+                        w.turn.lapse_lease();
                         super::super::halt::stop(&w.turn, &w.token);
                     }
                 }

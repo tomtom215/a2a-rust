@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:13386 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:13400 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -691,7 +691,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:368 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:369 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/builder.rs:1265 RequestHandlerBuilder::build"
    ],
    "test_evidence": [
@@ -757,7 +757,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:368 RequestHandler::enter_caller_partition"
+    "crates/a2a-protocol-server/src/handler/mod.rs:369 RequestHandler::enter_caller_partition"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/caller_isolation.rs:128 isolated_another_callers_task_is_not_found_by_any_operation",
@@ -802,8 +802,8 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:29 RequestHandler::on_cancel_task"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:311 cancel_task_terminal_state_returns_not_cancelable",
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:461 a_task_that_finished_after_the_re_read_is_not_cancelable"
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:322 cancel_task_terminal_state_returns_not_cancelable",
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:472 a_task_that_finished_after_the_re_read_is_not_cancelable"
    ],
    "notes": "",
    "auditor": "A",
@@ -821,7 +821,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:29 RequestHandler::on_cancel_task"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:297 cancel_task_not_found_returns_error"
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:308 cancel_task_not_found_returns_error"
    ],
    "notes": "",
    "auditor": "A",
@@ -1091,7 +1091,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:368 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:369 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs:71 TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs:981 RequestHandlerBuilder::isolate_tasks_by_caller"
    ],
@@ -1629,7 +1629,7 @@
     "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:29 RequestHandler::on_cancel_task"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:311 cancel_task_terminal_state_returns_not_cancelable",
+    "crates/a2a-protocol-server/src/handler/lifecycle/cancel_task.rs:322 cancel_task_terminal_state_returns_not_cancelable",
     "crates/a2a-protocol-server/tests/spec_s3_contexts.rs:176 duplicate_cancel_after_purge_returns_task_not_found",
     "crates/a2a-protocol-server/tests/handler_conformance/cancel_and_push.rs:31 a_second_cancel_has_the_same_effect_as_the_first"
    ],
@@ -1825,7 +1825,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:368 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:369 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs:71 TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs:981 RequestHandlerBuilder::isolate_tasks_by_caller"
    ],
@@ -3721,7 +3721,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:329 RequestHandler::admit"
+    "crates/a2a-protocol-server/src/handler/mod.rs:330 RequestHandler::admit"
    ],
    "test_evidence": [
     "tck/src/equivalence.rs:718 bind_equiv_004",
@@ -4173,10 +4173,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:229 unix_millis_to_iso8601"
+    "crates/a2a-protocol-types/src/lib.rs:230 unix_millis_to_iso8601"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:515 utc_now_has_millisecond_precision_and_z_suffix"
+    "crates/a2a-protocol-types/src/lib.rs:516 utc_now_has_millisecond_precision_and_z_suffix"
    ],
    "notes": "utc_now_iso8601 formats YYYY-MM-DDTHH:mm:ss.sssZ.",
    "auditor": "C",
@@ -4191,19 +4191,19 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:265 parse_iso8601_to_unix_millis",
+    "crates/a2a-protocol-types/src/lib.rs:266 parse_iso8601_to_unix_millis",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:173 base64_to_bytes",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:186 timestamp_to_rfc3339",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:115 refuse_unlistable"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:529 utc_now_roundtrips_through_parser",
-    "crates/a2a-protocol-types/src/lib.rs:544 parse_epoch_and_known_instants",
+    "crates/a2a-protocol-types/src/lib.rs:530 utc_now_roundtrips_through_parser",
+    "crates/a2a-protocol-types/src/lib.rs:545 parse_epoch_and_known_instants",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:549 timestamp_parses_offset_and_normalizes_to_utc",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:569 timestamp_rejects_invalid_string",
     "crates/a2a-protocol-types/tests/timestamp_parity.rs:32 the_json_parser_reads_what_the_grpc_conversion_reads",
-    "crates/a2a-protocol-types/src/lib.rs:652 parse_refuses_what_rfc_3339_does_not_allow",
-    "crates/a2a-protocol-types/src/lib.rs:623 parse_accepts_pre_epoch_dates_back_to_year_0",
+    "crates/a2a-protocol-types/src/lib.rs:653 parse_refuses_what_rfc_3339_does_not_allow",
+    "crates/a2a-protocol-types/src/lib.rs:624 parse_accepts_pre_epoch_dates_back_to_year_0",
     "crates/a2a-protocol-server/tests/pre_epoch_timestamps.rs:75 list_tasks_accepts_a_pre_epoch_filter"
    ],
    "notes": "Server rejects malformed statusTimestampAfter with InvalidParams; JSON-path clients keep timestamps as opaque strings (no parsing needed). Until 2026-10-13 the parser was lenient (whitespace, unpadded or signed fields, an offset without minutes, 02-30 rolled into March) and refused every pre-1970 instant, so the JSON and gRPC bindings disagreed on such values and a 1969 statusTimestampAfter was InvalidParams. It now reads exactly what the time crate's RFC 3339 parser reads, checked over 1,655,808 strings, and the formatter writes pre-1970 instants as themselves.",
@@ -4220,10 +4220,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:265 parse_iso8601_to_unix_millis"
+    "crates/a2a-protocol-types/src/lib.rs:266 parse_iso8601_to_unix_millis"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:544 parse_epoch_and_known_instants",
+    "crates/a2a-protocol-types/src/lib.rs:545 parse_epoch_and_known_instants",
     "crates/a2a-protocol-types/tests/optional_wire_forms.rs:28 timestamp_without_or_with_zero_filled_fraction_names_the_same_instant"
    ],
    "notes": "Parser accepts with and without fractional seconds. Asserts a timestamp with no fraction, and with .0, .000 and .000000, parses to the same millisecond instant while a non-zero fraction is read; shown able to fail by making parse_iso8601_to_unix_millis refuse a timestamp without a fraction (2026-10-20).",
@@ -4940,7 +4940,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/auth/declared.rs:66 check",
-    "crates/a2a-protocol-server/src/handler/mod.rs:329 RequestHandler::admit",
+    "crates/a2a-protocol-server/src/handler/mod.rs:330 RequestHandler::admit",
     "crates/a2a-protocol-server/src/interceptor/mod.rs:150 ServerInterceptor::authenticates",
     "crates/a2a-protocol-server/src/handler/unreadable.rs:54 RequestHandler::admit_unreadable"
    ],
@@ -7585,7 +7585,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:368 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:369 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/builder.rs:1265 RequestHandlerBuilder::build"
    ],
    "test_evidence": [
@@ -7607,7 +7607,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/call_context.rs:354 CallContext::task_id",
-    "crates/a2a-protocol-server/src/handler/mod.rs:368 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:369 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/handler/lifecycle/get_task.rs:25 RequestHandler::on_get_task",
     "crates/a2a-protocol-server/src/handler/push_config.rs:73 RequestHandler::validate_and_store_push_config",
     "crates/a2a-protocol-server/src/handler/messaging/mod.rs:143 RequestHandler::send_message_inner"
@@ -7631,7 +7631,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:368 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:369 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs:71 TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs:981 RequestHandlerBuilder::isolate_tasks_by_caller"
    ],
@@ -7652,7 +7652,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:368 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:369 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs:71 TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs:981 RequestHandlerBuilder::isolate_tasks_by_caller"
    ],
@@ -7695,7 +7695,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:368 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:369 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs:71 TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs:981 RequestHandlerBuilder::isolate_tasks_by_caller"
    ],
@@ -7716,7 +7716,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:368 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:369 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs:71 TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs:981 RequestHandlerBuilder::isolate_tasks_by_caller"
    ],
@@ -7737,7 +7737,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/mod.rs:368 RequestHandler::enter_caller_partition",
+    "crates/a2a-protocol-server/src/handler/mod.rs:369 RequestHandler::enter_caller_partition",
     "crates/a2a-protocol-server/src/store/tenant/context.rs:71 TenantContext::partition",
     "crates/a2a-protocol-server/src/builder.rs:981 RequestHandlerBuilder::isolate_tasks_by_caller"
    ],
@@ -9059,7 +9059,7 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/dispatch/websocket.rs:1184 process_ws_message",
-    "crates/a2a-protocol-server/src/handler/mod.rs:329 RequestHandler::admit"
+    "crates/a2a-protocol-server/src/handler/mod.rs:330 RequestHandler::admit"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/auth_before_params/websocket.rs:42 websocket_malformed_frame_is_refused_without_credential",
@@ -11665,7 +11665,7 @@
     "severity": null,
     "impl_evidence": [
      "crates/a2a-protocol-server/src/interceptor/mod.rs:226 ServerInterceptorChain::run_before",
-     "crates/a2a-protocol-server/src/handler/mod.rs:329 RequestHandler::admit",
+     "crates/a2a-protocol-server/src/handler/mod.rs:330 RequestHandler::admit",
      "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:204 TerminalTracking::cancel_with"
     ],
     "test_evidence": [
@@ -11697,7 +11697,7 @@
     "severity": null,
     "impl_evidence": [
      "crates/a2a-protocol-server/src/interceptor/mod.rs:226 ServerInterceptorChain::run_before",
-     "crates/a2a-protocol-server/src/handler/mod.rs:329 RequestHandler::admit"
+     "crates/a2a-protocol-server/src/handler/mod.rs:330 RequestHandler::admit"
     ],
     "test_evidence": [
      "crates/a2a-protocol-server/tests/auth_required_state_tests.rs:174 auth_required_state_does_not_authorize_the_continuation"
