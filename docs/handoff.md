@@ -53,6 +53,9 @@ Small defects found and not yet fixed (each low):
   They are unused by the code on purpose (see the comment above them); the lint cannot be silenced per dependency, and
   turning it off for a crate would hide a dependency that is unused by mistake, so the warnings stand.
 - Whether the nightly `Official TCK` has been green since #220 merged was not checked.
+- `incident-response`'s demo keeps serving after its hardening checks, and a checked handler whose temporary SQLite file
+  was removed keeps logging `claims::reaper ... unable to open database file` every 15 s until it is stopped (seen locally
+  2026-11-26; low: noise, the checks have passed). Fix: stop or drop that handler when its check ends.
 - The full `test` job alone fills this container's disk allowance: its feature legs accumulate in `target/` with no
   cleanup between them, and the run ends in a linker failure (`No space left on device`), not a test, at the all-features
   or no-default-features leg (twice on 2026-11-26, once with a second tree building beside it and once without). Run it,
