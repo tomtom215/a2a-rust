@@ -39,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`SqliteLeaseStore`** (feature `sqlite`, COR-09): leases of delegated tasks
+  kept in a SQLite file, so the processes of one host can lease without
+  PostgreSQL. Deadlines are the callers' times, read from that host's one clock;
+  it passes the lease contract the in-memory and PostgreSQL stores pass, sweeps
+  as they do, and over a file is accepted by the production profiles (one in
+  memory is refused, as before).
+
 - **A delegation whose start was lost can be recovered** (COR-06).
   `DelegationOptions::resending(journal, record)` sends the first message again
   under its journal record's idempotency key, and an agent that honours keys

@@ -311,3 +311,85 @@ async fn sweep_and_read_many(store: &PostgresLeaseStore, pool: &sqlx::postgres::
     store.release("s", "soon").await.unwrap();
     store.release("s", "new").await.unwrap();
 }
+
+/// COR-09: the SQLite store keeps the contract the in-memory one keeps, with
+/// the callers' times kept exactly as given.
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn sqlite_keeps_the_contract() {
+    let store = SqliteLeaseStore::new("sqlite::memory:").await.unwrap();
+    caller_clock_contract(&store).await;
+}
+
+/// The sweep's margin is the in-memory store's: one lapsed exactly the margin
+/// ago is kept, every tenant is swept, and the count is what was deleted.
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn sqlite_sweeps_only_leases_lapsed_longer_than_the_margin() {
+    let store = SqliteLeaseStore::new("sqlite::memory:").await.unwrap();
+    store.grant("t", "old", 10, 899).await.unwrap();
+    store.grant("u", "old", 10, 100).await.unwrap();
+    store.grant("t", "edge", 10, 900).await.unwrap();
+    store.grant("t", "live", 10, 5_000).await.unwrap();
+    assert_eq!(store.sweep(1_000, 100).await.unwrap(), 2);
+    assert_eq!(store.deadline("t", "old").await.unwrap(), None);
+    assert_eq!(store.deadline("u", "old").await.unwrap(), None);
+    assert_eq!(store.deadline("t", "edge").await.unwrap(), Some(900));
+    assert_eq!(store.deadline("t", "live").await.unwrap(), Some(5_000));
+    assert_eq!(store.sweep(1_000, 100).await.unwrap(), 0, "nothing more");
+    assert_eq!(
+        store.sweep(i64::MIN, 1).await.unwrap(),
+        0,
+        "a cutoff below i64::MIN saturates"
+    );
+}
+
+/// A renewal that would pass `i64::MAX` holds there, as the in-memory
+/// store's `saturating_add` does: SQLite would turn the sum into a float.
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn sqlite_renewal_saturates_as_the_in_memory_store_does() {
+    let sqlite = SqliteLeaseStore::new("sqlite::memory:").await.unwrap();
+    let memory = InMemoryLeaseStore::new();
+    for (ttl, now) in [
+        (i64::MAX, 10),
+        (10, i64::MAX - 5),
+        (-10, i64::MIN + 5),
+        (5, -20),
+    ] {
+        for store in [&sqlite as &dyn LeaseStore, &memory] {
+            store.grant("t", "a", ttl, 0).await.unwrap();
+            assert!(store.renew("t", "a", now).await.unwrap());
+        }
+        assert_eq!(
+            sqlite.deadline("t", "a").await.unwrap(),
+            memory.deadline("t", "a").await.unwrap(),
+            "ttl {ttl}, now {now}"
+        );
+    }
+}
+
+/// Over a file the leases outlive the process's pool, and the store is not
+/// process-local; in memory it is, which the production profile refuses.
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn sqlite_over_a_file_keeps_leases_across_a_reopen() {
+    let path = std::env::temp_dir().join(format!("a2a-leases-{}.db", uuid::Uuid::new_v4()));
+    let url = format!("sqlite://{}?mode=rwc", path.display());
+    let first = SqliteLeaseStore::new(&url).await.unwrap();
+    assert!(!first.is_process_local());
+    first.grant("t", "a", 1_000, 5_000).await.unwrap();
+    first.pool.close().await;
+    let second = SqliteLeaseStore::new(&url).await.unwrap();
+    assert_eq!(second.deadline("t", "a").await.unwrap(), Some(5_000));
+    assert!(second.renew("t", "a", 7_000).await.unwrap());
+    assert_eq!(second.deadline("t", "a").await.unwrap(), Some(8_000));
+    assert!(
+        SqliteLeaseStore::new("sqlite::memory:")
+            .await
+            .unwrap()
+            .is_process_local()
+    );
+    second.pool.close().await;
+    let _ = std::fs::remove_file(&path);
+}

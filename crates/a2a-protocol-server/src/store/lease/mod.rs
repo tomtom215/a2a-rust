@@ -8,8 +8,9 @@
 //! A lease is granted on the replica that runs the task and renewed by a
 //! `GetTask` that may land on any replica, so its deadline lives where every
 //! replica can see it. [`InMemoryLeaseStore`] serves one process;
-//! `PostgresLeaseStore` (the `postgres` feature) serves replicas sharing a
-//! database.
+//! `SqliteLeaseStore` (the `sqlite` feature) serves the processes of one host
+//! sharing a database file; `PostgresLeaseStore` (the `postgres` feature)
+//! serves replicas sharing a database.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -20,11 +21,15 @@ use a2a_protocol_types::error::A2aResult;
 
 #[cfg(feature = "postgres")]
 mod postgres;
+#[cfg(feature = "sqlite")]
+mod sqlite;
 #[cfg(test)]
 mod tests;
 
 #[cfg(feature = "postgres")]
 pub use postgres::PostgresLeaseStore;
+#[cfg(feature = "sqlite")]
+pub use sqlite::SqliteLeaseStore;
 
 /// Milliseconds since the Unix epoch, now.
 #[must_use]

@@ -155,6 +155,8 @@ pub use delegation_journal::SqliteDelegationJournal;
 #[cfg(feature = "sqlite")]
 pub use halt::SqliteHaltStore;
 #[cfg(feature = "sqlite")]
+pub use lease::SqliteLeaseStore;
+#[cfg(feature = "sqlite")]
 pub use migration::{Migration, MigrationRunner};
 #[cfg(feature = "sqlite")]
 pub use sqlite_store::SqliteTaskStore;

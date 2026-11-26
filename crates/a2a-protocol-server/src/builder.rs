@@ -579,7 +579,8 @@ impl RequestHandlerBuilder {
     /// any handler sharing the store; a task whose deadline passes is
     /// stopped as a [`halt`](RequestHandler::halt) stops it. Use
     /// [`InMemoryLeaseStore`](crate::store::InMemoryLeaseStore) for one
-    /// process and `PostgresLeaseStore` (the `postgres` feature) across
+    /// process, `SqliteLeaseStore` (the `sqlite` feature) for the processes
+    /// of one host, and `PostgresLeaseStore` (the `postgres` feature) across
     /// replicas.
     #[must_use]
     pub fn with_lease_store(mut self, store: impl crate::store::LeaseStore) -> Self {

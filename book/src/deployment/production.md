@@ -176,8 +176,10 @@ refuses an in-memory halt, lease, push-config (when the card declares push) or
 audit store, naming the store and the one to use. A deployment that routes
 every request for a task to one replica calls `allow_process_local_stores()`
 (ADR 0025, amended 2026-11-01).
-`SqliteHaltStore` keeps a halt across a restart of one process, but a SQLite
-file is not shared between pods, and there is no SQLite lease store. In 0.15
+`SqliteHaltStore` and `SqliteLeaseStore` (feature `sqlite`) keep halts and
+leases across a restart, and serve the processes of one host that open the same
+file (a lease's deadlines are read from that host's clock), but a SQLite file is
+not shared between pods. In 0.15
 several replicas are supported only when every turn of a task is routed to one
 replica; see [Running More Than One Replica](./horizontal-scaling.md). The
 gRPC dispatcher serves on its own listener, which `ServeConfig` does not

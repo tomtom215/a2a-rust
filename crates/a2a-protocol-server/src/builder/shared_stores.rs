@@ -63,7 +63,8 @@ impl RequestHandlerBuilder {
                 "the lease store",
                 "a task delegated to this agent is leased only on the replica that accepted it, \
                  and its deadline is lost with that replica",
-                "Use PostgresLeaseStore (feature `postgres`)",
+                "Use PostgresLeaseStore (feature `postgres`), or SqliteLeaseStore (feature `sqlite`) \
+                 for processes on one host",
             ));
         }
         Ok(())

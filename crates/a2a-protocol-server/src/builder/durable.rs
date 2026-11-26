@@ -248,7 +248,7 @@ impl RequestHandlerBuilder {
             return Err(process_local(
                 "the lease store",
                 "a restart forgets every lease, and a delegated task runs on unwatched",
-                "Use PostgresLeaseStore",
+                "Use SqliteLeaseStore over a file or PostgresLeaseStore",
             ));
         }
         #[cfg(feature = "audit")]

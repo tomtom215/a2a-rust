@@ -185,7 +185,9 @@ def in_scope(rel: str, src: str) -> bool:
         return False
     if not STATEMENTS_IN_FILE.search(blank(src)):
         return False
-    return "postgres" in rel or "/pg_" in rel or bool(ABOUT_POSTGRES.search(src))
+    # The code, not its comments: a SQLite store whose doc comment points the
+    # reader at the PostgreSQL one is not about PostgreSQL (store/lease/sqlite.rs).
+    return "postgres" in rel or "/pg_" in rel or bool(ABOUT_POSTGRES.search(blank(src)))
 
 
 def main() -> int:
@@ -243,6 +245,16 @@ CASES = [
 ]
 
 
+SCOPE_CASES = [
+    ("a pool named in code", "src/store/x.rs",
+     "fn f(p: &PgPool) { sqlx::query(\"\").execute(p); }", True),
+    ("Postgres named only in a doc comment", "src/store/lease/sqlite.rs",
+     "/// Use `PostgresLeaseStore` across hosts.\nfn f(p: &SqlitePool) { sqlx::query(\"\").execute(p); }",
+     False),
+    ("a postgres path", "src/store/postgres.rs", "fn f() { sqlx::query(\"\"); }", True),
+]
+
+
 def self_test() -> int:
     failed = 0
     for name, src, want in CASES:
@@ -250,7 +262,12 @@ def self_test() -> int:
         if got != want:
             failed += 1
             print(f"FAIL {name}: {got} finding(s), want {want}")
-    print(f"check_pg_retry self-test: {len(CASES) - failed} of {len(CASES)} passed")
+    for name, rel, src, want in SCOPE_CASES:
+        if in_scope(rel, src) != want:
+            failed += 1
+            print(f"FAIL scope: {name}: wanted {'in' if want else 'out of'} scope")
+    total = len(CASES) + len(SCOPE_CASES)
+    print(f"check_pg_retry self-test: {total - failed} of {total} passed")
     return 1 if failed else 0
 
 
