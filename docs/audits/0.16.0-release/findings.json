@@ -1222,5 +1222,14 @@
   "blocker": "no",
   "basis": "reproduced",
   "evidence": "crates/a2a-protocol-client/src/delegation/options.rs, start_with: journal.settle(id, \"not_started\", ..).await with no timeout, where begin and every later write are bounded by journal::WRITE_BOUND (5 s). delegation/start_tests.rs a_settle_that_never_answers_is_given_up_at_the_bound fails before the fix at its one-hour guard (paused clock) and passes after at exactly WRITE_BOUND, returning the refusal with the record left open. Fixed by journal::settle_not_started."
+ },
+ {
+  "id": "X2-6",
+  "source": "external review execution packet of 2026-11-26 (N26-03)",
+  "status": "fixed (recorded 2026-11-26)",
+  "finding": "A hand-off continuation refused by a halted server was sent again, up to the hand-off policy's limit",
+  "blocker": "no",
+  "basis": "reproduced",
+  "evidence": "crates/a2a-protocol-client/src/delegation/continuation.rs, continue_handed_back(): every send error was logged and the loop went on, so a halt (final since COR-05, ClientError::is_halted) was answered with up to HandOffPolicy::continuations more requests. delegation/continuation_tests.rs a_halted_continuation_is_not_sent_again fails before the fix with 4 sends where 2 are due (policy of 3) and passes after; the outcome is Lost with no resume, not a made-up terminal state. A lost response (a transport error) is still sent again as the same request (a_continuation_sent_again_is_the_same_request)."
  }
 ]

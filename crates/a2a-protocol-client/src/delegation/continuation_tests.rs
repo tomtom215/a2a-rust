@@ -9,6 +9,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
+use a2a_protocol_types::error::{A2aError, ErrorCode};
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::{Message, MessageRole, Part};
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskStatus};
@@ -28,6 +29,8 @@ struct Scripted {
     sends: Arc<Mutex<Vec<serde_json::Value>>>,
     /// The sends, by index, whose response is lost: recorded, then failed.
     lost: Vec<usize>,
+    /// The sends, by index, a halted server refuses with its typed detail.
+    halted: Vec<usize>,
 }
 
 impl Transport for Scripted {
@@ -58,6 +61,13 @@ impl Transport for Scripted {
             };
             if self.lost.contains(&n) {
                 return Err(ClientError::Transport("the response was lost".into()));
+            }
+            if self.halted.contains(&n) {
+                return Err(ClientError::Protocol(A2aError::with_data(
+                    ErrorCode::InternalError,
+                    "halted: oncall",
+                    a2a_protocol_types::halt::halted_detail(),
+                )));
             }
             let (tx, rx) = tokio::sync::mpsc::channel(16);
             for ev in self.scripts[n].clone() {
@@ -101,6 +111,17 @@ async fn run_losing(
     lost: Vec<usize>,
     key: Option<&str>,
 ) -> (Outcome, Vec<serde_json::Value>, Duration) {
+    Box::pin(run_scripted(scripts, options, lost, Vec::new(), key)).await
+}
+
+/// [`run_losing`], with the sends in `halted` refused by a halted server.
+async fn run_scripted(
+    scripts: Vec<Vec<StreamResponse>>,
+    options: DelegationOptions,
+    lost: Vec<usize>,
+    halted: Vec<usize>,
+    key: Option<&str>,
+) -> (Outcome, Vec<serde_json::Value>, Duration) {
     let sends = Arc::new(Mutex::new(Vec::new()));
     let client = Arc::new(
         ClientBuilder::new("http://stub.invalid")
@@ -108,6 +129,7 @@ async fn run_losing(
                 scripts,
                 sends: Arc::clone(&sends),
                 lost,
+                halted,
             })
             .build()
             .unwrap(),
@@ -405,4 +427,29 @@ async fn a_continuation_sent_again_is_the_same_request() {
     );
     assert_ne!(key(1), first_key);
     assert_ne!((id(3), key(3)), (id(2), key(2)), "the next hand-off");
+}
+
+/// N26-03: a halt is final (COR-05), so a continuation the server refuses as
+/// halted is not sent again. Before the fix every continuation the policy
+/// allowed was sent (4 sends where 2 are due), and the halt was logged and
+/// dropped. Nothing terminal is made up: with no resume the child is lost.
+#[tokio::test(start_paused = true)]
+async fn a_halted_continuation_is_not_sent_again() {
+    let (outcome, sends, took) = Box::pin(run_scripted(
+        vec![vec![status(TaskState::Working, true)], vec![]],
+        DelegationOptions::new()
+            .with_hand_off(HandOffPolicy::new(
+                3,
+                Duration::from_secs(1),
+                Duration::from_secs(8),
+            ))
+            .with_resume(ResumePolicy::none()),
+        Vec::new(),
+        vec![1, 2, 3],
+        None,
+    ))
+    .await;
+    assert_eq!(sends.len(), 2, "the start and one continuation");
+    assert!(matches!(outcome, Outcome::Lost(_)), "{outcome:?}");
+    assert_eq!(took, Duration::from_secs(1), "the first wait, and no other");
 }

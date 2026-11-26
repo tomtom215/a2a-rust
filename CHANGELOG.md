@@ -106,6 +106,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A halted agent is not sent a hand-off continuation again** (register X2-6).
+  A `Delegation` whose handed-back child's continuation was refused because the
+  agent is halted sent it again, up to the hand-off policy's limit; a halt is
+  final, so the first refusal now ends the continuing, and the child's state is
+  read by the resume that follows as before.
+
 - **A delegation start that may have reached the agent keeps its budget and
   its journal record** (register X2-4, X2-5). `Delegation::start_with` took
   any unexpected HTTP status as a refusal: on a bare `503`, a `500`, or a

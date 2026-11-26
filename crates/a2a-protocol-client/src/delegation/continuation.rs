@@ -135,6 +135,14 @@ impl Delegation {
                     self.stream_opened();
                     return true;
                 }
+                // A halt is final (COR-05): sent again, the continuation is
+                // refused again, and every send is one more request to an
+                // agent an operator stopped. What the child became is left to
+                // the resume that follows.
+                Err(e) if e.is_halted() => {
+                    trace_debug!(task_id = %id, error = %e, "delegation: continuation refused, halted");
+                    return false;
+                }
                 Err(_e) => {
                     trace_debug!(task_id = %id, error = %_e, "delegation: continuation not sent");
                 }
