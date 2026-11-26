@@ -60,6 +60,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A continuation sent again is the same request** (register X2-1). A
+  `Delegation` retrying a hand-off continuation whose send failed gave each
+  attempt a new message id and idempotency key, so a server that had taken
+  the lost one saw a second request and could run the turn twice. Every
+  attempt at one continuation now carries the same id and key; the next
+  hand-off is a new continuation with new ones.
+
+- **A handed-off child no longer gets its budget again** (E03 R1). A
+  `Delegation` whose child handed its turn back sent the first message again,
+  with the budget it carried at grant time, and the server opens an account
+  from each message: every continuation restarted the child's deadline and
+  filled its meters, so a child could outlive its parent's deadline. A
+  continuation now carries what is left of the grant, its time less the time
+  since the grant and each meter less what the handed-back turns reported
+  spending, and none is sent once the grant's time has run out. The settlement
+  charges the parent the sum of every turn's spend, where it charged the last
+  turn's alone and refunded the rest. A meter a handed-back turn did not report
+  is carried as granted and its whole reservation is kept.
+
 - **A store outage longer than `store_write_retry` no longer leaves a task
   unfinished** (Known Limitation of 0.16.0, register X-10). The ending a turn
   wrote during the outage was reverted in memory and forgotten, so the task

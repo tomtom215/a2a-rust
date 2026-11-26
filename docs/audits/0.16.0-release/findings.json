@@ -1181,11 +1181,11 @@
  {
   "id": "X2-1",
   "source": "docs/program/evidence/08-external-review-triage.md (R-ADV-01)",
-  "status": "OPEN",
+  "status": "fixed (with COR-03; recorded 2026-11-26)",
   "finding": "A hand-off continuation retried after an error is sent with a new message id and a new idempotency key",
   "blocker": "no",
   "basis": "read",
-  "evidence": "crates/a2a-protocol-client/src/delegation/continuation.rs, continuation(): a new MessageId and fresh_key() on every call, and continue_handed_back() calls it once per retry, retrying on any error. A continuation whose response was lost is therefore re-sent as a different logical request. Whether a peer then runs the turn twice was not reproduced. Planned with COR-06 (one logical continuation, one key)."
+  "evidence": "crates/a2a-protocol-client/src/delegation/continuation.rs, continuation(): a new MessageId and fresh_key() on every call, and continue_handed_back() calls it once per retry, retrying on any error. A continuation whose response was lost is therefore re-sent as a different logical request. Whether a peer then runs the turn twice was not reproduced. Planned with COR-06 (one logical continuation, one key). Fixed 2026-11-26, apart from COR-06: continue_handed_back() fixes one message id and key per hand-off and sends every retry with them (a later hand-off gets new ones); delegation/continuation_tests.rs a_continuation_sent_again_is_the_same_request loses the first continuation's response and fails before the fix with a new id and key on the resend."
  },
  {
   "id": "X2-2",

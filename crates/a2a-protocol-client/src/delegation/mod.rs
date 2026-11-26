@@ -76,7 +76,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use a2a_protocol_types::budget::{BudgetStatus, ChildGrant};
+use a2a_protocol_types::budget::BudgetStatus;
 use a2a_protocol_types::idempotency;
 use a2a_protocol_types::{MessageSendParams, StreamResponse};
 
@@ -84,6 +84,7 @@ use crate::client::A2aClient;
 use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
 
+mod child_budget;
 mod continuation;
 mod drop;
 mod journal;
@@ -133,9 +134,8 @@ pub struct Delegation {
     /// Renews the child's lease, when it was granted one; stops when this is
     /// dropped.
     renewal: Option<Renewal>,
-    /// The child's budget, and the report the event that settled the child
-    /// carried, if it carried one.
-    budget: Option<(ChildGrant, Option<BudgetStatus>)>,
+    /// The child's budget and what its turns reported spending.
+    budget: Option<child_budget::ChildBudget>,
     /// The child message's idempotency key, if it carried one.
     idempotency_key: Option<String>,
     /// Where the delegation started: the span and ambient trace the work it
@@ -316,15 +316,18 @@ impl Delegation {
             _ => return,
         };
         self.handed_back = continuation::handed_back(status);
+        if let (true, Some(budget)) = (self.handed_back, self.budget.as_mut()) {
+            budget.handed_back(report.as_ref());
+        }
         if self.settled.is_none() {
             self.settled = Outcome::of(status.clone());
             // Only the report on the event that settled the child is its
             // whole spend; an earlier one is not, and settling with it would
             // refund what the child spent afterwards.
             if self.settled.is_some()
-                && let Some((_, last)) = self.budget.as_mut()
+                && let Some(budget) = self.budget.as_mut()
             {
-                *last = report;
+                budget.settled_with(report);
             }
         }
     }
@@ -465,8 +468,8 @@ impl Delegation {
     async fn finish(mut self, outcome: Outcome) -> Delegated {
         self.armed = false;
         self.note_settled(&outcome).await;
-        if let Some((grant, last)) = self.budget.take() {
-            grant.settle(last.as_ref());
+        if let Some(budget) = self.budget.take() {
+            budget.settle();
         }
         Delegated {
             task_id: self.task_id.take(),

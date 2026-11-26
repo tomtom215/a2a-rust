@@ -108,10 +108,26 @@ impl Delegation {
             return false;
         };
         let policy = self.hand_off_policy;
+        // One continuation, however many times it is sent: a send whose
+        // response was lost may have reached the server, and the same message
+        // id and key are answered from the turn it started (X2-1).
+        let same = (
+            MessageId::new(uuid::Uuid::new_v4().to_string()),
+            super::fresh_key(),
+        );
         while self.continued < policy.continuations {
             tokio::time::sleep(policy.wait(self.continued)).await;
+            // A continuation with no time left is refused by the server; the
+            // child is out of its grant (COR-03).
+            if self
+                .budget
+                .as_ref()
+                .is_some_and(super::child_budget::ChildBudget::out_of_time)
+            {
+                return false;
+            }
             self.continued += 1;
-            let params = self.continuation(&message, &id);
+            let params = self.continuation(&message, &id, &same);
             match self.client.stream_message(params).await {
                 Ok(stream) => {
                     trace_debug!(task_id = %id, "delegation: handed-back turn continued");
@@ -127,16 +143,26 @@ impl Delegation {
         false
     }
 
-    /// The child's message as a continuation of task `id`: a new message id,
-    /// the task and its context, and a new idempotency key (the first one is
-    /// answered with the task, not run again).
-    fn continuation(&self, message: &Message, id: &str) -> MessageSendParams {
+    /// The child's message as a continuation of task `id`: the
+    /// continuation's own message id and, when the message is keyed, its own
+    /// idempotency key (`same`; the first key is answered with the task, not
+    /// run again), the task and its context, and the budget the child has
+    /// left rather than the grant it was first given (COR-03).
+    fn continuation(
+        &self,
+        message: &Message,
+        id: &str,
+        same: &(MessageId, String),
+    ) -> MessageSendParams {
         let mut message = message.clone();
-        message.id = MessageId::new(uuid::Uuid::new_v4().to_string());
+        if let Some(budget) = &self.budget {
+            budget.left().attach(&mut message);
+        }
+        message.id = same.0.clone();
         message.task_id = Some(TaskId::new(id));
         message.context_id = self.context_id.clone().map(ContextId::new);
         if matches!(idempotency::key_of(&message), Ok(Some(_))) {
-            let _ = idempotency::set_key(&mut message, &super::fresh_key());
+            let _ = idempotency::set_key(&mut message, &same.1);
         }
         let mut params = MessageSendParams::new(message);
         params.tenant.clone_from(&self.tenant);

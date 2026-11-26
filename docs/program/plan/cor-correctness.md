@@ -109,6 +109,19 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
 - **Accept.** The test fails before, passes after. A property the test states in words: over k hand-offs,
   the sum of deadlines given to the child never exceeds the parent's grant.
 - **Out of scope.** Budgets across replicas of the parent.
+- **Done (2026-11-26).** `C/delegation/child_budget.rs` keeps the live grant and what each handed-back
+  turn reported; a continuation carries the grant's time less the time since it was made and each meter
+  less the reported spend, no continuation is sent once that time is gone, and the settlement charges the
+  sum over the turns (it charged the last turn's alone, refunding the rest). A meter a turn did not report
+  is carried as granted and keeps its whole reservation. The tests are in the unit harness
+  (`C/delegation/continuation_tests.rs`, `C/delegation/child_budget_tests.rs`), not `tests/delegation_budget_tests.rs`
+  as *Do* said: its scripted transport and paused clock drive a hand-off, which the integration file's
+  peers do not. Accept: `a_continuation_carries_what_is_left_and_every_turn_is_charged` fails before the
+  change (the continuation carried the whole grant, 56 999 ms, where 55 999 ms were left) and passes
+  after; the property is `no_continuation_reaches_past_the_grant` (three hand-offs, each continuation's
+  time plus the time gone equals the grant) with `no_continuation_is_sent_after_the_grant_runs_out`
+  (3 sends where 2 are due, without the check). Mutation gate on the client diff: 16 mutants, 12 caught,
+  4 unviable, none missed. The same change fixed register X2-1 (a retried continuation's identity).
 
 ## COR-04: `Canceled` says who stopped the child (E03 R3)
 
