@@ -38,7 +38,7 @@ anyway.
 | **Conformance attestation** | The A2A conformance suite's summary, attested onto each `.crate` |
 | **Signed tags** | Since 2026-10-08 the release workflow refuses a tag not signed by a key in `.github/release-signers/`. `v0.15.0` is the first tag to pass. Check one with `scripts/verify_tag_signature.sh <tag>` |
 | **Publishing** | crates.io over HTTPS with a short-lived token from Trusted Publishing; cargo verifies each download's checksum |
-| **Dependency scanning** | `cargo-deny` on every pull request, push to `main` and release, with two advisories waived, each with its reason and removal condition in `deny.toml` (RUSTSEC-2026-0459 and RUSTSEC-2026-0543; the changelog's Known Limitations has both); OSV-Scanner over all nine tracked Cargo lockfiles on every pull request and push and daily, blocking |
+| **Dependency scanning** | `cargo-deny` on every pull request, push to `main` and release, with no advisory waived in `deny.toml` since 2026-11-26 (its history names the two it waived until then, RUSTSEC-2026-0459 and RUSTSEC-2026-0543, and why each went); OSV-Scanner over all nine tracked Cargo lockfiles on every pull request and push and daily, blocking |
 | **Testing** | 17 fuzz targets on every pull request and nightly; mutation testing of the lines a pull request changes, and of every crate weekly; CodeQL on every pull request and weekly; the tests on Linux, macOS and Windows with every feature |
 | **Policy** | `SECURITY.md`: two private channels, acknowledgement within three business days, triage within 14 days, a 90-day coordinated-disclosure ceiling, credit to reporters, and a section for manufacturers |
 

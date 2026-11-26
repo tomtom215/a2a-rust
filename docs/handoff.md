@@ -769,20 +769,15 @@ against the 0.16.0 work: check `CHANGELOG.md`'s `### Fixed` and the register's s
 
 ## Waivers and their removal tests
 
-Two waivers in the root `deny.toml`. Since 2026-11-17, RUSTSEC-2026-0543:
-`chrono` marked unmaintained (no fixed version, no affected function), reached
-only by the examples through `rmcp` 3.10.0 and `schemars` 1.2.3; the SLIMRPC
-binding waives it and RUSTSEC-2026-0555 (`chrono-tz`) for the SLIM stack, and
-`benches/sdk-comparison/harness/agent-a2a-rs/osv-scanner.toml` for the compared
-SDK's chrono timestamps. Remove each when its path drops the crate.
-Since 2026-11-11: RUSTSEC-2026-0459 (CVE-2026-119375) in the root
-`deny.toml`, for `libsqlite3-sys` 0.37, which `sqlx-sqlite` 0.9.0 pins: a local
-attack through a crafted database and `-wal` pair, reachable only with the
-opt-in `sqlite` feature. Its removal test is in the entry itself: remove it
-when `sqlx` allows `libsqlite3-sys` >= 0.39 (`cargo deny check advisories`
-then passes without it). Checked 2026-11-13: `cargo search sqlx-sqlite` still
-prints 0.9.0, so it stays. `SECURITY.md` names it too. Until 2026-11-11 there
-were none, from 2026-10-23. The SLIMRPC binding's `deny.toml`
+No waivers in the root `deny.toml` since 2026-11-26 (its history says why each
+went). The root `osv-scanner.toml` keeps RUSTSEC-2026-0543 (`chrono`
+unmaintained, no fix): `chrono` is in the workspace lockfile through the
+examples, and osv-scanner reads lockfiles as text, while cargo-deny no longer
+reports it. Remove it when the examples' path drops the crate (`rmcp`,
+`schemars`, `rig-core`). The SLIMRPC binding waives RUSTSEC-2026-0459 for
+`libsqlite3-sys` 0.35 through `rusqlite` in the SLIM stack, and RUSTSEC-2026-0543
+and -0555 (`chrono`, `chrono-tz`); `benches/sdk-comparison/harness/agent-a2a-rs/osv-scanner.toml`
+waives 0543 for the compared SDK's timestamps. The SLIMRPC binding's `deny.toml`
 ignored the yanked `mls-rs-crypto-awslc` 0.25.1 until agntcy-slim-mls 0.5.1
 accepted 0.26; a plain `cargo update` in the binding then took
 agntcy-slim-rpc 3.4.6 and kept rustls at 0.23.46 (its comment has the

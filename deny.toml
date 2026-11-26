@@ -51,18 +51,14 @@ yanked    = "deny"
 # reached through `sqlx-sqlite` 0.9.0, which allowed only 0.37): sqlx 0.9.1
 # allows 0.40, and the server's `sqlite` feature now floors it at 0.39 so a
 # consumer cannot keep an affected one (`scripts/check_advisory_floors.py`).
+# From 2026-11-17 to 2026-11-26, RUSTSEC-2026-0543 (`chrono` unmaintained,
+# reached only by examples): cargo-deny 0.20.2 reported it when the entry was
+# added (196b59eb); by 2026-11-25 both CI's cargo-deny job (PR #230, job
+# 139611440389) and cargo-deny 0.22.1 here reported the entry as "advisory was
+# not encountered", on `main` as well, so it waived nothing. Should a later
+# cargo-deny report the advisory again, the red run is the signal to look.
 #
-# Since 2026-11-17, RUSTSEC-2026-0543 (`chrono` unmaintained; no fixed version,
-#   no affected function: an "unmaintained" notice, not a vulnerability;
-#   upstream discussion chronotope/chrono#1768). No published crate of this
-#   repository depends on chrono (`cargo tree -i chrono --workspace -e
-#   normal,build,dev` reaches only examples/mcp-agent, examples/mcp-bridge and
-#   examples/rig-agent, through `rmcp` 3.11.0 and `schemars` 1.2.3, both the
-#   latest on 2026-11-25). Remove when those move to `jiff` or `time`, or the
-#   advisory is withdrawn (cargo-deny reports the entry as not detected).
-ignore    = [
-    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained (no fix, not a vulnerability); reached only by the examples through rmcp 3.11.0 and schemars 1.2.3, the latest (checked 2026-11-25); no published crate depends on it" },
-]
+ignore    = []
 
 # ---------------------------------------------------------------------------
 # Banned crates

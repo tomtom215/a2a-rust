@@ -112,7 +112,10 @@ The qualification matrix's "Not covered" list is item 4.
 ### Security, multi-tenancy, GDPR and EU AI Act controls
 
 1. `[0.16.x]` Remove the RUSTSEC-2026-0459 waiver when `sqlx` allows
-   `libsqlite3-sys` 0.39 or newer (also under *Waiting on upstream*).
+   `libsqlite3-sys` 0.39 or newer. (Done 2026-11-26: `sqlx` 0.9.1 allows 0.40;
+   the waiver is gone from `deny.toml` and every `osv-scanner.toml` whose
+   lockfile no longer records an affected version, and the server's `sqlite`
+   feature floors `libsqlite3-sys` at 0.39.)
 2. `[0.17]` Regulated use (X-19, A3, E1): a durable audit spool; a coverage
    check of the audit chain against the event log, which X-19 names as the
    cheapest first step; what `EncryptedTaskStore` leaves in the clear;

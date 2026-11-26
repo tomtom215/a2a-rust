@@ -8,9 +8,14 @@
 # mirror of a `deny.toml` ignore, with the evidence and a date on which the
 # entry stops applying and must be re-examined (`osv.yml`).
 #
-# Two active waivers, each the mirror of the `deny.toml` ignore of the same
-# id, which carries the full note: RUSTSEC-2026-0459 since 2026-11-11, and
-# RUSTSEC-2026-0543 since 2026-11-17.
+# One active waiver, RUSTSEC-2026-0543, since 2026-11-17: a lockfile package
+# no published crate resolves, so cargo-deny (which waived it until
+# 2026-11-26, see `deny.toml`) no longer reports it, while osv-scanner, reading
+# the lockfile as text, does.
+#
+# RUSTSEC-2026-0459 (libsqlite3-sys < 0.39.0) was waived from 2026-11-11 to
+# 2026-11-26: sqlx 0.9.1 allows libsqlite3-sys 0.40, which this lockfile now
+# holds, and a2a-protocol-server's `sqlite` feature floors it at 0.39.
 #
 # History: GHSA-qwgh-2vcv-g2f7 (block-buffer 0.10.4) was waived on 2026-10-29
 # and removed on 2026-11-11. OSV narrowed that advisory on 2026-10-30 to
@@ -25,24 +30,11 @@
 # driver no feature enables. With sqlx 0.9 (0.15.0) `rsa` is in none of the
 # repository's nine Cargo.lock files.
 
-# RUSTSEC-2026-0459 (CVE-2026-119375; libsqlite3-sys 0.6.0 to 0.38.2 bundle
-# SQLite before 3.54.0, which can return uninitialised page-cache memory when a
-# process opens a database file together with a sibling `-wal` file whose page
-# size differs). Locked here: libsqlite3-sys 0.37.0, required by sqlx-sqlite
-# 0.9.0. Checked 2026-11-11 against crates.io: sqlx and sqlx-sqlite 0.9.0 are
-# the latest releases, and the fix is libsqlite3-sys 0.39.0 or newer. Exposure:
-# only builds that enable the opt-in `sqlite` feature of a2a-protocol-server,
-# and only where the database file and its `-wal` are not the operator's own.
-[[IgnoredVulns]]
-id = "RUSTSEC-2026-0459"
-ignoreUntil = 2027-02-11
-reason = "libsqlite3-sys 0.37 is pinned by sqlx-sqlite 0.9.0, the latest sqlx (checked 2026-11-14); local attack through a crafted database and -wal pair; opt-in `sqlite` feature only; mirrors the deny.toml ignore. Remove when sqlx allows libsqlite3-sys >= 0.39."
-
 # RUSTSEC-2026-0543 (`chrono` unmaintained: no fixed version, no affected
 # function). Locked here: 0.4.45, reached only by the examples through rmcp
-# 3.10.0 and schemars 1.2.3 (the latest, checked 2026-11-17); no published crate
+# 3.11.0 and schemars 1.2.3 (the latest, checked 2026-11-25); no published crate
 # depends on it. Upstream: chronotope/chrono#1768.
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0543"
 ignoreUntil = 2027-02-17
-reason = "chrono unmaintained (no fix, not a vulnerability); reached only by the examples through rmcp 3.10.0 and schemars 1.2.3, the latest (checked 2026-11-17); mirrors the deny.toml ignore."
+reason = "chrono unmaintained (no fix, not a vulnerability); reached only by the examples through rmcp 3.11.0 and schemars 1.2.3, the latest (checked 2026-11-25); no published crate depends on it."
