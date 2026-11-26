@@ -23,8 +23,13 @@
 //! A count lower than expected fails too: update the number with the change
 //! that lowered it, so the next one is measured from there.
 //!
+//! The proxy reads plaintext, so the database must not accept TLS: with
+//! `ssl = on`, sqlx's default `prefer` encrypts the session, every count
+//! reads 0, and the test fails saying so (FND-09 step 3) rather than asking
+//! for the constants to change. Set `PGSSLMODE=disable` or turn `ssl` off.
+//!
 //! ```bash
-//! A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres \
+//! PGSSLMODE=disable A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres \
 //!   cargo test -p a2a-protocol-server --features postgres --test statement_count -- --ignored
 //! ```
 
@@ -64,6 +69,9 @@ a2a_protocol_server::agent_executor!(Parker, |ctx, queue| async {
 struct Counter {
     on: AtomicBool,
     statements: AtomicUsize,
+    /// A connection's SSLRequest was answered `S`: its session is encrypted
+    /// and nothing on it can be counted.
+    encrypted: AtomicBool,
 }
 
 /// Forwards client bytes to the server, counting the round trips that run a
@@ -78,6 +86,7 @@ async fn client_to_server(
     mut client: tokio::net::tcp::OwnedReadHalf,
     mut server: tokio::net::tcp::OwnedWriteHalf,
     counter: Arc<Counter>,
+    asked_tls: Arc<AtomicBool>,
 ) {
     let mut buf = Vec::new();
     let mut started = false;
@@ -123,6 +132,9 @@ async fn client_to_server(
                 // real startup message; anything else is the startup.
                 let code = u32::from_be_bytes(buf[4..8].try_into().expect("4 bytes"));
                 started = code != 80_877_103;
+                if !started {
+                    asked_tls.store(true, Ordering::SeqCst);
+                }
             }
             buf.drain(..at + len);
         }
@@ -130,6 +142,41 @@ async fn client_to_server(
             return;
         }
     }
+}
+
+/// Forwards server bytes to the client. The SSLRequest is counted before it
+/// is forwarded, so when the client asked for TLS the server's first byte is
+/// its answer: `S` encrypts the session, `N` refuses.
+async fn server_to_client(
+    mut server: tokio::net::tcp::OwnedReadHalf,
+    mut client: tokio::net::tcp::OwnedWriteHalf,
+    counter: Arc<Counter>,
+    asked_tls: Arc<AtomicBool>,
+) {
+    let mut first = [0_u8; 1];
+    match server.read(&mut first).await {
+        Ok(1) => {
+            if first[0] == b'S' && asked_tls.load(Ordering::SeqCst) {
+                counter.encrypted.store(true, Ordering::SeqCst);
+            }
+            if client.write_all(&first).await.is_err() {
+                return;
+            }
+        }
+        _ => return,
+    }
+    let _ = tokio::io::copy(&mut server, &mut client).await;
+}
+
+/// Fails, naming the cause, when the database encrypted any session through
+/// the proxy: the counts read 0, and the constants are not what is wrong.
+fn refuse_tls(counter: &Counter) {
+    assert!(
+        !counter.encrypted.load(Ordering::SeqCst),
+        "the database accepted TLS (it answered the SSLRequest `S`), so the proxy saw no \
+         plaintext and counts nothing. Turn TLS off for this test: set PGSSLMODE=disable, or \
+         ssl = off on the server. Do not change the constants."
+    );
 }
 
 /// A proxy to the database at `upstream`; returns the port it listens on.
@@ -141,16 +188,21 @@ async fn proxy(upstream: String, counter: Arc<Counter>) -> u16 {
             let Ok(server) = TcpStream::connect(&upstream).await else {
                 continue;
             };
-            let (client_read, mut client_write) = client.into_split();
-            let (mut server_read, server_write) = server.into_split();
+            let (client_read, client_write) = client.into_split();
+            let (server_read, server_write) = server.into_split();
+            let asked_tls = Arc::new(AtomicBool::new(false));
             tokio::spawn(client_to_server(
                 client_read,
                 server_write,
                 Arc::clone(&counter),
+                Arc::clone(&asked_tls),
             ));
-            tokio::spawn(async move {
-                let _ = tokio::io::copy(&mut server_read, &mut client_write).await;
-            });
+            tokio::spawn(server_to_client(
+                server_read,
+                client_write,
+                Arc::clone(&counter),
+                asked_tls,
+            ));
         }
     });
     port
@@ -271,6 +323,7 @@ async fn measure(name: &str, announce: bool) -> Vec<(usize, usize)> {
         send(&handler, "finish", Some(&parked)).await;
         send(&handler, "finish", None).await;
     }
+    refuse_tls(&counter);
     let mut seen = Vec::new();
     for _ in 0..5 {
         let parked = send(&handler, "park", None).await;

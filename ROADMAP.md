@@ -276,6 +276,8 @@ The qualification matrix's "Not covered" list is item 4.
     encrypts what its counting proxy reads), and its message then says to
     lower the constants. Refuse a server that accepts the SSLRequest. Found
     2026-11-22 on a local PostgreSQL 16 with `ssl = on` (`docs/handoff.md`).
+    (Done 2026-11-26, FND-09 step 3: the proxy reads the server's answer to
+    the SSLRequest, and an `S` fails the test saying to turn TLS off.)
 12. **Done 2026-11-25.** `docs/readiness-bar.md` said "F1 is measured" in its
     2026-11-11 section, while its 2026-11-12 section and its
     machine-readable block list F1 as not measured. The 2026-11-11 section
