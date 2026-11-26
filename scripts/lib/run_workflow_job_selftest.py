@@ -281,6 +281,17 @@ def main(runner: Path) -> int:
             - if: github.event_name == 'pull_request'
               run: touch @MARK@/ran
         """, code=1, has=("FAIL",), not_ran=("ran",))
+    case("runner.os is Linux: a Linux-only step runs, another platform's does not", """
+        j:
+          runs-on: ubuntu-latest
+          steps:
+            - if: runner.os == 'Linux'
+              run: touch @MARK@/linux
+            - if: runner.os == 'Windows'
+              run: touch @MARK@/windows
+            - if: runner.os != 'macOS'
+              run: touch @MARK@/not-macos
+        """, code=0, has=("PASS",), ran=("linux", "not-macos"), not_ran=("windows",))
     case("a set-up action with an id counts as succeeded", """
         j:
           runs-on: ubuntu-latest

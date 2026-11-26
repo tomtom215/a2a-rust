@@ -51,7 +51,10 @@ values, so job renames here silently drop the requirement there:
   - `Clippy (stable, <os>)` for `ubuntu-latest`, `macos-latest` and
     `windows-latest`
   - `Feature matrix (cargo-hack, each feature)`
-  - `Test (<rust>, <os>)` for `stable` and `1.94` on each of those three OSes
+  - `Test (stable, <os>)` on each of those three OSes, and `Test (1.94,
+    ubuntu-latest)`: since 2026-11-26 the MSRV runs on Linux only, so a rule
+    still naming `Test (1.94, macos-latest)` or `Test (1.94, windows-latest)`
+    waits for a check that never reports and must drop them
   - `Documentation`
   - `cargo-deny`
   - `Package validation`
