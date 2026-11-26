@@ -446,7 +446,7 @@
       "gates": [],
       "release": "0.16.x",
       "breaking": false,
-      "status": "partial",
+      "status": "done",
       "landed": null
     },
     {
