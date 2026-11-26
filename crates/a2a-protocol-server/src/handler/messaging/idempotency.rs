@@ -71,8 +71,9 @@ impl RequestHandler {
     /// * [`ServerError::InvalidParams`] when the key is malformed, or when it
     ///   is held by a different message — a reused key, which is never a
     ///   retry.
-    /// * [`ServerError::UnsupportedOperation`] when the configured store
-    ///   cannot honour keys. Ignoring the key instead would give the caller
+    /// * [`ServerError::Protocol`], `UnsupportedOperation` with the typed
+    ///   detail [`keys_unsupported`](a2a_protocol_types::idempotency::keys_unsupported),
+    ///   when the configured store cannot honour keys. Ignoring the key instead would give the caller
     ///   silent at-least-once delivery, which is the outcome presenting a key
     ///   is meant to rule out.
     /// * [`ServerError::TaskNotFound`] when the key names a task that no
@@ -108,8 +109,8 @@ impl RequestHandler {
     /// # Errors
     ///
     /// [`ServerError::InvalidParams`] when the key is malformed;
-    /// [`ServerError::UnsupportedOperation`] when the configured store
-    /// cannot honour keys (see [`claim_send_key`](Self::claim_send_key)).
+    /// the typed `UnsupportedOperation` when the configured store cannot
+    /// honour keys (see [`claim_send_key`](Self::claim_send_key)).
     pub(super) fn send_key_of<'m>(&self, message: &'m Message) -> ServerResult<Option<&'m str>> {
         let key = match key_of(message) {
             Ok(None) => return Ok(None),
@@ -117,11 +118,15 @@ impl RequestHandler {
             Err(err) => return Err(ServerError::InvalidParams(err.to_string())),
         };
         if !self.task_store.supports_idempotency() {
-            return Err(ServerError::UnsupportedOperation(format!(
-                "this server's task store cannot honour `{IDEMPOTENCY_METADATA_KEY}`, so the \
-                 send was refused rather than executed without deduplication; the agent card \
-                 does not advertise `{IDEMPOTENCY_EXTENSION_URI}`"
-            )));
+            // Typed, so a client that added the key itself can send again
+            // without it: nothing was claimed or run (COR-06).
+            return Err(ServerError::Protocol(
+                a2a_protocol_types::idempotency::keys_unsupported(format!(
+                    "this server's task store cannot honour `{IDEMPOTENCY_METADATA_KEY}`, so the \
+                     send was refused rather than executed without deduplication; the agent card \
+                     does not advertise `{IDEMPOTENCY_EXTENSION_URI}`"
+                )),
+            ));
         }
         Ok(Some(key))
     }

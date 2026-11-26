@@ -14,14 +14,19 @@ fn is_fresh_key(key: &str) -> bool {
     key.len() == 64 && key.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// DEC-08 (amended 2026-11-26): a start keys its message whatever it knows
+/// of the agent, so a record can always be resent under its key. Until then
+/// this test asserted the opposite: no key for an agent not known to honour
+/// one.
 #[tokio::test]
-async fn an_unkeyed_message_to_an_agent_not_known_to_honour_keys_is_recorded_without_one() {
+async fn an_unkeyed_message_to_an_agent_not_known_to_honour_keys_is_recorded_with_a_fresh_one() {
     let client = client_for(serve().await);
     let journal = Probe::new(false);
     let d = start(&client, job("done:plain"), &journal).await;
     let record = d.journal_id().unwrap().to_owned();
     let _ = d.wait(std::future::pending()).await;
-    assert_eq!(journal.inner.get(&record).unwrap().idempotency_key, None);
+    let key = journal.inner.get(&record).unwrap().idempotency_key;
+    assert!(key.as_deref().is_some_and(is_fresh_key), "{key:?}");
 }
 
 #[tokio::test]

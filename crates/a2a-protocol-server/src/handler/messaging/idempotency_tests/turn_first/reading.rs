@@ -100,7 +100,7 @@ async fn a_key_that_could_never_be_claimed_is_refused_before_it_is_read() {
         .await
         .expect_err("the store cannot honour keys");
     assert!(
-        matches!(refused, ServerError::UnsupportedOperation(_)),
+        matches!(refused, ServerError::Protocol(ref e) if a2a_protocol_types::idempotency::refuses_keys(e)),
         "{refused:?}"
     );
 }

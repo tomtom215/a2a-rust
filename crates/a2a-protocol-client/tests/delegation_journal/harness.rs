@@ -44,6 +44,9 @@ pub fn gate(key: &str) -> Arc<Notify> {
 pub static CLOCK: AtomicUsize = AtomicUsize::new(1);
 pub static STARTS: LazyLock<Mutex<HashMap<String, usize>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+/// How many times the agent ran each message text.
+pub static RUNS: LazyLock<Mutex<HashMap<String, usize>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 struct Worker;
 agent_executor!(Worker, |ctx, queue| async {
@@ -53,6 +56,7 @@ agent_executor!(Worker, |ctx, queue| async {
         .lock()
         .unwrap()
         .insert(text.clone(), CLOCK.fetch_add(1, Ordering::SeqCst));
+    *RUNS.lock().unwrap().entry(text.clone()).or_insert(0) += 1;
     if text.starts_with("hold:") {
         // Works until the test opens its gate, or is cancelled.
         emit.status(TaskState::Working).await?;

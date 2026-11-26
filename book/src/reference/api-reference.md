@@ -45,6 +45,7 @@ are rustdoc's job.
 | `events` | Server-sent event types for A2A streaming |
 | `extensions` | Agent extension and card-signature types |
 | `failure` | Why a task failed, as a class a caller can match on |
+| `halt` | A halted server's refusal as a caller reads it: `HALTED_REASON`, `is_halted` (ADR 0049) |
 | `idempotency` | Client-supplied idempotency keys for `message/send`, as a declared extension |
 | `jsonrpc` | JSON-RPC 2.0 envelope types |
 | `lease` | The lease extension: `Lease`, a delegated task's time to live, granted on the message that starts it and renewed by a `GetTask` that activates the extension |

@@ -18,13 +18,13 @@ use std::time::Duration;
 
 use a2a_protocol_types::MessageSendParams;
 use a2a_protocol_types::budget::ChildGrant;
-use a2a_protocol_types::delegation_journal::DelegationJournal;
+use a2a_protocol_types::delegation_journal::{DelegationJournal, DelegationRecord};
 use a2a_protocol_types::idempotency;
 use a2a_protocol_types::lease::Lease;
 use a2a_protocol_types::lineage::Lineage;
 
 use super::renewal::Renewal;
-use super::{Delegation, HandOffPolicy, ResumePolicy, fresh_key, journal, refused};
+use super::{Delegation, HandOffPolicy, ResumePolicy, journal, refused};
 use crate::client::A2aClient;
 use crate::error::{ClientError, ClientResult};
 
@@ -40,6 +40,12 @@ pub(super) enum JournalChoice {
     Existing {
         journal: Arc<dyn DelegationJournal>,
         record: String,
+    },
+    /// A record whose child was never named: its message is sent again under
+    /// the record's key (COR-06).
+    Resend {
+        journal: Arc<dyn DelegationJournal>,
+        record: DelegationRecord,
     },
 }
 
@@ -128,6 +134,24 @@ impl DelegationOptions {
         self
     }
 
+    /// Sends the message again for `record`, a record in `journal` that
+    /// [`DelegationJournal::open`] listed with no task id: its supervisor
+    /// died, or its start failed, before the child was named
+    /// ([`Delegation::start_with`]). The message goes out under the record's
+    /// idempotency key, so an agent that honours keys answers with the child
+    /// the first send created instead of starting another, and the record is
+    /// kept up to date from then on. The message must be the one first sent:
+    /// the journal keeps none.
+    #[must_use]
+    pub fn resending(
+        mut self,
+        journal: Arc<dyn DelegationJournal>,
+        record: DelegationRecord,
+    ) -> Self {
+        self.journal = Some(JournalChoice::Resend { journal, record });
+        self
+    }
+
     /// Gives the child `lineage`, the job it belongs to (ADR 0034): from an
     /// executor, `RequestContext::child_lineage` in `a2a-protocol-server`,
     /// which names this turn's job one level down with this task as the
@@ -176,9 +200,11 @@ impl Delegation {
     /// [`ClientError::Protocol`], when the record cannot be written (nothing
     /// is sent then), and [`ClientError::Config`] when `options` names an
     /// existing journal record, which only
-    /// [`reattach_with`](Self::reattach_with) can keep. When the agent refuses
-    /// the request, a budget reservation is returned and the record is
-    /// settled `not_started`: no child exists.
+    /// [`reattach_with`](Self::reattach_with) can keep, or resends for a
+    /// record whose child was named, or that has no key to resend under. When
+    /// the agent refuses the request, a budget reservation is returned and a
+    /// new record is settled `not_started`: no child exists. A resent
+    /// record's is left open: an earlier send may have made a child.
     pub async fn start_with(
         client: Arc<A2aClient>,
         mut params: MessageSendParams,
@@ -193,21 +219,36 @@ impl Delegation {
             lineage,
             hand_off,
         } = options;
-        let new_record = new_record_of(journal)?;
+        let (new_record, resent) = new_record_of(journal)?;
         if let Some(lineage) = &lineage {
             lineage.attach(&mut params.message);
         }
-        prepare(&client, &mut params, budget.as_ref(), lease);
+        prepare(&mut params, budget.as_ref(), lease);
+        // A resend goes out under its record's key, which it never takes off:
+        // a refusal of that key says the agent cannot deduplicate, and an
+        // unkeyed resend could start a second child.
+        let added = match &resent {
+            Some((_, record)) => {
+                resend_under(&mut params, record)?;
+                false
+            }
+            None => super::keys::add_key(&mut params),
+        };
         let tenant = params.tenant.clone();
-        let record = begin_record(new_record, &params).await?;
-        let mut this = match Self::start(Arc::clone(&client), params).await {
+        // Only a record this start wrote is settled `not_started` on a refusal.
+        let fresh = resent.is_none();
+        let record = match resent {
+            Some((journal, record)) => Some((journal, record.id)),
+            None => begin_record(new_record, &params).await?,
+        };
+        let mut this = match Self::start_keyed(Arc::clone(&client), params, added).await {
             Ok(this) => this,
             Err(e) => {
                 if refused(&e) {
                     if let Some(grant) = budget {
                         grant.release();
                     }
-                    if let Some((journal, id)) = &record {
+                    if let (true, Some((journal, id))) = (fresh, &record) {
                         let _ = journal.settle(id, "not_started", journal::now_ms()).await;
                     }
                 }
@@ -253,6 +294,12 @@ impl Delegation {
         let existing = match options.journal {
             None => None,
             Some(JournalChoice::Existing { journal, record }) => Some((journal, record)),
+            Some(JournalChoice::Resend { .. }) => {
+                return Err(ClientError::Config(
+                    "DelegationOptions::resending sends a message: use Delegation::start_with"
+                        .to_owned(),
+                ));
+            }
             Some(JournalChoice::New { .. }) => {
                 return Err(ClientError::Config(
                     "DelegationOptions::with_journal writes a new record before a message is \
@@ -356,16 +403,22 @@ impl Delegation {
 /// A new record to write: the journal, its owner, the agent it names.
 type NewRecord = (Arc<dyn DelegationJournal>, String, String);
 
-/// The new record `journal` asks for, if it does. A record that exists
-/// cannot be started: only a reattach can keep one.
-fn new_record_of(journal: Option<JournalChoice>) -> ClientResult<Option<NewRecord>> {
+/// A record to resend for: the journal, and the record.
+type Resent = (Arc<dyn DelegationJournal>, DelegationRecord);
+
+/// The new record `journal` asks for, if it does, or the record to resend
+/// for. A record that exists cannot be started: only a reattach can keep one.
+fn new_record_of(
+    journal: Option<JournalChoice>,
+) -> ClientResult<(Option<NewRecord>, Option<Resent>)> {
     match journal {
-        None => Ok(None),
+        None => Ok((None, None)),
         Some(JournalChoice::New {
             journal,
             owner,
             agent,
-        }) => Ok(Some((journal, owner, agent))),
+        }) => Ok((Some((journal, owner, agent)), None)),
+        Some(JournalChoice::Resend { journal, record }) => Ok((None, Some((journal, record)))),
         Some(JournalChoice::Existing { .. }) => Err(ClientError::Config(
             "DelegationOptions::with_journal_record names a record that exists: \
              use Delegation::reattach_with, or with_journal for a new one"
@@ -374,24 +427,35 @@ fn new_record_of(journal: Option<JournalChoice>) -> ClientResult<Option<NewRecor
     }
 }
 
-/// What goes into the message before it is sent: the budget, the lease and,
-/// for an agent that honours one, an idempotency key the caller did not set.
-fn prepare(
-    client: &A2aClient,
-    params: &mut MessageSendParams,
-    budget: Option<&ChildGrant>,
-    lease: Option<Duration>,
-) {
+/// What goes into the message before it is sent: the budget and the lease.
+/// The key is the start's (`keys`).
+fn prepare(params: &mut MessageSendParams, budget: Option<&ChildGrant>, lease: Option<Duration>) {
     if let Some(grant) = budget {
         grant.budget().attach(&mut params.message);
     }
     if let Some(ttl) = lease {
         Lease::new(ttl).attach(&mut params.message);
     }
-    if client.honours_idempotency() && matches!(idempotency::key_of(&params.message), Ok(None)) {
-        // A fresh key is 64 hex digits, always valid, so this cannot fail.
-        let _ = idempotency::set_key(&mut params.message, &fresh_key());
+}
+
+/// Puts `record`'s key on the message to resend for it: a record whose child
+/// was named is reattached, not resent, and one with no key cannot reach the
+/// child the first send made.
+fn resend_under(params: &mut MessageSendParams, record: &DelegationRecord) -> ClientResult<()> {
+    if record.task_id.is_some() {
+        return Err(ClientError::Config(format!(
+            "journal record {} names its child: use Delegation::reattach_with",
+            record.id
+        )));
     }
+    let Some(key) = &record.idempotency_key else {
+        return Err(ClientError::Config(format!(
+            "journal record {} has no idempotency key, so a resend could start a second child",
+            record.id
+        )));
+    };
+    idempotency::set_key(&mut params.message, key)
+        .map_err(|e| ClientError::Config(format!("journal record {}: {e}", record.id)))
 }
 
 /// Writes the new record, if there is one, before anything is sent, and

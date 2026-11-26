@@ -130,6 +130,7 @@ pub mod events;
 mod extension_value;
 pub mod extensions;
 pub mod failure;
+pub mod halt;
 pub mod idempotency;
 pub mod jsonrpc;
 pub mod lease;

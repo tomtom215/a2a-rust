@@ -18,7 +18,7 @@
     "DEC-05": "decided 2026-11-25: pin the lint toolchain in a file CI writes and preflight.sh reads",
     "DEC-06": "decided 2026-11-25: send the lineage-and-halt and the deadline-and-budget drafts upstream; a session makes them ready, the maintainer sends",
     "DEC-07": "decided 2026-11-25: split CHANGELOG.md by release, keeping [Unreleased], the newest release and an index",
-    "DEC-08": "decided 2026-11-25: a delegation always carries an idempotency key",
+    "DEC-08": "decided 2026-11-25: a delegation always carries an idempotency key; amended 2026-11-26: a key the start added is taken off, once, on the typed refusal of a server that cannot honour keys",
     "DEC-09": "decided 2026-11-25: lineage is attached automatically inside the turn-scoped delegate only",
     "DEC-10": "decided 2026-11-25: an opt-in authenticated halt route, off by default, refused under the production profile without an authenticator",
     "DEC-11": "decided 2026-11-25: JsonRpcDispatcher serves /health and /ready",
@@ -61,7 +61,7 @@
       "release": "0.16.x",
       "breaking": false,
       "status": "done",
-      "landed": null
+      "landed": 232
     },
     {
       "id": "COR-04",
@@ -73,7 +73,7 @@
       "release": "0.17",
       "breaking": false,
       "status": "done",
-      "landed": null
+      "landed": 232
     },
     {
       "id": "COR-05",
@@ -84,7 +84,7 @@
       "gates": [],
       "release": "0.16.x",
       "breaking": false,
-      "status": "todo",
+      "status": "done",
       "landed": null
     },
     {
@@ -98,7 +98,7 @@
       ],
       "release": "0.17",
       "breaking": false,
-      "status": "todo",
+      "status": "done",
       "landed": null
     },
     {

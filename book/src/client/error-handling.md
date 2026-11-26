@@ -275,7 +275,10 @@ async fn delegate(downstream_url: &str) -> A2aResult<Option<String>> {
 | anything else | `Internal` |
 
 `Transient` is given exactly when `ClientError::is_retryable()` is true, so the
-client's retry policy and the caller's agree. For every client error other than
+client's retry policy and the caller's agree. A halted server's refusal is a
+`Protocol` error for which `ClientError::is_halted()` is true, on every binding:
+an operator stopped the server, the tenant or the job, so it is never retried
+and does not count against the server's health. For every client error other than
 `Protocol`, the failed task's status text is `downstream A2A call failed: `
 followed by the client error and its causes; a `Protocol` error keeps the
 downstream agent's own message.

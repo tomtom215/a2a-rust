@@ -327,7 +327,8 @@ async fn a_key_is_refused_when_the_store_cannot_honour_it() {
         .await
         .expect_err("a keyed send must be refused by a store that cannot dedupe");
     assert!(
-        matches!(err, ServerError::UnsupportedOperation(ref m) if m.contains("cannot honour")),
+        matches!(err, ServerError::Protocol(ref e)
+            if a2a_protocol_types::idempotency::refuses_keys(e) && e.message.contains("cannot honour")),
         "unhelpful error: {err}"
     );
     assert_eq!(

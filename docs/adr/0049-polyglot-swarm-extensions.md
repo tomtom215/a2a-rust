@@ -176,6 +176,18 @@ answering a body of the wrong shape with `at line 1 column N` in its message
 where `RestDispatcher` had none; it now reads the body as a value, as
 `RestDispatcher` does.
 
+## Amendment, 2026-11-26: this SDK's client stops on `HALTED` (COR-05)
+
+Decision 4 asks every hop to stop on a `HALTED` refusal. This SDK's client did
+not on two bindings: gRPC read the halt's `UNAVAILABLE` as a dropped connection
+and retried it, and HTTP+JSON dropped the details after the standard reason,
+answering a bare 503. Both now keep the detail, `ClientError::is_halted` reads
+it on every binding (`a2a_protocol_types::halt`), and a halt is never retried
+and does not count toward ejecting the server. A 503 without `Retry-After` is
+no longer taken as a refusal before any work for a non-idempotent send
+(decision D-1 of the external review's triage). Test:
+`a2a-protocol-sdk` `binding_equivalence` `halt.rs`.
+
 ## What is not built
 
 * Middleware for a2a-python or a2a-go (option B), and language bindings

@@ -39,6 +39,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A delegation whose start was lost can be recovered** (COR-06).
+  `DelegationOptions::resending(journal, record)` sends the first message again
+  under its journal record's idempotency key, and an agent that honours keys
+  answers with the child the first send created instead of starting another.
+  The server's refusal of a key its store cannot honour is now typed
+  (`idempotency::{keys_unsupported, refuses_keys, KEYS_UNSUPPORTED_REASON}`),
+  and `idempotency::remove_key` takes a key off a message.
+- **`ClientError::is_halted`**, and `a2a_protocol_types::halt`, read a halted
+  server's refusal the same way on every binding (COR-05).
+
 - **A canceled task says who stopped it** (E03 R3). A parent could not tell a
   lapsed lease from an operator's halt from a caller's `CancelTask`: all three
   end `canceled`, and the delegation outcome said "whoever asked for it". The
@@ -52,6 +62,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its agent card, so a signed card keeps building.
 
 ### Changed
+
+- **A delegation always keys its message** (DEC-08, COR-06). `Delegation`
+  starts gave a message a key only for an agent known to honour keys; now they
+  give one to any message without one. A server of this SDK whose store cannot
+  honour keys refuses the keyed send before it runs anything; the start then
+  takes off the key it added and sends once more. A key the caller set is never
+  taken off. The server's refusal is `ServerError::Protocol` with the typed
+  detail, where it was `ServerError::UnsupportedOperation` (the wire code is
+  unchanged, `UnsupportedOperation`).
+- **A bare 503 no longer retries a send** (decision D-1). A non-idempotent call
+  (`SendMessage`, `SendStreamingMessage`, creating a push config) is retried
+  after a 503 only when it carries `Retry-After`, the server asking to be called
+  again, as this SDK's overload refusal does; a 503 without one may come from a
+  proxy after the request ran. Idempotent calls, and a keyed send to an agent
+  known to honour keys, are retried as before.
 
 - **`a2a-protocol-discovery` uses `mdns-sd` 0.22.0** (was 0.21.7). Since 0.22.0
   `mdns-sd` keeps the escapes in a full name it reads from the network, so an
@@ -73,6 +98,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   2026-11-19 on that stale baseline (`docs/official-tck-findings.md` §27).
 
 ### Fixed
+
+- **A halt is final on every binding** (COR-05, E03 R2). Over gRPC a halted
+  server's `UNAVAILABLE` was read as a dropped connection and retried; over
+  HTTP+JSON the `HALTED` detail was dropped and the refusal read as a bare 503.
+  Both now give a protocol error that `ClientError::is_halted` recognises,
+  which is never retried and does not count toward ejecting the server, as
+  JSON-RPC and WebSocket already did.
 
 - **A continuation sent again is the same request** (register X2-1). A
   `Delegation` retrying a hand-off continuation whose send failed gave each

@@ -172,8 +172,11 @@ async fn a_key_is_added_for_an_agent_whose_card_honours_one_and_reaches_the_same
     assert_ne!(third, first);
 }
 
+/// DEC-08 (amended 2026-11-26): an agent not known to honour keys gets a key
+/// too, and this server, whose store honours keys, deduplicates by it. Until
+/// then this test asserted that nothing was added.
 #[tokio::test]
-async fn nothing_is_added_for_an_agent_not_known_to_honour_keys() {
+async fn a_key_is_added_for_an_agent_not_known_to_honour_keys() {
     let (addr, _, _) = serve().await;
     let client = Arc::new(
         ClientBuilder::new(format!("http://{addr}"))
@@ -182,7 +185,8 @@ async fn nothing_is_added_for_an_agent_not_known_to_honour_keys() {
     );
     assert!(!client.honours_idempotency());
     let (key, _) = delegate(&client, params("m-3")).await;
-    assert_eq!(key, None);
+    let key = key.expect("a key was added");
+    assert!(idempotency::validate_key(&key).is_ok());
 }
 
 /// `start_with` adds the key itself (it has to, to record it before the
@@ -222,8 +226,9 @@ async fn start_with_adds_a_key_for_an_honouring_agent_and_keeps_the_callers() {
     assert_eq!(runs.load(Ordering::SeqCst), 1, "which did not run again");
 }
 
+/// As `start`, so `start_with` (DEC-08; until then it asserted no key).
 #[tokio::test]
-async fn start_with_adds_nothing_for_an_agent_not_known_to_honour_keys() {
+async fn start_with_adds_a_key_for_an_agent_not_known_to_honour_keys() {
     let (addr, _, _) = serve().await;
     let client = Arc::new(
         ClientBuilder::new(format!("http://{addr}"))
@@ -234,5 +239,6 @@ async fn start_with_adds_nothing_for_an_agent_not_known_to_honour_keys() {
     let child = Delegation::start_with(client, params("m-5"), DelegationOptions::new())
         .await
         .expect("start");
-    assert_eq!(settle(child).await.0, None);
+    let key = settle(child).await.0.expect("a key was added");
+    assert!(idempotency::validate_key(&key).is_ok());
 }

@@ -115,8 +115,11 @@ All three are per client: a thousand clients each have their own, so share one
 `Arc<A2aClient>` per peer to bound the calls to it.
 
 Sends (`send_message`, `stream_message`, creating a push config) are retried only
-on a 429, a 503, or a protocol error that names a retry delay (`RetryInfo`), all
-of which prove the server did not process them. After a timeout or a dropped
+on a 429, a 503 that carries `Retry-After`, or a protocol error that names a retry
+delay (`RetryInfo`), all of which say the server refused them before any work. A
+503 without `Retry-After` may come from a proxy after the request ran, and is not
+retried for a send. A halted server's refusal (`ClientError::is_halted`) is never
+retried. After a timeout or a dropped
 connection they are not re-sent, except a `send_message` or `stream_message` that
 carries an idempotency key the peer honours; see
 [Idempotent Sends](../idempotency.md).

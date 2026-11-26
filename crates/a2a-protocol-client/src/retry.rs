@@ -316,8 +316,12 @@ pub(crate) fn carries_idempotency_key(
 /// **non-idempotent** method — that is, the error proves the server rejected
 /// the request *without processing it*, so re-sending cannot duplicate work.
 ///
-/// `429 Too Many Requests` and `503 Service Unavailable` qualify: both signal
-/// the request was refused up front. So does a protocol error carrying a
+/// `429 Too Many Requests` qualifies: it signals the request was refused up
+/// front. `503 Service Unavailable` qualifies only with `Retry-After`, the
+/// server asking to be called again (this SDK's server answers an overload
+/// so, and a halt without it); a bare 503 may come from a proxy, or after the
+/// request ran, and is ambiguous (decision D-1, 2026-11-26). A halt is never
+/// retried at all ([`ClientError::is_halted`]). So does a protocol error carrying a
 /// `RetryInfo` delay, the JSON-RPC and WebSocket form of a rate-limit refusal:
 /// an executor's own failure reaches the caller as a `Failed` task, not as an
 /// error response, so a response error that names a delay was raised before
@@ -328,8 +332,11 @@ pub(crate) fn carries_idempotency_key(
 const fn safe_to_retry_non_idempotent(error: &ClientError) -> bool {
     match error {
         // An open circuit refuses before anything is sent.
-        ClientError::UnexpectedStatus {
-            status: 429 | 503, ..
+        ClientError::UnexpectedStatus { status: 429, .. }
+        | ClientError::UnexpectedStatus {
+            status: 503,
+            retry_after: Some(_),
+            ..
         }
         | ClientError::CircuitOpen { .. } => true,
         // A rate-limit refusal names a delay because the request was not
@@ -1617,15 +1624,27 @@ mod tests {
         }
     }
 
+    /// 429, and 503 with `Retry-After` (decision D-1, 2026-11-26; a bare 503
+    /// qualified until then).
     #[test]
-    fn only_429_503_are_safe_for_non_idempotent() {
+    fn only_429_and_503_with_retry_after_are_safe_for_non_idempotent() {
         let mk = |status| ClientError::UnexpectedStatus {
             status,
             body: String::new(),
             retry_after: None,
         };
         assert!(safe_to_retry_non_idempotent(&mk(429)));
-        assert!(safe_to_retry_non_idempotent(&mk(503)));
+        assert!(
+            !safe_to_retry_non_idempotent(&mk(503)),
+            "a bare 503 is ambiguous"
+        );
+        assert!(safe_to_retry_non_idempotent(
+            &ClientError::UnexpectedStatus {
+                status: 503,
+                body: String::new(),
+                retry_after: Some(Duration::from_secs(1)),
+            }
+        ));
         // Ambiguous: the server may already have processed the request.
         assert!(!safe_to_retry_non_idempotent(&mk(502)));
         assert!(!safe_to_retry_non_idempotent(&mk(504)));
@@ -1782,14 +1801,18 @@ mod tests {
         assert_eq!(call_count.load(Ordering::SeqCst), 1);
     }
 
-    /// A non-idempotent method IS retried when the server rejected it up front
-    /// (503), because that proves the request was not processed.
+    /// Decision D-1 (2026-11-26): a non-idempotent method is retried after a
+    /// 503 only when it carries `Retry-After`, the server asking to be called
+    /// again (the request was refused up front). A bare 503 may come from a
+    /// proxy after the request ran, and is not retried. Until D-1 this test
+    /// asserted that a bare 503 was retried.
     #[tokio::test]
-    async fn non_idempotent_retried_on_503() {
+    async fn non_idempotent_retried_on_503_only_with_retry_after() {
         /// Fails `n` times with a 503, then succeeds.
         struct Fail503 {
             remaining: Arc<AtomicUsize>,
             calls: Arc<AtomicUsize>,
+            retry_after: Option<Duration>,
         }
         impl crate::transport::Transport for Fail503 {
             fn send_request<'a>(
@@ -1801,12 +1824,13 @@ mod tests {
             {
                 self.calls.fetch_add(1, Ordering::SeqCst);
                 let left = self.remaining.fetch_sub(1, Ordering::SeqCst);
+                let retry_after = self.retry_after;
                 Box::pin(async move {
                     if left > 0 {
                         Err(ClientError::UnexpectedStatus {
                             status: 503,
                             body: String::new(),
-                            retry_after: None,
+                            retry_after,
                         })
                     } else {
                         Ok(serde_json::json!({"ok": true}))
@@ -1822,23 +1846,25 @@ mod tests {
                 Box::pin(async { Err(ClientError::Transport("n/a".into())) })
             }
         }
-        let calls = Arc::new(AtomicUsize::new(0));
-        let inner = Fail503 {
-            remaining: Arc::new(AtomicUsize::new(1)),
-            calls: Arc::clone(&calls),
-        };
-        let transport = RetryTransport::new(
-            Box::new(inner),
-            RetryPolicy::default()
-                .with_initial_backoff(Duration::from_millis(1))
-                .with_max_retries(3),
-        );
-        let headers = HashMap::new();
-        let result = transport
-            .send_request("SendMessage", serde_json::Value::Null, &headers)
-            .await;
-        assert!(result.is_ok(), "503 is a safe retry for non-idempotent");
-        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        for (retry_after, calls_made) in [(None, 1), (Some(Duration::from_millis(1)), 2)] {
+            let calls = Arc::new(AtomicUsize::new(0));
+            let inner = Fail503 {
+                remaining: Arc::new(AtomicUsize::new(1)),
+                calls: Arc::clone(&calls),
+                retry_after,
+            };
+            let transport = RetryTransport::new(
+                Box::new(inner),
+                RetryPolicy::default()
+                    .with_initial_backoff(Duration::from_millis(1))
+                    .with_max_retries(3),
+            );
+            let result = transport
+                .send_request("SendMessage", serde_json::Value::Null, &HashMap::new())
+                .await;
+            assert_eq!(result.is_ok(), calls_made == 2, "{result:?}");
+            assert_eq!(calls.load(Ordering::SeqCst), calls_made, "{retry_after:?}");
+        }
     }
 
     /// The server's `Retry-After` is honored in preference to computed backoff.

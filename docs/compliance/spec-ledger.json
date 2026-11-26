@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:13400 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:13432 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -1606,7 +1606,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/idempotency.rs:80 RequestHandler::claim_send_key"
+    "crates/a2a-protocol-server/src/handler/messaging/idempotency.rs:81 RequestHandler::claim_send_key"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/idempotency_tests/mod.rs:36 a_retry_of_the_same_message_returns_the_first_task_and_runs_the_agent_once",
@@ -2953,7 +2953,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/dispatch_tests/rest.rs:481 rest_response_has_a2a_version_header",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1389 add_metadata_injects_a2a_version"
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1401 add_metadata_injects_a2a_version"
    ],
    "notes": "A2A_VERSION = \"1.0\" used for headers and card builder; some test fixtures use \"1.0.0\" but no production path does.",
    "auditor": "B",
@@ -2998,7 +2998,7 @@
     "bindings/a2a-protocol-slimrpc/src/multicast/mod.rs:188 SlimRpcMulticast::send_message"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1389 add_metadata_injects_a2a_version",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1401 add_metadata_injects_a2a_version",
     "crates/a2a-protocol-client/tests/rest_streaming_tests.rs:210 rest_send_message_returns_completed_task",
     "crates/a2a-protocol-client/src/discovery.rs:2015 the_card_fetch_sends_its_a2a_version_unless_the_caller_does",
     "bindings/a2a-protocol-slimrpc/src/client/dispatch.rs:168 every_call_declares_the_protocol_version",
@@ -3696,7 +3696,7 @@
     "crates/a2a-protocol-server/src/error/mod.rs:237 ServerError::retry_after",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:98 status_without_challenge",
     "crates/a2a-protocol-server/src/dispatch/grpc/details.rs:38 data_detail",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1083 with_detail_data"
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1095 with_detail_data"
    ],
    "test_evidence": [
     "tck/src/equivalence.rs:646 bind_equiv_003",
@@ -3704,8 +3704,8 @@
     "crates/a2a-protocol-server/tests/http_query_validation.rs:82 a_malformed_query_value_is_refused_naming_its_parameter",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:429 a_lagged_stream_s_error_keeps_its_marker",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:134 invalid_params_carry_their_field_violations",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1573 status_to_error_keeps_a_struct_detail_as_data",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1658 status_to_error_keeps_field_violations_as_data"
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1585 status_to_error_keeps_a_struct_detail_as_data",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1670 status_to_error_keeps_field_violations_as_data"
    ],
    "notes": "Single ErrorCode table drives HTTP status, gRPC code and JSON-RPC code. A malformed query value on HTTP+JSON is InvalidParams as on JSON-RPC and gRPC (2026-10-13); it was read as absent. A gRPC error carries its data as the JSON bindings do (2026-10-13): a BadRequest as google.rpc.BadRequest, any other data as a google.protobuf.Struct detail, and a stream's error as a unary call's. gRPC dropped data, and a stream's error was INTERNAL \"event queue error\", so a lagged stream could not be told from an executor failure; the gRPC client decodes the details back into data.",
    "auditor": "C",
@@ -4173,10 +4173,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:230 unix_millis_to_iso8601"
+    "crates/a2a-protocol-types/src/lib.rs:231 unix_millis_to_iso8601"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:516 utc_now_has_millisecond_precision_and_z_suffix"
+    "crates/a2a-protocol-types/src/lib.rs:517 utc_now_has_millisecond_precision_and_z_suffix"
    ],
    "notes": "utc_now_iso8601 formats YYYY-MM-DDTHH:mm:ss.sssZ.",
    "auditor": "C",
@@ -4191,19 +4191,19 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:266 parse_iso8601_to_unix_millis",
+    "crates/a2a-protocol-types/src/lib.rs:267 parse_iso8601_to_unix_millis",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:173 base64_to_bytes",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:186 timestamp_to_rfc3339",
     "crates/a2a-protocol-server/src/handler/lifecycle/list_tasks.rs:115 refuse_unlistable"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:530 utc_now_roundtrips_through_parser",
-    "crates/a2a-protocol-types/src/lib.rs:545 parse_epoch_and_known_instants",
+    "crates/a2a-protocol-types/src/lib.rs:531 utc_now_roundtrips_through_parser",
+    "crates/a2a-protocol-types/src/lib.rs:546 parse_epoch_and_known_instants",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:549 timestamp_parses_offset_and_normalizes_to_utc",
     "crates/a2a-protocol-types/src/proto/convert/mod.rs:569 timestamp_rejects_invalid_string",
     "crates/a2a-protocol-types/tests/timestamp_parity.rs:32 the_json_parser_reads_what_the_grpc_conversion_reads",
-    "crates/a2a-protocol-types/src/lib.rs:653 parse_refuses_what_rfc_3339_does_not_allow",
-    "crates/a2a-protocol-types/src/lib.rs:624 parse_accepts_pre_epoch_dates_back_to_year_0",
+    "crates/a2a-protocol-types/src/lib.rs:654 parse_refuses_what_rfc_3339_does_not_allow",
+    "crates/a2a-protocol-types/src/lib.rs:625 parse_accepts_pre_epoch_dates_back_to_year_0",
     "crates/a2a-protocol-server/tests/pre_epoch_timestamps.rs:75 list_tasks_accepts_a_pre_epoch_filter"
    ],
    "notes": "Server rejects malformed statusTimestampAfter with InvalidParams; JSON-path clients keep timestamps as opaque strings (no parsing needed). Until 2026-10-13 the parser was lenient (whitespace, unpadded or signed fields, an offset without minutes, 02-30 rolled into March) and refused every pre-1970 instant, so the JSON and gRPC bindings disagreed on such values and a 1969 statusTimestampAfter was InvalidParams. It now reads exactly what the time crate's RFC 3339 parser reads, checked over 1,655,808 strings, and the formatter writes pre-1970 instants as themselves.",
@@ -4220,10 +4220,10 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:266 parse_iso8601_to_unix_millis"
+    "crates/a2a-protocol-types/src/lib.rs:267 parse_iso8601_to_unix_millis"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-types/src/lib.rs:545 parse_epoch_and_known_instants",
+    "crates/a2a-protocol-types/src/lib.rs:546 parse_epoch_and_known_instants",
     "crates/a2a-protocol-types/tests/optional_wire_forms.rs:28 timestamp_without_or_with_zero_filled_fraction_names_the_same_instant"
    ],
    "notes": "Parser accepts with and without fractional seconds. Asserts a timestamp with no fraction, and with .0, .000 and .000000, parses to the same millisecond instant while a non-zero fraction is read; shown able to fail by making parse_iso8601_to_unix_millis refuse a timestamp without a fraction (2026-10-20).",
@@ -6534,12 +6534,12 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:17 extract_metadata",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:37 validated_metadata",
     "crates/a2a-protocol-client/src/transport/grpc.rs:558 GrpcTransport::add_metadata",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:638 GrpcTransport::status_to_error"
+    "crates/a2a-protocol-client/src/transport/grpc.rs:650 GrpcTransport::status_to_error"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:258 extract_metadata_ascii_keys",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1389 add_metadata_injects_a2a_version",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1404 add_metadata_injects_extra_headers",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1401 add_metadata_injects_a2a_version",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1416 add_metadata_injects_extra_headers",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:271 extract_metadata_joins_repeated_entries_and_skips_binary_ones"
    ],
    "notes": "Client puts a2a-version plus all interceptor headers into tonic metadata. The server copies ASCII metadata into the header map that the handler reads.",
@@ -6556,11 +6556,11 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-client/src/transport/grpc.rs:558 GrpcTransport::add_metadata",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:638 GrpcTransport::status_to_error",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:650 GrpcTransport::status_to_error",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers.rs:17 extract_metadata"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1414 add_metadata_fails_closed_on_invalid_header",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1426 add_metadata_fails_closed_on_invalid_header",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:258 extract_metadata_ascii_keys",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:271 extract_metadata_joins_repeated_entries_and_skips_binary_ones"
    ],
@@ -6652,7 +6652,7 @@
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:158 a2a_error_status_carries_error_info_detail",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:169 every_a2a_reason_maps_to_error_info_detail",
     "crates/a2a-protocol-server/src/dispatch/grpc/helpers_tests.rs:197 standard_errors_have_no_error_info_detail",
-    "crates/a2a-protocol-client/src/transport/grpc.rs:1677 status_to_error_prefers_error_info_reason",
+    "crates/a2a-protocol-client/src/transport/grpc.rs:1689 status_to_error_prefers_error_info_reason",
     "crates/a2a-protocol-server/src/dispatch/grpc/native.rs:429 a_lagged_stream_s_error_keeps_its_marker"
    ],
    "notes": "Unary, pre-stream and mid-stream errors carry ErrorInfo through tonic_types: since 2026-10-13 reader_to_native_stream sends a stream's error through server_error_to_status as a unary call's. It was Status::internal(\"event queue error\"), which lost the message and the streamLagged marker.",
@@ -6703,8 +6703,8 @@
     "crates/a2a-protocol-client/src/transport/rest/request.rs:126 RestTransport::build_request"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:687 build_request_labels_a_body_and_only_a_body",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:673 build_request_non_streaming_accepts_a2a_json_first"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:700 build_request_labels_a_body_and_only_a_body",
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:686 build_request_non_streaming_accepts_a2a_json_first"
    ],
    "notes": "Since 2026-10-14 (audit register R50) the REST client labels a request body application/a2a+json, sends no Content-Type on a GET or DELETE (no body), and asks Accept: application/a2a+json, application/json on a non-streaming call. Until then every request, bodiless ones included, was labelled application/json, for interop: a2a-java 1.3.0.Final's REST server refuses any other type (A2AServerRoutes.validateContentType, read from the jar's bytecode with javap, 2026-10-10). a2a-java accepts application/a2a+json from 1.4.0.Final (pin-freshness run 38299384752; this repository's a2a-tck a2a_media_type_accepted on REST), which the ITK pins; an older a2a-java server is reached over JSON-RPC (upgrading guide). a2a-go v2.5.0 and a2a-sdk 1.1.4 servers do not check the request type, and this server accepts both.",
    "auditor": "E",
@@ -6732,7 +6732,7 @@
     "crates/a2a-protocol-server/tests/repeated_header_lines.rs:116 rest_reads_and_echoes_both_lines",
     "crates/a2a-protocol-server/tests/repeated_header_lines.rs:178 axum_reads_both_lines",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:191 axum_enforces_the_protocol_version_except_for_discovery",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:715 build_request_includes_extra_headers",
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:728 build_request_includes_extra_headers",
     "crates/a2a-protocol-sdk/tests/extensions_e2e.rs:122 http_json_sends_the_extensions_asked_for"
    ],
    "notes": "RestDispatcher validates A2A-Version and forwards headers. The axum adapter (A2aRouter) forwards headers and validates A2A-Version as RestDispatcher does (axum_adapter.rs:212, validate_a2a_request).",
@@ -6754,7 +6754,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/mod.rs:354 header_fields_are_named_in_lowercase",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:715 build_request_includes_extra_headers"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:728 build_request_includes_extra_headers"
    ],
    "notes": "",
    "auditor": "E",
@@ -6832,7 +6832,7 @@
     "crates/a2a-protocol-server/src/dispatch/axum_adapter.rs:931 body_with_path_id"
    ],
    "test_evidence": [
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:366 build_uri_extracts_path_param_and_appends_query",
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:379 build_uri_extracts_path_param_and_appends_query",
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:817 parse_list_tasks_query_all_params",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:823 axum_get_task_honours_history_length",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:844 axum_get_requests_read_the_tenant_from_the_query",
@@ -6859,7 +6859,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/dispatch/rest/query.rs:817 parse_list_tasks_query_all_params",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:382 build_uri_appends_query_for_get",
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:395 build_uri_appends_query_for_get",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:823 axum_get_task_honours_history_length",
     "crates/a2a-protocol-server/tests/axum_adapter_tests.rs:844 axum_get_requests_read_the_tenant_from_the_query",
     "crates/a2a-protocol-server/tests/http_query_validation.rs:82 a_malformed_query_value_is_refused_naming_its_parameter"
@@ -11090,7 +11090,7 @@
     "crates/a2a-protocol-server/tests/empty_task_ids.rs:19 an_empty_task_id_is_invalid_params",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:92 rest_reads_the_path_first",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:106 axum_reads_the_path_first",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:514 an_empty_path_id_is_refused_before_the_request_is_built"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:527 an_empty_path_id_is_refused_before_the_request_is_built"
    ],
    "notes": "An empty or whitespace-only id (gRPC's absent string, or JSON \"\") is InvalidParams before any lookup; it used to reach the store and answer TaskNotFound. JSON absent is -32602 as before. Shown to fail with the check removed from each of the three handlers. Over HTTP+JSON (RestDispatcher and the axum router) the path's id is the request's, whatever the body says, an empty path segment is refused where it stands, and the REST client refuses an empty id before building the URL, since 2026-10-13; before, a body id replaced the path's, an empty segment was dropped before routing (so /tasks//pushNotificationConfigs was GetTask for \"pushNotificationConfigs\"), and the client's get_task(\"\") sent GET /tasks/.",
    "auditor": "G",
@@ -11304,7 +11304,7 @@
     "crates/a2a-protocol-server/tests/empty_task_ids.rs:19 an_empty_task_id_is_invalid_params",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:92 rest_reads_the_path_first",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:106 axum_reads_the_path_first",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:514 an_empty_path_id_is_refused_before_the_request_is_built"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:527 an_empty_path_id_is_refused_before_the_request_is_built"
    ],
    "notes": "An empty or whitespace-only id (gRPC's absent string, or JSON \"\") is InvalidParams before any lookup; it used to reach the store and answer TaskNotFound. JSON absent is -32602 as before. Shown to fail with the check removed from each of the three handlers. Over HTTP+JSON (RestDispatcher and the axum router) the path's id is the request's, whatever the body says, an empty path segment is refused where it stands, and the REST client refuses an empty id before building the URL, since 2026-10-13; before, a body id replaced the path's, an empty segment was dropped before routing (so /tasks//pushNotificationConfigs was GetTask for \"pushNotificationConfigs\"), and the client's get_task(\"\") sent GET /tasks/.",
    "auditor": "G",
@@ -11349,7 +11349,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:1229 empty_required_ids_are_invalid_params",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:92 rest_reads_the_path_first",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:106 axum_reads_the_path_first",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:514 an_empty_path_id_is_refused_before_the_request_is_built"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:527 an_empty_path_id_is_refused_before_the_request_is_built"
    ],
    "notes": "Empty taskId is InvalidParams before any lookup (require_field, since 56f8d61); this entry had not been updated. Over HTTP+JSON (RestDispatcher and the axum router) the path's id is the request's, whatever the body says, an empty path segment is refused where it stands, and the REST client refuses an empty id before building the URL, since 2026-10-13; before, a body id replaced the path's, an empty segment was dropped before routing (so /tasks//pushNotificationConfigs was GetTask for \"pushNotificationConfigs\"), and the client's get_task(\"\") sent GET /tasks/.",
    "auditor": "G",
@@ -11373,7 +11373,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:1229 empty_required_ids_are_invalid_params",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:92 rest_reads_the_path_first",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:106 axum_reads_the_path_first",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:514 an_empty_path_id_is_refused_before_the_request_is_built"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:527 an_empty_path_id_is_refused_before_the_request_is_built"
    ],
    "notes": "Empty id is InvalidParams before any lookup (require_field, since 56f8d61); this entry had not been updated. Over HTTP+JSON (RestDispatcher and the axum router) the path's id is the request's, whatever the body says, an empty path segment is refused where it stands, and the REST client refuses an empty id before building the URL, since 2026-10-13; before, a body id replaced the path's, an empty segment was dropped before routing (so /tasks//pushNotificationConfigs was GetTask for \"pushNotificationConfigs\"), and the client's get_task(\"\") sent GET /tasks/.",
    "auditor": "G",
@@ -11415,7 +11415,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:1229 empty_required_ids_are_invalid_params",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:92 rest_reads_the_path_first",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:106 axum_reads_the_path_first",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:514 an_empty_path_id_is_refused_before_the_request_is_built"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:527 an_empty_path_id_is_refused_before_the_request_is_built"
    ],
    "notes": "An empty value (gRPC's absent string, or JSON \"\") is InvalidParams before any lookup, on get, list and delete; absent in JSON is still -32602 / 400 at parse. Until 2026-10-11 an empty id reached the store and delete/list answered success or TaskNotFound. Over HTTP+JSON (RestDispatcher and the axum router) the path's id is the request's, whatever the body says, an empty path segment is refused where it stands, and the REST client refuses an empty id before building the URL, since 2026-10-13; before, a body id replaced the path's, an empty segment was dropped before routing (so /tasks//pushNotificationConfigs was GetTask for \"pushNotificationConfigs\"), and the client's get_task(\"\") sent GET /tasks/.",
    "auditor": "G",
@@ -11437,7 +11437,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:1229 empty_required_ids_are_invalid_params",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:92 rest_reads_the_path_first",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:106 axum_reads_the_path_first",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:514 an_empty_path_id_is_refused_before_the_request_is_built"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:527 an_empty_path_id_is_refused_before_the_request_is_built"
    ],
    "notes": "An empty value (gRPC's absent string, or JSON \"\") is InvalidParams before any lookup, on get, list and delete; absent in JSON is still -32602 / 400 at parse. Until 2026-10-11 an empty id reached the store and delete/list answered success or TaskNotFound. Over HTTP+JSON (RestDispatcher and the axum router) the path's id is the request's, whatever the body says, an empty path segment is refused where it stands, and the REST client refuses an empty id before building the URL, since 2026-10-13; before, a body id replaced the path's, an empty segment was dropped before routing (so /tasks//pushNotificationConfigs was GetTask for \"pushNotificationConfigs\"), and the client's get_task(\"\") sent GET /tasks/.",
    "auditor": "G",
@@ -11486,7 +11486,7 @@
     "crates/a2a-protocol-server/tests/empty_task_ids.rs:19 an_empty_task_id_is_invalid_params",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:92 rest_reads_the_path_first",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:106 axum_reads_the_path_first",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:514 an_empty_path_id_is_refused_before_the_request_is_built"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:527 an_empty_path_id_is_refused_before_the_request_is_built"
    ],
    "notes": "An empty or whitespace-only id (gRPC's absent string, or JSON \"\") is InvalidParams before any lookup; it used to reach the store and answer TaskNotFound. JSON absent is -32602 as before. Shown to fail with the check removed from each of the three handlers. Over HTTP+JSON (RestDispatcher and the axum router) the path's id is the request's, whatever the body says, an empty path segment is refused where it stands, and the REST client refuses an empty id before building the URL, since 2026-10-13; before, a body id replaced the path's, an empty segment was dropped before routing (so /tasks//pushNotificationConfigs was GetTask for \"pushNotificationConfigs\"), and the client's get_task(\"\") sent GET /tasks/.",
    "auditor": "G",
@@ -11528,7 +11528,7 @@
     "crates/a2a-protocol-server/src/handler/push_config.rs:1229 empty_required_ids_are_invalid_params",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:92 rest_reads_the_path_first",
     "crates/a2a-protocol-server/tests/http_json_path_ids.rs:106 axum_reads_the_path_first",
-    "crates/a2a-protocol-client/src/transport/rest/request.rs:514 an_empty_path_id_is_refused_before_the_request_is_built"
+    "crates/a2a-protocol-client/src/transport/rest/request.rs:527 an_empty_path_id_is_refused_before_the_request_is_built"
    ],
    "notes": "An empty value (gRPC's absent string, or JSON \"\") is InvalidParams before any lookup, on get, list and delete; absent in JSON is still -32602 / 400 at parse. Until 2026-10-11 an empty id reached the store and delete/list answered success or TaskNotFound. Over HTTP+JSON (RestDispatcher and the axum router) the path's id is the request's, whatever the body says, an empty path segment is refused where it stands, and the REST client refuses an empty id before building the URL, since 2026-10-13; before, a body id replaced the path's, an empty segment was dropped before routing (so /tasks//pushNotificationConfigs was GetTask for \"pushNotificationConfigs\"), and the client's get_task(\"\") sent GET /tasks/.",
    "auditor": "G",

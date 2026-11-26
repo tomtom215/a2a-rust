@@ -147,7 +147,7 @@ These belong to FND-03.
 
 ## 8. Decisions this triage needs
 
-- **D-1 (503 for a non-idempotent send).** COR-05's Accept keeps any 503 retry-safe; the review and the
+- **D-1 (503 for a non-idempotent send).** *Decided 2026-11-26: option (b); built in COR-05.* COR-05's Accept keeps any 503 retry-safe; the review and the
   gRPC client's own reasoning say a 503 without a typed refusal may follow execution. Options: (a) keep;
   (b) align HTTP with gRPC: a 503 is retry-safe for a non-idempotent send only with `Retry-After` (this
   server's overload refusal carries one, `error/mod.rs` `OVERLOAD_RETRY_AFTER`; its halt does not), else

@@ -14,7 +14,7 @@ use super::{Check, bind, plain_card, serve};
 use crate::agents::LogSearchExecutor;
 use crate::{send_params, user_message};
 
-const LABEL: &str = "Client retry (503 retried, 502 not — no double execution)";
+const LABEL: &str = "Client retry (refusing 503 retried, 502 not — no double execution)";
 
 /// How many times the proxy faults before letting a request through.
 const FAULTS: u32 = 2;
@@ -48,6 +48,16 @@ async fn faulting_proxy(upstream: String, status: u16) -> String {
                             ));
                             *resp.status_mut() = hyper::StatusCode::from_u16(status)
                                 .unwrap_or(hyper::StatusCode::SERVICE_UNAVAILABLE);
+                            // A 503 here stands for a server refusing before any
+                            // work, which says so with `Retry-After`: a bare 503
+                            // may follow a run, and a client does not re-send a
+                            // non-idempotent call on it (decision D-1).
+                            if status == 503 {
+                                resp.headers_mut().insert(
+                                    hyper::header::RETRY_AFTER,
+                                    hyper::header::HeaderValue::from_static("0"),
+                                );
+                            }
                             return Ok::<_, std::convert::Infallible>(resp);
                         }
                         Ok(forward(&upstream, req).await)
@@ -123,9 +133,10 @@ async fn forward(
 /// 1. **No policy, `503` → fails.** Establishes the injector is really
 ///    faulting. Without this, a retrying client that succeeded would prove
 ///    nothing: maybe nothing ever failed.
-/// 2. **Policy, `503` → succeeds.** `503` means the server refused the request
-///    up front, so re-sending a non-idempotent `SendMessage` cannot
-///    double-execute it.
+/// 2. **Policy, `503` with `Retry-After` → succeeds.** That is the server
+///    refusing the request up front, so re-sending a non-idempotent
+///    `SendMessage` cannot double-execute it. (A bare `503` may come from a
+///    proxy after the request ran, and is not re-sent: decision D-1.)
 /// 3. **Policy, `502` → still fails.** A gateway returning `502` may already
 ///    have handed the request to a backend that ran it. Retrying there would
 ///    silently create a second task. A retry layer that treats every 5xx alike
@@ -212,7 +223,9 @@ pub(super) async fn client_retry() -> Check {
         ),
         Err(_) => Check::pass(
             LABEL,
-            format!("{FAULTS} x 503 ridden out; 502 on a non-idempotent method not retried"),
+            format!(
+                "{FAULTS} x refusing 503 ridden out; 502 on a non-idempotent method not retried"
+            ),
         ),
     }
 }

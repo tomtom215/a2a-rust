@@ -27,6 +27,7 @@
 mod auth;
 mod errors;
 mod functionality;
+mod halt;
 mod harness;
 mod results;
 mod sweep;

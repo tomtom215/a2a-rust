@@ -135,7 +135,7 @@ ACT 4 — every A2A method over every binding, counted
 
 ACT 5 — production hardening: tenancy, auth, limits, durability, telemetry
   [ok] Tenant isolation …     2 tenants isolated; a cross-tenant params.tenant was refused
-  [ok] Client retry …         2 x 503 ridden out; 502 on a non-idempotent method not retried
+  [ok] Client retry …         2 x refusing 503 ridden out; 502 on a non-idempotent method not retried
   [ok] OTLP pipeline …        2150 bytes of HTTP/2 exported to the configured collector
   …
   16 passed, 0 failed, 0 not compiled, 0 not run

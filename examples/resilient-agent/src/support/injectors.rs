@@ -110,7 +110,9 @@ pub async fn webhook_sink(refusals: u32, status: StatusCode) -> (String, Arc<Sin
 /// How the proxy faults a request.
 #[derive(Debug, Clone, Copy)]
 pub enum Fault {
-    /// Answer with this HTTP status and no upstream call.
+    /// Answer with this HTTP status and no upstream call, as a server that
+    /// refuses before any work: with `Retry-After: 0`, which is what lets a
+    /// client re-send a non-idempotent call after a `503` (decision D-1).
     Status(StatusCode),
     /// Accept the connection and close it without answering — the transport
     /// error a dying peer or a mid-request network blip produces.
@@ -194,10 +196,12 @@ pub async fn faulting_proxy(
                         if let Fault::Status(status) = fault
                             && tally.take_fault()
                         {
-                            return Ok::<_, std::convert::Infallible>(text_response(
-                                status,
-                                "upstream unavailable",
-                            ));
+                            let mut refused = text_response(status, "upstream unavailable");
+                            refused.headers_mut().insert(
+                                hyper::header::RETRY_AFTER,
+                                hyper::header::HeaderValue::from_static("0"),
+                            );
+                            return Ok::<_, std::convert::Infallible>(refused);
                         }
                         tally.forwarded.fetch_add(1, Ordering::SeqCst);
                         Ok(forward(&upstream, req).await)
