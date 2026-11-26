@@ -41,15 +41,15 @@ connection, a2a-rs 7,757 requests per second at 107 µs of server CPU and this t
   benchmarked).
 - **Gates.** DEC-03. **Depends.** none. **Release.** internal. **Do this first.**
 - **Read first.** `.github/workflows/benchmarks.yml`, `benches/scripts/check_regression.py`,
-  `benches/sdk-comparison/README.md` and `benches/sdk-comparison/scripts/` (`run_perf.sh`,
-  `callgrind_per_request.sh`), `benches/benches/memory_overhead.rs` (the counting allocator),
+  `benches/sdk-comparison/README.md` and `benches/sdk-comparison/scripts/` (`benches/sdk-comparison/scripts/run_perf.sh`,
+  `benches/sdk-comparison/scripts/callgrind_per_request.sh`), `benches/benches/memory_overhead.rs` (the counting allocator),
   `crates/a2a-protocol-server/tests/statement_count.rs`.
 - **Do.**
   1. One script per count, each printing a single number with its command: instructions per blocking send
      and per streamed event (callgrind), allocations and bytes per send and per event (the counting
      allocator), eventfd writes per request (`strace -f -c`; the recipe is in E05 §2.3).
   2. Record the baseline at HEAD: three runs each, the range, the host.
-  3. Add each to `benchmarks.yml` with a band of plus or minus 5% and a committed baseline file; the
+  3. Add each to `.github/workflows/benchmarks.yml` with a band of plus or minus 5% and a committed baseline file; the
      comparison against a2a-rs moves to a nightly job that gates nothing and publishes medians with ranges.
   4. A probe in `scripts/prove_workflow_gates_fail.py` for each: a planted extra `serde_json::to_value` on
      the send path turns the gate red.

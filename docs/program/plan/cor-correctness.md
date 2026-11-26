@@ -54,7 +54,7 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
   a new artifact was the one fold write not retried. Accept: the tests in `S/handler/event_processing/background/outage_tests.rs`
   fail with the fix taken out and pass with it (outputs in the commit message); the mutation gate on
   the diff, 61 mutants in three shards, left none missed or timed out. Correction to this Accept,
-  measured: `restart_live.py`'s 4 s outage, and a 40 s one, never reach X-10. sqlx waits in `acquire`
+  measured: `scripts/live/restart_live.py`'s 4 s outage, and a 40 s one, never reach X-10. sqlx waits in `acquire`
   (30 s) through the short one, and the executor itself failed in the long one, so the run passes before
   the fix as after (both builds run, a local variant stopping PostgreSQL with `pg_ctlcluster`, since
   the script needs a Docker daemon). The unit tests are the reproduction.
@@ -68,7 +68,7 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
 - **Gates.** none. **Depends.** none. **Release.** `[0.16.x]`.
 - **Read first.** `S/handler/lifecycle/cancel_task.rs`, ADR 0057,
   `crates/a2a-protocol-server/tests/log_wake_e2e.rs`.
-- **Do.** Reproduce in `log_wake_e2e.rs`: two handlers on one store, a parked task, a subscriber on the
+- **Do.** Reproduce in `crates/a2a-protocol-server/tests/log_wake_e2e.rs`: two handlers on one store, a parked task, a subscriber on the
   second, a cancel on the first; assert the subscriber's stream ends with `canceled` within one second with
   the log wake on. Then append the status event to the log in the same write as the status.
 - **Touch.** `S/handler/lifecycle/cancel_task.rs`, the test, ADR 0057 (the sentence ROADMAP *The book's
@@ -79,7 +79,7 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
 - **Out of scope.** Parked-task expiry (ADR 0056).
 - **Done (2026-11-26).** The cancel announces the ending through the claim reaper's sequence
   (`S/handler/event_processing/ending.rs`) when no turn runs the task: no live claim, or, without a
-  claim store, the task interrupted when the cancel came. Accept: `log_wake_e2e.rs`
+  claim store, the task interrupted when the cancel came. Accept: `crates/a2a-protocol-server/tests/log_wake_e2e.rs`
   `a_cancel_of_a_parked_task_ends_a_long_wait_on_the_other_replica` fails without the change and ends
   the stream 253 ms after the cancel with it (8 s ceiling, PostgreSQL 16); `statement_count` passes
   with its constants unchanged (2 of 2, run directly); the audit record of a cancel is unchanged
@@ -98,7 +98,7 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
   `C/delegation/options.rs`, `C/delegation/continuation.rs`,
   `crates/a2a-protocol-client/tests/delegation_budget_tests.rs`.
 - **Do.**
-  1. Reproduce in `delegation_budget_tests.rs`: a budgeted delegation whose child hands off once; assert
+  1. Reproduce in `crates/a2a-protocol-client/tests/delegation_budget_tests.rs`: a budgeted delegation whose child hands off once; assert
      the continuation's `remainingMs` is no greater than the grant minus the time already spent, and that
      the meters the first turn reported are charged.
   2. Recompute the budget on the continuation from the live `ChildGrant` (what was reserved, less what the
@@ -184,7 +184,7 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
 - **Accept.** The per-binding tests fail before, pass after. A 503 with `Retry-After` and no halt reason
   is still retried (a test); a bare 503 is not, for a non-idempotent call (decision D-1, 2026-11-26: it
   read "a plain 503 with no halt reason is still retried"). The incremental mutation gate has no survivor
-  in `retry.rs` and `origin.rs`.
+  in `C/retry.rs` and `C/origin.rs`.
 - **Out of scope.** Middleware for other SDKs (ECO-04).
 - **Done (2026-11-26).** The trace, per binding, of what a halt produced before the change (read, then
   confirmed by the test): JSON-RPC and WebSocket, `Protocol(InternalError)` with the `HALTED` detail in
@@ -245,7 +245,7 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
   0030: the owner column exists "but does not enforce". ADR 0030, "not run under concurrent replicas".
 - **Gates.** none. **Depends.** none. **Release.** `[0.17]` (new defaulted trait methods and a schema
   change in both SQL journals).
-- **Read first.** ADR 0030; `S/store/delegation_journal/postgres.rs` and `sqlite.rs`; the turn-claim design
+- **Read first.** ADR 0030; `S/store/delegation_journal/postgres.rs` and `S/store/delegation_journal/sqlite.rs`; the turn-claim design
   it should copy rather than reinvent (`S/store/claim/`, a time-to-live claim with a fencing token); E07
   §B5 (the two schema paths and the next migration version).
 - **Do.**
@@ -285,13 +285,13 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
 
 - **Goal.** A one-host fleet on SQLite can lease; today the lease store is memory or PostgreSQL only.
 - **Evidence.** E03 summary and §1 (halt: three stores; lease: two; journal: three).
-  `ls crates/a2a-protocol-server/src/store/lease` shows `mod.rs`, `postgres.rs`, `tests.rs`.
+  `ls crates/a2a-protocol-server/src/store/lease` shows `S/store/lease/mod.rs`, `S/store/lease/postgres.rs`, `S/store/lease/tests.rs`.
 - **Gates.** none. **Depends.** none. **Release.** `[0.17]`, additive behind `sqlite`.
 - **Read first.** `S/store/lease/postgres.rs`, the halt store's SQLite implementation as the model, the
   store conformance suite under `S/conformance/`, E07 §B10.
 - **Do.** Implement against the same contract tests the PostgreSQL store passes; deadlines from one clock
   source, stated. Add it to `Profile` checks that today accept a process-local lease store.
-- **Touch.** `S/store/lease/` (a new `sqlite.rs`), `S/store/mod.rs`, the contract tests,
+- **Touch.** `S/store/lease/` (a new `S/store/lease/sqlite.rs`), `S/store/mod.rs`, the contract tests,
   `book/src/deployment/horizontal-scaling/`, `scripts/check_sql_driver_isolation.sh` if it lists modules,
   `CHANGELOG.md`.
 - **Accept.** The lease contract tests pass on all three stores. `scripts/check_sql_driver_isolation.sh`

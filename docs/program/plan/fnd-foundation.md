@@ -32,7 +32,7 @@ that touches a gate re-proves it with `scripts/prove_gates_fail.sh` or `scripts/
 
 ## FND-02: Cite the changelog by heading, not by line
 
-- **Goal.** Adding an entry under `[Unreleased]` no longer fails `check_spec_ledger.py`.
+- **Goal.** Adding an entry under `[Unreleased]` no longer fails `scripts/check_spec_ledger.py`.
 - **Evidence.** ROADMAP *Release engineering* item 2; E07 §A1.3 item 19 (`docs/compliance/spec-ledger.json`
   cites a `CHANGELOG.md` line that every new entry moves); E07 §A4.3 S2.
 - **Gates.** none. **Depends.** none. **Release.** `[0.16.x]`, internal.
@@ -99,7 +99,7 @@ that touches a gate re-proves it with `scripts/prove_gates_fail.sh` or `scripts/
 - **Read first.** `scripts/preflight.sh` (it derives its gate list from `.github/workflows/ci.yml` by step
   name and refuses to run when a named gate changed there), `scripts/check_gate_inventory.sh`.
 - **Do.**
-  1. Add a tier to `scripts/preflight.sh` (`--quick`) that runs, by `ci.yml` step name: the formatting
+  1. Add a tier to `scripts/preflight.sh` (`--quick`) that runs, by `.github/workflows/ci.yml` step name: the formatting
      check, both ledger checkers, the compliance map, file lengths, panic paths, doc versions, feature
      tables, lockfiles. No step that compiles Rust.
   2. Make it the default tier of `.githooks/pre-push` (today the formatting gate alone).
@@ -125,7 +125,7 @@ that touches a gate re-proves it with `scripts/prove_gates_fail.sh` or `scripts/
      E06 §9 step 1 lists. Evidence anchors are a heading, a test name or a symbol, never a line number.
   2. Before importing a row whose status is `partial`, re-check it at HEAD (E06 §2 found five of nine such
      rows already fixed). Give each of the 41 unmarked rows of `docs/adopter-audit-2026-09-22.md` a status.
-  3. Write `scripts/check_backlog.py` with `--self-test` (E06 §9 step 2) and add it to `ci.yml`
+  3. Write `scripts/check_backlog.py` with `--self-test` (E06 §9 step 2) and add it to `.github/workflows/ci.yml`
      `static-checks`, with its injection in `scripts/prove_gates_fail.sh`.
   4. Add one line at the top of each superseded register and dated audit: frozen on which date, and that
      status now lives in the register under the same ids (E06 §9 steps 1 and 7).
@@ -149,8 +149,8 @@ that touches a gate re-proves it with `scripts/prove_gates_fail.sh` or `scripts/
 - **Evidence.** ROADMAP *Release engineering* item 8; E07 §A4.3 S12; `docs/handoff.md` *Environment facts*
   (1.97.0 in the image against 1.100.0 in CI; their clippy disagreed).
 - **Gates.** DEC-05. **Depends.** none. **Release.** internal.
-- **Do.** Per E07 §A4.3 S12: a pin file under `.github/`, written when the pin is moved, read by `ci.yml`
-  and by `scripts/preflight.sh`; `preflight.sh` refuses a different `rustc -V` unless an override variable
+- **Do.** Per E07 §A4.3 S12: a pin file under `.github/`, written when the pin is moved, read by `.github/workflows/ci.yml`
+  and by `scripts/preflight.sh`; `scripts/preflight.sh` refuses a different `rustc -V` unless an override variable
   is set. The MSRV leg (1.94) is untouched.
 - **Touch.** `.github/` (the pin file), `.github/workflows/ci.yml`, `scripts/preflight.sh`,
   `CONTRIBUTING.md`, `docs/handoff.md` (*Environment facts*).
@@ -195,9 +195,9 @@ that touches a gate re-proves it with `scripts/prove_gates_fail.sh` or `scripts/
 - **Evidence.** ROADMAP *Release engineering* items 1, 3, 4, 10 and 11; E06 §8.
 - **Gates.** E06 §6 row 12 for step 1 only. **Depends.** none. **Release.** `[0.16.x]`, internal.
 - **Do.** Each is its own commit with its own reproduction.
-  1. Item 1: per the maintainer's choice, `scripts/ci_evidence.py` skips jobs `ci.yml` marks
+  1. Item 1: per the maintainer's choice, `scripts/ci_evidence.py` skips jobs `.github/workflows/ci.yml` marks
      `continue-on-error`, or the nightly job stops being able to fail.
-  2. Item 10: one check that `release.yml`'s `ci` job and `ci.yml` agree on the build environment.
+  2. Item 10: one check that `.github/workflows/release.yml`'s `ci` job and `.github/workflows/ci.yml` agree on the build environment.
   3. Item 11: `crates/a2a-protocol-server/tests/statement_count.rs` refuses a server that accepts the
      SSLRequest, with a message that says to turn TLS off, not to change the constants.
   4. Item 4 (`CI2`): make `a_send_carried_over_a_stream_crosses_the_same_proxy` independent of a pause of
@@ -254,7 +254,7 @@ that touches a gate re-proves it with `scripts/prove_gates_fail.sh` or `scripts/
 - **Touch.** `scripts/check_dco.sh`, `scripts/check_file_lengths.sh`, `scripts/check_deprecations.py` (new),
   `.github/workflows/ci.yml`, `scripts/prove_gates_fail.sh`, `scripts/prove_workflow_gates_fail.py`,
   `docs/README.md`.
-- **Accept.** The S6 probes as written; `scripts/prove_gates_fail.sh` proves each new `ci.yml` gate;
+- **Accept.** The S6 probes as written; `scripts/prove_gates_fail.sh` proves each new `.github/workflows/ci.yml` gate;
   deleting one row of the generated ADR table fails the check.
 - **Out of scope.** Gating the naming rule (no mechanical form of it is proposed).
 

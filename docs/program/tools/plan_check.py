@@ -84,9 +84,12 @@ for f in files:
             if t.startswith(a): t = full + t[len(a):]
         m = re.match(r'^([A-Za-z0-9_.\-/]+?)(?::(\d+))?/?$', t)
         if not m or '/' not in t and not re.search(r'\.(md|toml|json|yml|sh|py|rs|cff)$', t): continue
+        # A route (`/health`) or a bare extension (`.rs`) names no file.
+        if t.startswith(('/', '.')) and not t.startswith(('./', '../', '.github/', '.config/')): continue
         p, line = m.group(1), m.group(2)
         if p.startswith(('a2a_protocol', 'http', 'target/', 'origin/', 'tests/', 'a2a-rust.com', 'UPSTREAM')) or '::' in tok: continue
-        if p.startswith(('plan/','evidence/')) or p in ('status.json','target-sheet.md','README.md') and f.parent==prog: cand = prog/p
+        if (prog/p).exists() and p.split('/')[0] in ('plan', 'evidence', 'tools'): cand = prog/p
+        elif p.startswith(('plan/','evidence/')) or p in ('status.json','target-sheet.md','README.md') and f.parent==prog: cand = prog/p
         elif p.startswith('../'): cand = (f.parent/p)
         else: cand = root/p
         checked += 1

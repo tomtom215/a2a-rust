@@ -70,7 +70,7 @@ not restate them.
 - **Do.** As item 5: mechanical edits, then `scripts/check_example_idioms.py` with a shrink-only baseline in
   the style of `.file-length-baseline`. Exempt `agent-team` in the first pass through the baseline.
 - **Accept.** The script's self-test fails a planted regression of each pattern; each count is lower than
-  before; every example's own checks pass (`ci.yml` jobs `dogfood` and `example-surface`, run with
+  before; every example's own checks pass (`.github/workflows/ci.yml` jobs `dogfood` and `example-surface`, run with
   `scripts/run_workflow_job.py`).
 - **Out of scope.** Changing what an example demonstrates (SWM-01 does that for delegation).
 
@@ -112,13 +112,13 @@ not restate them.
 
 ## DVX-08: Group the handler builder's documentation (item 10)
 
-- **Evidence.** E04 §3 (59 public methods on one `impl`, alphabetical in rustdoc; `builder.rs` is 2,699
+- **Evidence.** E04 §3 (59 public methods on one `impl`, alphabetical in rustdoc; `S/builder.rs` is 2,699
   lines and in `.file-length-baseline`).
 - **Gates.** none. **Depends.** none. **Release.** `[0.16.x]`; no signature changes.
 - **Do.** As item 10: several `impl` blocks, each with a heading comment, in files under
   `crates/a2a-protocol-server/src/builder/`.
 - **Accept.** `cargo semver-checks` reports nothing; `./scripts/check_file_lengths.sh` passes with
-  `builder.rs` out of the baseline; the count of public methods across the builder files is unchanged
+  `S/builder.rs` out of the baseline; the count of public methods across the builder files is unchanged
   (state it before and after).
 - **Out of scope.** Sub-builders.
 

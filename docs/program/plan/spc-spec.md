@@ -213,7 +213,7 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
 - **Goal.** A list a session can act on the day upstream tags 1.1, and a test that nothing leaked before.
 - **Evidence.** E01 §6 item 10, §5.2, §5.3.
 - **Gates.** DEC-02, and an upstream tag that is not a release candidate. **Depends.** SPC-09.
-- **Do.** When the tag exists: re-run E01 against it and replace `evidence/01`'s §2 with the released delta;
+- **Do.** When the tag exists: re-run E01 against it and replace `evidence/01-spec-v1.1-delta.md`'s §2 with the released delta;
   then, each as its own package written at that time, `SendLiveMessage` per binding, `timeline_length` or
   whatever replaced it, timestamps, list ordering, the 1.1 interface on the card, the proto re-pin, the
   main ledger re-anchored (§8.2 is removed in 1.1, so every row citing §8.3 to §8.6 moves), and the 1.1

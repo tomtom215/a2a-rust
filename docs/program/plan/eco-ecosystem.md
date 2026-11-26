@@ -143,7 +143,7 @@ sends. **Nothing is filed, posted or published upstream by a session** (`docs/up
 - **Read first.** `scripts/check_extension_vectors.py`, ADR 0049 (the amendment on schemas and vectors for
   every extension), `.github/requirements/` (how a pinned, hash-checked Python dependency is installed for
   a gate), ADR 0002.
-- **Do.** Run the script in `ci.yml` `static-checks`, with `jsonschema` installed the way `pyyaml` and
+- **Do.** Run the script in `.github/workflows/ci.yml` `static-checks`, with `jsonschema` installed the way `pyyaml` and
   `cryptography` already are; or, if that dependency is unwanted, validate in a Rust test inside the types
   crate against the same files and say which was chosen and why. Add a check that every extension URI the
   crates define has a folder with a schema and at least one valid and one invalid vector.
