@@ -170,6 +170,13 @@ that touches a gate re-proves it with `scripts/prove_gates_fail.sh` or `scripts/
 - **Accept.** `scripts/preflight.sh --quick` under a different toolchain exits non-zero naming both
   versions; with the override it runs. `scripts/prove_workflow_gates_fail.py` exits 0.
 - **Out of scope.** A `rust-toolchain.toml` at the root (it would bind adopters building from a checkout).
+- **Done (2026-11-26).** `.github/ci-stable.txt` (`1.100.0`), moved by hand: the plan's *Do*, not E07 S12's
+  "written by CI's log step". `.github/workflows/ci.yml`'s `static-checks` (rustfmt), `clippy` and `features` read it in a step
+  `SKIP_STEPS` records as judging nothing and install that version; `clippy`'s matrix keeps `stable` as the
+  check's name. The tests and the MSRV leg are untouched. Accept: `scripts/preflight.sh --quick` under
+  1.97.0 exits 2 naming 1.97.0 and 1.100.0; with `PREFLIGHT_ANY_TOOLCHAIN=1` it runs and says so; under
+  1.100.0 every gate passes; `scripts/prove_workflow_gates_fail.py` exits 0 (34 proven, 0 unproven, as
+  before); `scripts/run_workflow_job.py` runs `static-checks` green.
 
 ## FND-07: Ledger citations by symbol
 

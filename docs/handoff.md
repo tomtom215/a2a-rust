@@ -19,72 +19,74 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-**2026-11-26: an external review was triaged; three batches of work from it are merged (#230, #231, #232), the fourth is in review.**
-Start a session at [`CLAUDE.md`](../CLAUDE.md), then [`docs/program/README.md`](program/README.md) §6.
+**2026-11-26, evening: branch `claude/keen-volta-gl3nc2` on `main` `f3d2c420`, pushed, no pull request (the maintainer did not
+ask for one).** Start a session at [`CLAUDE.md`](../CLAUDE.md), then [`docs/program/README.md`](program/README.md) §6.
 
-- **The external review of 2026-11-25** (an outside reviewer, no build or run: source, CI logs, documents) was checked row by
-  row against `92593fc9`: [`docs/program/evidence/08-external-review-triage.md`](program/evidence/08-external-review-triage.md).
-  Its defects are real and, but for three, already in the plan; its 24 proposed packages (EXT-01 to EXT-24) are mapped there onto
-  the plan's packages. **Six decisions it raised are the maintainer's** (its §8, D-1 to D-6). D-1 was decided on 2026-11-26
-  (option b: a bare 503 is not re-sent for a non-idempotent call; one with `Retry-After` is) and is built in COR-05; D-2 to
-  D-6 are open, and no package that depends on one is started.
-- **Merged 2026-11-26, #230:** the triage; floors for what the published crates reach through other crates
-  (`scripts/check_advisory_floors.py` walks the whole graph); the Dependabot updates of 2026-11-23 to 25 (#223, #224,
-  #225, #227, superseded: the maintainer closes them); `mdns-sd` 0.22.0 (ADR 0029); FND-03.
-- **Merged 2026-11-26, #231:** COR-01 (a task's ending the store did not take is written again; a breaker), COR-02 (a
-  cancel of a task no turn runs is told to its webhooks and log), and the waivers that no longer waived anything removed.
-- **Merged 2026-11-26, #232:** COR-03 (a handed-off child carries what is left of its budget, and
-  the parent is charged every turn's spend), COR-04 (a canceled task says who stopped it: extension `cancel/v1`), and
-  register X2-1 (a retried continuation is the same request); a stub race in the client's tests; and a shorter CI (the
-  1.94 test cells and the single-feature legs on Linux only, nextest from its release archive): 59 minutes from start to
-  the last check, where the run before it took 132.
-- **In review, branch `claude/lucid-shannon-y7kvu8`:** COR-05 (a halt is final on every binding; D-1's 503
-  rule) and COR-06 (DEC-08 as amended on 2026-11-26: a delegation always keys its message and takes a key it added off,
-  once, on the server's typed refusal; `DelegationOptions::resending` recovers a lost start from its journal record).
-  `status.json` gives both `landed: null`.
+- **Source of this branch's work:** a second packet from the outside reviewer (an execution supplement to the 2026-11-25
+  review: 17 work packets, N26-01 to N26-17, with a local slice queue). Its anchor was `f3d2c420`, this branch's base, so nothing
+  had drifted. The packet is a supplement: the plan and `status.json` stay the authority. Three of its regression slices found
+  real client defects, fixed here with failing-first tests: register X2-4 (N26-01), X2-5 (N26-04) and X2-6 (N26-03).
+- **Packages done on the branch** (each section has its *Done* note; `status.json` gives the branch as `landed`): FND-02 (the
+  changelog cited by heading), FND-04 (`scripts/preflight.sh --quick`, now the `pre-push` default), FND-06 (the lint
+  toolchain pinned in `.github/ci-stable.txt`), COR-08 (the claim reaper
+  cancels a parked child whose lease lapsed; a lease is now kept under the task's partition), COR-09 (`SqliteLeaseStore`),
+  COR-12 (CI1 closed, did not recur). **FND-09 is `partial`**: steps 2 to 5 built, step 1 waits on E06 §6 row 12.
+- **Also fixed on the branch, pre-existing:** `scripts/check_dco.sh` and `scripts/provenance_manifest.sh` read a signed commit as
+  unsigned when `grep -q` exited before `git`'s last write (the cause of ROADMAP *Release engineering* item 3); the
+  `provenance_manifest.sh --self-test` compared against `dco.yml`, which no longer holds the rules, and failed two checks on every
+  run; `scripts/check_pg_retry.py` took a comment naming `Postgres` for PostgreSQL code; `plan_check.py`'s 63 unresolved
+  citations are 24, every one a file a package will create or a path in another repository; `incident-response`'s hardening
+  checks no longer serve for ever (see below).
+- **Reconciled:** COR-05 and COR-06 landed in #233, FND-01 in #228 (`status.json` had `null` and a branch name).
+- **Read from GitHub on 2026-11-26, read-only:** the nightly Official TCK has passed 3 of 3 scheduled runs since #220 merged;
+  #233's merge commit had one red check, `TCK cross-language (java-sdk)`, a Maven Central `429` while resolving the Quarkus BOM
+  (N26-09, infrastructure); the ruleset `protect-main` exists with enforcement **disabled** and no required checks, and the
+  branch-protection endpoint answers 403 to a session token (a maintainer matter: N26-08, D-5).
 - **What is built of the plan:** count with `python3 docs/program/tools/plan_check.py . --next`, not from this file.
 
-Small defects found and not yet fixed (each low):
+Small defects found and not yet fixed, or not shown fixed (each low):
 
-- `statement_count` counts nothing over TLS: with a PostgreSQL whose `ssl = on`, sqlx's `prefer` encrypts the session, the test's
-  counting proxy sees no plaintext, every count is 0, and the failure says to "update the constants", which would be wrong. Run
-  with `PGSSLMODE=disable`. Fix: refuse, in the test, a server that answers the SSLRequest with `S`.
+- `incident-response`: the handler of a hardening check outlived the check (served with a shutdown future that never
+  resolves); fixed on this branch by a guard each check holds. The logged symptom recorded here on 2026-11-26 (`claims::reaper
+  ... unable to open database file` every 15 s) did **not** reproduce: HEAD's binary ran `demo` for 900 s and logged it 0 times.
+  CONJECTURED: it needs the SQLite pool to open a new connection after the file is unlinked.
 - Cargo 1.100 warns `unused dependency` on each advisory floor in the published manifests (`cargo::unused_dependencies`).
-  They are unused by the code on purpose (see the comment above them); the lint cannot be silenced per dependency, and
-  turning it off for a crate would hide a dependency that is unused by mistake, so the warnings stand.
-- Whether the nightly `Official TCK` has been green since #220 merged was not checked.
-- `incident-response`'s demo keeps serving after its hardening checks, and a checked handler whose temporary SQLite file
-  was removed keeps logging `claims::reaper ... unable to open database file` every 15 s until it is stopped (seen locally
-  2026-11-26; low: noise, the checks have passed). Fix: stop or drop that handler when its check ends.
-- The full `test` job alone fills this container's disk allowance: its feature legs accumulate in `target/` with no
-  cleanup between them, and the run ends in a linker failure (`No space left on device`), not a test, at the all-features
-  or no-default-features leg (twice on 2026-11-26, once with a second tree building beside it and once without). Run it,
-  then the remaining legs (no default features and the three doctest runs) by hand after `rm -rf target/debug`, and build
-  one tree at a time.
-- `plan_check.py .` lists path citations in `docs/program/plan/*.md` it cannot resolve (its `MISSING` lines; it exits 0): bare
-  file names such as `mod.rs` or `retry.rs` that name no single file. Each needs its crate prefix (`S/`, `C/`, `T/`).
-
+  Unused on purpose; the lint cannot be silenced per dependency, so the warnings stand.
+- The full `test` job alone fills this container's disk allowance: its feature legs accumulate in `target/` and the run ends in
+  a linker `No space left on device` (twice on 2026-11-26). Run its legs one at a time after `rm -rf target/debug`.
+- Register X2-7 (recorded with COR-08, open): a root halt does not stop a task of its job parked at `input-required`; only its
+  continuation is refused. A lapsed lease now ends such a child; a halt still does not.
+- FND-06's text did not say it depends on FND-04 (its *Accept* runs `--quick`); corrected. FND-08 was not started on purpose:
+  it removes a `ci.yml` gate and rewrites the four filter sites of `mutants.yml`, which only CI can run (its steps use `sudo`,
+  which `scripts/run_workflow_job.py` refuses); take it in a session that will watch that workflow's run.
 
 ### First, next
 
-1. Read CI on this branch's pull request; close anything red in one push.
+1. The maintainer: review the branch; open a pull request if wanted, and add the `mutation-test` label at once.
 2. The next ready packages: `python3 docs/program/tools/plan_check.py . --next`. COR-07 is the next correctness one.
-3. The maintainer's decisions D-2 to D-6 (triage §8), and the open E06 §6 row 12, which EXT-02 and EXT-13 need.
+3. The maintainer's decisions D-2 to D-6 (triage §8), E06 §6 row 12 (FND-09 step 1, EXT-02, EXT-13), and whether to enforce
+   `protect-main`.
 
 ### Environment facts that still hold
 
-The session image's `stable` is Rust 1.97.0; CI's is 1.100.0 (read from the 2026-11-22 Official TCK log, and still 1.100.0 on
-2026-11-25 by `channel-rust-stable.toml`). Install it with
-`rustup toolchain install 1.100.0 --profile minimal -c clippy -c rustfmt` and run with `RUSTUP_TOOLCHAIN=1.100.0`. `static-checks`
-needs `ssh-keygen` (`apt-get install -y openssh-client`). The clone is shallow: `git fetch --unshallow --tags origin` first.
-PostgreSQL 16 starts with `pg_ctlcluster 16 main start`. Build with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0
-CARGO_PROFILE_TEST_DEBUG=0`. `docs/compliance/spec-ledger.json` cites `CHANGELOG.md` by line: any line added above the 0.5.0 heading
-fails `check_spec_ledger.py` until the citation moves (it moved from 13290 to 13299 on this branch).
-The disk allowance ended this session once (2026-11-22, during a full workspace `test` job after the other jobs' builds): delete
-`target/debug/{deps,build,incremental}` between big jobs, and never build two worktrees at once. Keep a session's own worktree outside the checkout: one under `.claude/worktrees/`
-is ignored by git but was read by gates that walk the directory. A local PostgreSQL with SSL on
-needs `PGSSLMODE=disable` for `statement_count`. `scripts/check_doc_versions.py` requires the README's TCK sentence to read "**N of M MUST requirements pass and F fail**" and to
-agree with the badge.
+The session image's `stable` is Rust 1.97.0. The toolchain CI lints with is the one `.github/ci-stable.txt` names (1.100.0
+since FND-06, 2026-11-26), and `scripts/preflight.sh` refuses any other `rustc` unless `PREFLIGHT_ANY_TOOLCHAIN=1`. Install it
+with `rustup toolchain install $(cat .github/ci-stable.txt) --profile minimal -c clippy -c rustfmt` and run with
+`RUSTUP_TOOLCHAIN` set to it. `static-checks`
+needs `ssh-keygen` (`apt-get update && apt-get install -y openssh-client`) and mdBook (`scripts/ci/install_mdbook.sh
+"$HOME/.local/bin"`, then put that directory on `PATH`). The clone is shallow: `git fetch --unshallow --tags origin` first.
+PostgreSQL 16 starts with `pg_ctlcluster 16 main start`; this image has `ssl = on`, so set `PGSSLMODE=disable` (the
+`statement_count` test now refuses TLS by name). Build with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0
+CARGO_PROFILE_TEST_DEBUG=0`. The spec ledger cites `CHANGELOG.md` by heading since FND-02, so a changelog entry no longer
+moves a citation; `scripts/preflight.sh --quick` runs the build-free gates in seconds. `git stash` refuses to run while an
+intent-to-add entry (`git add -N`) is in the index, and says only "not uptodate. Cannot merge": unstage it first. Never set
+`CARGO_TARGET_DIR` for a `cargo mutants --jobs 2` run: both workers then build in one directory, block on its lock, and each
+mutant reads `TIMEOUT` with only "Blocking waiting for file lock on build directory" in its log (15 of 19 on 2026-11-26); read a
+TIMEOUT's log before counting it.
+The disk allowance ended a session once (2026-11-22): delete `target/debug/{deps,build,incremental}` between big jobs, and never
+build two worktrees at once. Keep a session's own worktree outside the checkout: one under `.claude/worktrees/` is ignored by git
+but was read by gates that walk the directory. `scripts/check_doc_versions.py` requires the README's TCK sentence to read
+"**N of M MUST requirements pass and F fail**" and to agree with the badge.
 
 ## Previous state (2026-11-17)
 

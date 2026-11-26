@@ -124,8 +124,8 @@
       "gates": [],
       "release": "0.17",
       "breaking": false,
-      "status": "todo",
-      "landed": null
+      "status": "done",
+      "landed": "branch claude/keen-volta-gl3nc2, 2026-11-26 (no pull request yet)"
     },
     {
       "id": "COR-09",
@@ -490,8 +490,8 @@
       ],
       "release": "none",
       "breaking": false,
-      "status": "todo",
-      "landed": null
+      "status": "done",
+      "landed": "branch claude/keen-volta-gl3nc2, 2026-11-26 (no pull request yet)"
     },
     {
       "id": "FND-07",

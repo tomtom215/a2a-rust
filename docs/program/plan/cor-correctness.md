@@ -280,6 +280,18 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
 - **Accept.** The test fails before, passes after, on the in-memory and PostgreSQL lease stores. The
   statement count of an idle replica per sweep is stated before and after.
 - **Out of scope.** Root halts reaching parked tasks (record as a register row with the same shape).
+- **Done (2026-11-26).** `S/handler/claims/reaper/lapsed.rs`: each look lists the lapsed leases
+  (`LeaseStore::lapsed_leases`, new and defaulted, in all three stores, the most recently lapsed first),
+  takes the claim of a task no turn on the replica runs, and cancels it if it is still parked behind a lapsed
+  lease, as `CancelTask` cancels a task no turn runs (the executor's hook, bounded by the claim's time to
+  live; `canceled` with the cause `lease-lapsed`; the ending logged and sent). *Touch* was short by
+  `S/store/lease/` (the trait method and its three implementations) and by the lease key: a lease is now
+  kept under the task's partition, the scope of its claim, where it was the tenant alone (which named no
+  claim once callers are isolated). Accept: `S/handler/lease/parked_tests.rs` fails before (with the
+  reaper's call removed: "never reached Canceled within 9s" on the in-memory, SQLite and PostgreSQL lease
+  stores) and passes after; statement count of an idle replica per look: the lease store is asked once
+  before (the sweep) and twice after (`an_idle_look_asks_the_lease_store_twice`), one statement each on the
+  SQL stores. Root halts: register X2-7.
 
 ## COR-09: A SQLite lease store
 
