@@ -19,9 +19,13 @@ use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-/// Response head for a chunked `text/event-stream` answer.
+/// Response head for a chunked `text/event-stream` answer. `connection:
+/// close`, because [`serve`] answers one request per connection: without it
+/// the client pools the connection, and its next request can be sent down
+/// a socket the stub is closing ("connection closed before message
+/// completed").
 pub const SSE_HEAD: &str = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
-                            transfer-encoding: chunked\r\n\r\n";
+                            transfer-encoding: chunked\r\nconnection: close\r\n\r\n";
 
 /// One HTTP/1.1 chunk carrying `s`.
 pub fn chunk(s: &str) -> String {

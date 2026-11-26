@@ -39,14 +39,18 @@ fn rest_client(url: &str) -> a2a_protocol_client::A2aClient {
         .expect("build")
 }
 
-/// A stub answering every request with `status` and a JSON `body`.
+/// A stub answering every request with `status` and a JSON `body`, one per
+/// connection, as `connection: close` says. Without it the client sent its
+/// second request down the pooled connection the stub was closing, which
+/// failed `subscribe_404_decodes_like_get_task_404` on macOS in CI
+/// ("connection closed before message completed", run 45814698991).
 async fn status_server(status: &'static str, body: String) -> String {
     serve(move |mut s, _| {
         let body = body.clone();
         async move {
             let resp = format!(
                 "HTTP/1.1 {status}\r\ncontent-type: application/json\r\n\
-                 content-length: {}\r\n\r\n{body}",
+                 content-length: {}\r\nconnection: close\r\n\r\n{body}",
                 body.len()
             );
             write(&mut s, &resp).await;
