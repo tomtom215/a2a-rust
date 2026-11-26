@@ -235,7 +235,11 @@ The qualification matrix's "Not covered" list is item 4.
    `pipefail`, so a `git log` cut off by the closed pipe reads as no
    sign-off. Find the cause. Until then, a failure at the tag that is off by
    one in `pass` and `nosignoff` is this, and re-running the job is the
-   remedy.
+   remedy. (Done 2026-11-26, FND-09 step 5: that was the cause. `0b9f710e`'s
+   message is written in two parts with its sign-off inside the first, so a
+   `grep -q` that matched and exited first made `git` die of SIGPIPE, read as
+   no sign-off. `scripts/check_dco.sh` had the same pipe. Both read the
+   message whole now; the self-test reproduces the race.)
 4. `[0.16.x]` `blocking_over_stream_e2e`'s
    `a_send_carried_over_a_stream_crosses_the_same_proxy` failed on `main` at
    `7ac5b74e` (`ci.yml` run 44190122806, `Test (stable, ubuntu-latest)`, step

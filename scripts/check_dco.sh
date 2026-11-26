@@ -102,8 +102,12 @@ while IFS=$'\t' read -r sha author_email author_name; do
 
     # ── 2. Sign-off ──────────────────────────────────────────────────────────
     # Accept a trailer whose email matches the author's, case-insensitively.
-    if git log -1 --format='%B' "$sha" \
-         | grep -Eqi "^[[:space:]]*Signed-off-by:[[:space:]]+.+<${author_email//./\\.}>[[:space:]]*$"; then
+    # The message is read whole first: piped into `grep -q` under pipefail, a
+    # match in git's first write let grep exit before git's second, git died
+    # of SIGPIPE and the commit read as unsigned (FND-09 step 5; the same race
+    # in scripts/provenance_manifest.sh, whose self-test reproduces it).
+    body=$(git log -1 --format='%B' "$sha")
+    if grep -Eqi "^[[:space:]]*Signed-off-by:[[:space:]]+.+<${author_email//./\\.}>[[:space:]]*$" <<<"$body"; then
         echo "  ok  ${sha:0:8}  $author_name <$author_email>"
     else
         echo "::error::${sha:0:8} (\"$subject\") has no Signed-off-by trailer matching <$author_email>."

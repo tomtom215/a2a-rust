@@ -11,7 +11,7 @@
 # was the same and neither run noticed it (see the shallow-clone guard below).
 #
 # The classification logic is a deliberate duplicate of
-# `.github/workflows/dco.yml`'s. That is not DRY, and it is intentional: the
+# `scripts/check_dco.sh`'s, which `.github/workflows/dco.yml` runs. That is not DRY, and it is intentional: the
 # workflow gates *incoming* pull requests over a `base..head` range, this
 # reports on *existing* history over all of it. Sharing one implementation
 # would mean one of the two callers driving the other's shape. What keeps them
@@ -22,10 +22,10 @@
 # Usage:
 #   scripts/provenance_manifest.sh [REV]        aggregate tables (default HEAD)
 #   scripts/provenance_manifest.sh --csv [REV]  one row per non-merge commit
-#   scripts/provenance_manifest.sh --self-test  check this file against dco.yml
+#   scripts/provenance_manifest.sh --self-test  check this file against check_dco.sh
 set -uo pipefail
 
-# ── Classification, copied verbatim from dco.yml ─────────────────────────────
+# ── Classification, copied verbatim from scripts/check_dco.sh ────────────────
 NON_HUMAN='^(noreply@anthropic\.com|.*\[bot\]@users\.noreply\.github\.com)$'
 SIGNOFF_TMPL='^[[:space:]]*Signed-off-by:[[:space:]]+.+<%s>[[:space:]]*$'
 
@@ -66,6 +66,19 @@ MSG
   fi
 }
 
+# Whether commit $1's message has a line matching $2. The message is read
+# whole before grep sees it. Piped into `grep -q` under `pipefail`, a match in
+# git's first write let grep exit before the second, git died of SIGPIPE, and
+# the pipeline read as no match: 0b9f710e's 4,251-byte message is written as
+# 4,096 + 155 bytes with its sign-off inside the first, which is how one run
+# of 17 on 2026-11-18 counted 2130 passing commits where the others counted
+# 2131 (ROADMAP *Release engineering* item 3; FND-09 step 5).
+signed_off() {
+  local body
+  body=$(git log -1 --format='%B' "$1") || return 2
+  grep -Eqi "$2" <<<"$body"
+}
+
 # Emits: sha <TAB> verdict <TAB> email <TAB> name <TAB> subject
 # verdict ∈ { ok, nonhuman, nosignoff }
 classify() {
@@ -83,7 +96,7 @@ classify() {
     local pattern
     # shellcheck disable=SC2059  # the template is ours, not user input
     pattern=$(printf "$SIGNOFF_TMPL" "${email//./\\.}")
-    if git log -1 --format='%B' "$sha" | grep -Eqi "$pattern"; then
+    if signed_off "$sha" "$pattern"; then
       printf '%s\tok\t%s\t%s\t%s\n' "$sha" "$email" "$name" "$subject"
     else
       printf '%s\tnosignoff\t%s\t%s\t%s\n' "$sha" "$email" "$name" "$subject"
@@ -93,7 +106,10 @@ classify() {
 
 # ── --self-test: the two copies of the rules must not drift apart ────────────
 self_test() {
-  local dco="$REPO_ROOT/.github/workflows/dco.yml"
+  # dco.yml runs scripts/check_dco.sh, so the rules are there. Until
+  # 2026-11-26 this compared against dco.yml itself, which had stopped
+  # holding them, and the two checks below failed on every run.
+  local dco="$REPO_ROOT/scripts/check_dco.sh"
   local rc=0
 
   if [ ! -f "$dco" ]; then
@@ -101,22 +117,44 @@ self_test() {
     return 1
   fi
 
-  # The NON_HUMAN regex must appear in dco.yml byte-for-byte.
+  # The NON_HUMAN regex must appear in check_dco.sh byte-for-byte.
   if grep -qF "NON_HUMAN='$NON_HUMAN'" "$dco"; then
-    echo "ok    NON_HUMAN regex matches dco.yml"
+    echo "ok    NON_HUMAN regex matches check_dco.sh"
   else
-    echo "FAIL  NON_HUMAN regex has drifted from dco.yml" >&2
+    echo "FAIL  NON_HUMAN regex has drifted from check_dco.sh" >&2
     echo "      here:     NON_HUMAN='$NON_HUMAN'" >&2
-    echo "      dco.yml:  $(grep -o "NON_HUMAN='.*'" "$dco" || echo '<not found>')" >&2
+    echo "      check_dco.sh:  $(grep -o "NON_HUMAN='.*'" "$dco" || echo '<not found>')" >&2
     rc=1
   fi
 
-  # dco.yml interpolates the email inline; compare the invariant part.
+  # check_dco.sh interpolates the email inline; compare the invariant part.
   local core='^[[:space:]]*Signed-off-by:[[:space:]]+.+<'
   if grep -qF "$core" "$dco"; then
-    echo "ok    Signed-off-by pattern matches dco.yml"
+    echo "ok    Signed-off-by pattern matches check_dco.sh"
   else
-    echo "FAIL  Signed-off-by pattern has drifted from dco.yml" >&2
+    echo "FAIL  Signed-off-by pattern has drifted from check_dco.sh" >&2
+    rc=1
+  fi
+
+  # A match in git's first write is still a match when git writes again
+  # after grep has seen it (the SIGPIPE race signed_off's comment names). A
+  # git that pauses between its two writes makes the race certain.
+  if (
+    git() {
+      if [ "$*" = "log -1 --format=%B fake" ]; then
+        printf 'Signed-off-by: A Person <a@example.com>\n'
+        sleep 0.3
+        printf 'trailing text\n'
+      else
+        command git "$@"
+      fi
+    }
+    # shellcheck disable=SC2059  # the template is ours
+    signed_off fake "$(printf "$SIGNOFF_TMPL" 'a@example\.com')"
+  ); then
+    echo "ok    a sign-off in git's first write is found however git writes the rest"
+  else
+    echo "FAIL  a sign-off in git's first write was missed (SIGPIPE under pipefail)" >&2
     rc=1
   fi
 
