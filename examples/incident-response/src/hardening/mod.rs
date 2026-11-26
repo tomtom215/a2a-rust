@@ -155,15 +155,32 @@ async fn bind() -> (tokio::net::TcpListener, String) {
 }
 
 /// Serves `handler` over JSON-RPC on `listener` for the life of the process.
-fn serve(listener: tokio::net::TcpListener, handler: Arc<RequestHandler>) {
+fn serve(listener: tokio::net::TcpListener, handler: Arc<RequestHandler>) -> Served {
     let dispatcher = Arc::new(a2a_protocol_server::dispatch::JsonRpcDispatcher::new(
         handler,
     ));
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
     tokio::spawn(async move {
         let _ = a2a_protocol_server::serve::Server::from_listener(listener)
-            .serve_with_shutdown(dispatcher, std::future::pending())
+            .serve_with_shutdown(dispatcher, async {
+                let _ = stopped.await;
+            })
             .await;
     });
+    Served { _stop: stop }
+}
+
+/// A check's server, served until this is dropped.
+///
+/// Each check used to serve for ever, so its handler, and the claim reaper
+/// that lives as long as the handler, outlived the check: after the SQLite
+/// checks removed their temporary file, a handler of theirs logged
+/// `claims::reaper ... unable to open database file` every 15 s for as long
+/// as the demo ran. Dropped, this stops the server, the server drops its
+/// handler, and the reaper ends on its next look.
+#[must_use = "the server stops when this is dropped"]
+struct Served {
+    _stop: tokio::sync::oneshot::Sender<()>,
 }
 
 /// `true` when the server refused, rather than the example failing to reach it.

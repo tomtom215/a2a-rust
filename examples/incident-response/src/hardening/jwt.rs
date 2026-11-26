@@ -73,7 +73,7 @@ pub(super) async fn jwt_auth() -> Check {
         Ok(handler) => Arc::new(handler),
         Err(e) => return Check::fail(LABEL, format!("building the handler: {e}")),
     };
-    serve(listener, handler);
+    let _server = serve(listener, handler);
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

@@ -9,7 +9,7 @@ use std::time::Duration;
 use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 
-use super::{Check, bind, plain_card, serve};
+use super::{Check, Served, bind, plain_card, serve};
 use crate::agents::LogSearchExecutor;
 use crate::{send_params, user_message};
 
@@ -59,7 +59,7 @@ async fn round_trip_through_sqlite(db_url: &str) -> Result<String, String> {
     async fn endpoint(
         db_url: &str,
         name: &'static str,
-    ) -> Result<a2a_protocol_client::A2aClient, String> {
+    ) -> Result<(a2a_protocol_client::A2aClient, Served), String> {
         let (listener, url) = bind().await;
         let store = SqliteTaskStore::with_migrations(db_url)
             .await
@@ -69,13 +69,14 @@ async fn round_trip_through_sqlite(db_url: &str) -> Result<String, String> {
             .with_task_store(store)
             .build()
             .map_err(|e| format!("{name}: building the handler: {e}"))?;
-        serve(listener, Arc::new(handler));
-        ClientBuilder::new(&url)
+        let server = serve(listener, Arc::new(handler));
+        let client = ClientBuilder::new(&url)
             .build()
-            .map_err(|e| format!("{name}: building the client: {e}"))
+            .map_err(|e| format!("{name}: building the client: {e}"))?;
+        Ok((client, server))
     }
 
-    let writer = endpoint(db_url, "Durable Agent A").await?;
+    let (writer, _writer_server) = endpoint(db_url, "Durable Agent A").await?;
     let task_id = match writer
         .send_message(send_params(user_message("payments-api")))
         .await
@@ -85,7 +86,7 @@ async fn round_trip_through_sqlite(db_url: &str) -> Result<String, String> {
         other => return Err(format!("expected a Task from handler A, got {other:?}")),
     };
 
-    let reader = endpoint(db_url, "Durable Agent B").await?;
+    let (reader, _reader_server) = endpoint(db_url, "Durable Agent B").await?;
     let found = reader
         .get_task(TaskQueryParams::new(task_id.clone()))
         .await
@@ -154,7 +155,10 @@ async fn tenant_round_trip(db_url: &str) -> Result<String, String> {
 
     /// Serves a tenant-partitioned store over `db_url` and returns one client
     /// per tenant, each stamping its own `x-tenant-id`.
-    async fn endpoints(db_url: &str, name: &'static str) -> Result<Vec<A2aClient>, String> {
+    async fn endpoints(
+        db_url: &str,
+        name: &'static str,
+    ) -> Result<(Vec<A2aClient>, Served), String> {
         let (listener, url) = bind().await;
         let store = TenantAwareSqliteTaskStore::new(db_url)
             .await
@@ -165,7 +169,7 @@ async fn tenant_round_trip(db_url: &str) -> Result<String, String> {
             .with_tenant_resolver(HeaderTenantResolver::default())
             .build()
             .map_err(|e| format!("{name}: building the handler: {e}"))?;
-        serve(listener, Arc::new(handler));
+        let server = serve(listener, Arc::new(handler));
 
         let mut clients = Vec::new();
         for tenant in TENANTS {
@@ -176,10 +180,10 @@ async fn tenant_round_trip(db_url: &str) -> Result<String, String> {
                     .map_err(|e| format!("{name}: building the {tenant} client: {e}"))?,
             );
         }
-        Ok(clients)
+        Ok((clients, server))
     }
 
-    let writers = endpoints(db_url, "Partitioned Agent A").await?;
+    let (writers, _writer_server) = endpoints(db_url, "Partitioned Agent A").await?;
     let mut owned = Vec::new();
     for (tenant, client) in TENANTS.iter().zip(&writers) {
         match client
@@ -193,7 +197,7 @@ async fn tenant_round_trip(db_url: &str) -> Result<String, String> {
     }
 
     // A second handler over the same file — what a restart leaves behind.
-    let readers = endpoints(db_url, "Partitioned Agent B").await?;
+    let (readers, _reader_server) = endpoints(db_url, "Partitioned Agent B").await?;
     for ((tenant, own_id), client) in owned.iter().zip(&readers) {
         let listed = client
             .list_tasks(ListTasksParams::default())
@@ -271,7 +275,7 @@ async fn postgres_round_trip(url: &str) -> Result<String, String> {
     async fn endpoint(
         url: &str,
         name: &'static str,
-    ) -> Result<a2a_protocol_client::A2aClient, String> {
+    ) -> Result<(a2a_protocol_client::A2aClient, Served), String> {
         let (listener, agent_url) = bind().await;
         let store = PostgresTaskStore::with_migrations(url)
             .await
@@ -281,13 +285,14 @@ async fn postgres_round_trip(url: &str) -> Result<String, String> {
             .with_task_store(store)
             .build()
             .map_err(|e| format!("{name}: building the handler: {e}"))?;
-        serve(listener, Arc::new(handler));
-        ClientBuilder::new(&agent_url)
+        let server = serve(listener, Arc::new(handler));
+        let client = ClientBuilder::new(&agent_url)
             .build()
-            .map_err(|e| format!("{name}: building the client: {e}"))
+            .map_err(|e| format!("{name}: building the client: {e}"))?;
+        Ok((client, server))
     }
 
-    let writer = endpoint(url, "Postgres Agent A").await?;
+    let (writer, _writer_server) = endpoint(url, "Postgres Agent A").await?;
     let task_id = match writer
         .send_message(send_params(user_message("payments-api")))
         .await
@@ -297,7 +302,7 @@ async fn postgres_round_trip(url: &str) -> Result<String, String> {
         other => return Err(format!("expected a Task from handler A, got {other:?}")),
     };
 
-    let reader = endpoint(url, "Postgres Agent B").await?;
+    let (reader, _reader_server) = endpoint(url, "Postgres Agent B").await?;
     let found = reader
         .get_task(TaskQueryParams::new(task_id.clone()))
         .await
@@ -339,7 +344,7 @@ pub(super) async fn graceful_shutdown() -> Check {
         Ok(handler) => Arc::new(handler),
         Err(e) => return Check::fail(LABEL, format!("building the handler: {e}")),
     };
-    serve(listener, Arc::clone(&handler));
+    let _server = serve(listener, Arc::clone(&handler));
 
     let client = match ClientBuilder::new(&url).build() {
         Ok(client) => client,

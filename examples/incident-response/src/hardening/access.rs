@@ -45,7 +45,7 @@ pub(super) async fn bearer_auth() -> Check {
         Ok(handler) => Arc::new(handler),
         Err(e) => return Check::fail(LABEL, format!("building the handler: {e}")),
     };
-    serve(listener, handler);
+    let _server = serve(listener, handler);
 
     // No credentials — must be refused, and refused *by the server*: a
     // connection error here would otherwise satisfy the assertion.
@@ -125,7 +125,7 @@ pub(super) async fn api_key_auth() -> Check {
         Ok(handler) => Arc::new(handler),
         Err(e) => return Check::fail(LABEL, format!("building the handler: {e}")),
     };
-    serve(listener, handler);
+    let _server = serve(listener, handler);
 
     // (1) no key and (2) the wrong key — both must be refused by the server.
     for (case, header) in [("no key", None), ("a wrong key", Some("not-the-key"))] {
@@ -208,7 +208,7 @@ pub(super) async fn rate_limiting() -> Check {
         Ok(handler) => Arc::new(handler),
         Err(e) => return Check::fail(LABEL, format!("building the handler: {e}")),
     };
-    serve(listener, handler);
+    let _server = serve(listener, handler);
 
     let client = match ClientBuilder::new(&url).build() {
         Ok(client) => client,

@@ -150,7 +150,7 @@ pub(super) async fn client_retry() -> Check {
         Ok(handler) => Arc::new(handler),
         Err(e) => return Check::fail(LABEL, format!("building the handler: {e}")),
     };
-    serve(listener, handler);
+    let _server = serve(listener, handler);
 
     // Short backoff: the point is that a retry happens, not how long it waits.
     // Built per client rather than cloned so both legs demonstrably use the

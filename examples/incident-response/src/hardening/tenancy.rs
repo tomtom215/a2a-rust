@@ -54,7 +54,7 @@ pub(super) async fn isolation() -> Check {
         Ok(handler) => Arc::new(handler),
         Err(e) => return Check::fail(LABEL, format!("building the handler: {e}")),
     };
-    serve(listener, handler);
+    let _server = serve(listener, handler);
 
     let tenants = ["acme", "globex"];
     let clients: Vec<A2aClient> = {

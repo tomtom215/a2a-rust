@@ -41,7 +41,7 @@ pub(super) async fn handler_limits() -> Check {
         Ok(handler) => Arc::new(handler),
         Err(e) => return Check::fail(LABEL, format!("building the handler: {e}")),
     };
-    serve(listener, handler);
+    let _server = serve(listener, handler);
 
     let client = match ClientBuilder::new(&url).build() {
         Ok(client) => client,
