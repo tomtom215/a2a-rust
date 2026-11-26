@@ -213,11 +213,40 @@ pub trait LeaseStore: Send + Sync + 'static {
     ) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + '_>> {
         Box::pin(async { Ok(0) })
     }
+
+    /// Up to `limit` leases, in every tenant, whose deadline has passed at
+    /// `now_ms`, as `(tenant, task)`: the most recently lapsed first, so the
+    /// rows a dead replica left behind, kept until the sweep's margin, do not
+    /// crowd out a lease that has just lapsed.
+    ///
+    /// The reaper asks this on every look, to end a task parked at
+    /// `input-required` or `auth-required` whose parent stopped renewing it
+    /// (COR-08): a parked task has no running turn, so the watcher that stops
+    /// a running one never reads its deadline. A store that takes the default
+    /// lists nothing, and such a child stays parked until its parent
+    /// continues it, a caller cancels it, or a retention policy's
+    /// `parked_max_age` deletes it. A store that keeps its own clock ignores
+    /// `now_ms` and judges on that clock, as [`lapsed`](Self::lapsed) does.
+    ///
+    /// # Errors
+    ///
+    /// When the store cannot be read.
+    fn lapsed_leases(
+        &self,
+        _now_ms: i64,
+        _limit: usize,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<LeaseKeys>> + Send + '_>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
 }
 
 /// What [`LeaseStore::lapsed_many`] answers: whether each lease that exists
 /// has lapsed, by `(tenant, task)`.
 pub type LapsedLeases = HashMap<(String, String), bool>;
+
+/// What [`LeaseStore::lapsed_leases`] answers: `(tenant, task)` of each
+/// lapsed lease, the most recently lapsed first.
+pub type LeaseKeys = Vec<(String, String)>;
 
 /// `(ttl_ms, deadline_ms)` by `(tenant, task)`.
 type Leases = HashMap<(String, String), (i64, i64)>;
@@ -304,5 +333,21 @@ impl LeaseStore for InMemoryLeaseStore {
         let swept = u64::try_from(before - leases.len()).unwrap_or(u64::MAX);
         drop(leases);
         Box::pin(async move { Ok(swept) })
+    }
+
+    fn lapsed_leases(
+        &self,
+        now_ms: i64,
+        limit: usize,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<LeaseKeys>> + Send + '_>> {
+        let mut lapsed: Vec<_> = self
+            .map()
+            .iter()
+            .filter(|(_, (_, deadline))| deadline_lapsed(*deadline, now_ms))
+            .map(|(key, (_, deadline))| (std::cmp::Reverse(*deadline), key.clone()))
+            .collect();
+        lapsed.sort_unstable();
+        let found = lapsed.into_iter().take(limit).map(|(_, key)| key).collect();
+        Box::pin(async move { Ok(found) })
     }
 }

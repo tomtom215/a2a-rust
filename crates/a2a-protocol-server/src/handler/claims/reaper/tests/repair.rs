@@ -246,6 +246,20 @@ fn ending_of(state: TaskState) -> TaskState {
     }
 }
 
+/// Push configs that hold one webhook for task `id`, up.
+async fn configs_with_a_hook(id: &str) -> Arc<Configs> {
+    let configs = Arc::new(Configs {
+        inner: InMemoryPushConfigStore::new(),
+        down: AtomicBool::new(false),
+        reads: AtomicUsize::new(0),
+    });
+    configs
+        .set(TaskPushNotificationConfig::new(id, "http://127.0.0.1:9/hook").with_id("hook"))
+        .await
+        .unwrap();
+    configs
+}
+
 /// A task left in `state` by a dead replica: `canceled` (its ending owed,
 /// the repair path) or `working` (left running, the path that fails it).
 async fn rig_from(state: TaskState) -> Rig {
@@ -264,15 +278,7 @@ async fn rig_from(state: TaskState) -> Rig {
             .await
             .unwrap()
     );
-    let configs = Arc::new(Configs {
-        inner: InMemoryPushConfigStore::new(),
-        down: AtomicBool::new(false),
-        reads: AtomicUsize::new(0),
-    });
-    configs
-        .set(TaskPushNotificationConfig::new(&id, "http://127.0.0.1:9/hook").with_id("hook"))
-        .await
-        .unwrap();
+    let configs = configs_with_a_hook(&id).await;
     let sent = Arc::new(Sent::default());
     // A config lookup's retries end quickly, so a "down" store is down past them.
     let limits = crate::handler::limits::HandlerLimits {
@@ -293,6 +299,8 @@ async fn rig_from(state: TaskState) -> Rig {
         push_sender: Some(Arc::clone(&sent) as Arc<dyn PushSender>),
         push_lanes: lanes,
         leases: None,
+        executor: super::idle(),
+        queues: crate::streaming::EventQueueManager::new(),
         limits,
         metrics: Arc::new(crate::metrics::NoopMetrics),
     };

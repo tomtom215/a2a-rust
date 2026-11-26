@@ -47,6 +47,10 @@ const RENEW_SQL: &str = "UPDATE a2a_leases SET deadline_ms = CASE
     END
     WHERE tenant = ?1 AND task_id = ?2";
 
+/// Lapsed is `now_ms > deadline_ms`, as `deadline_lapsed` says.
+const LAPSED_LEASES_SQL: &str = "SELECT tenant, task_id FROM a2a_leases
+    WHERE deadline_ms < ?1 ORDER BY deadline_ms DESC, tenant, task_id LIMIT ?2";
+
 /// Leases in a SQLite table, `a2a_leases`, created if absent.
 #[derive(Debug, Clone)]
 pub struct SqliteLeaseStore {
@@ -176,6 +180,22 @@ impl LeaseStore for SqliteLeaseStore {
                 .await
                 .map_err(|e| failed("sweep", &e))?;
             Ok(done.rows_affected())
+        })
+    }
+
+    fn lapsed_leases(
+        &self,
+        now_ms: i64,
+        limit: usize,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<super::LeaseKeys>> + Send + '_>> {
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        Box::pin(async move {
+            sqlx::query_as(LAPSED_LEASES_SQL)
+                .bind(now_ms)
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| failed("read", &e))
         })
     }
 }

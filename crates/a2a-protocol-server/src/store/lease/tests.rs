@@ -50,6 +50,33 @@ async fn caller_clock_contract(store: &dyn LeaseStore) {
     assert_eq!(store.deadline("t", "a").await.unwrap(), None);
     assert!(!store.renew("t", "a", 0).await.unwrap());
     store.release("u", "a").await.unwrap();
+
+    lapsed_leases_contract(store).await;
+}
+
+/// COR-08: the leases lapsed at `now_ms`, in every tenant, the most recently
+/// lapsed first, at most `limit`; a lease is not lapsed through its deadline's
+/// millisecond. A store that keeps the trait's default lists nothing and
+/// fails here.
+async fn lapsed_leases_contract(store: &dyn LeaseStore) {
+    let pair = |t: &str, k: &str| (t.to_owned(), k.to_owned());
+    store.grant("t", "late", 1, 300).await.unwrap();
+    store.grant("u", "early", 1, 100).await.unwrap();
+    store.grant("t", "edge", 1, 500).await.unwrap();
+    store.grant("t", "live", 1, 900).await.unwrap();
+    assert_eq!(
+        store.lapsed_leases(500, 10).await.unwrap(),
+        [pair("t", "late"), pair("u", "early")]
+    );
+    assert_eq!(
+        store.lapsed_leases(500, 1).await.unwrap(),
+        [pair("t", "late")],
+        "at most the limit, the most recently lapsed first"
+    );
+    assert_eq!(store.lapsed_leases(100, 10).await.unwrap(), []);
+    for (t, k) in [("t", "late"), ("u", "early"), ("t", "edge"), ("t", "live")] {
+        store.release(t, k).await.unwrap();
+    }
 }
 
 /// A lease holds through its deadline's millisecond and lapses after it.
@@ -289,6 +316,23 @@ async fn sweep_and_read_many(store: &PostgresLeaseStore, pool: &sqlx::postgres::
             .await
             .unwrap();
     }
+    // COR-08: the lapsed ones, the most recently lapsed first, judged on the
+    // database's clock whatever `now_ms` says. Filtered to this test's
+    // tenant: the table is shared with the other tests in the database.
+    let lapsed: Vec<_> = store
+        .lapsed_leases(i64::MIN, 10_000)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|(tenant, _)| tenant == "s")
+        .collect();
+    assert_eq!(
+        lapsed,
+        [
+            ("s".to_owned(), "new".to_owned()),
+            ("s".to_owned(), "old".to_owned())
+        ]
+    );
     assert_eq!(store.sweep(i64::MAX, 60_000).await.unwrap(), 1);
     assert_eq!(store.deadline("s", "old").await.unwrap(), None);
     assert!(store.deadline("s", "soon").await.unwrap().is_some());

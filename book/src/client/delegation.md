@@ -367,6 +367,14 @@ grant. One that does refuses a time to live under 1 second, or over its
 child. `detach()` stops the renewals too: a detached leased child stops
 once its lease lapses.
 
+A child parked at `input-required` or `auth-required` has no running turn
+to stop. On an agent with turn claims (the SQL task stores' own, or
+`with_turn_claims`), the claim reaper cancels it once its lease has lapsed,
+at its next look (one claim time to live, 15 seconds by default), with the
+cause `lease-lapsed`, through the executor's `cancel` hook. Without turn
+claims a parked child waits for its parent, a `CancelTask`, or a retention
+policy's `parked_max_age`.
+
 Whose clock decides: `PostgresLeaseStore` takes a lease's deadline from the
 database's `now()` for the grant and for every renewal, and asks the database
 whether it has passed, so replicas whose wall clocks differ cannot shorten or

@@ -18,6 +18,13 @@
 //! that activates the extension renews the lease of the task it reads, on
 //! whichever replica it lands.
 //!
+//! A lease is kept under the task's partition
+//! ([`TenantContext::partition`]): the tenant, and the caller when callers
+//! are isolated, which is also the scope of the task's turn claim. So the
+//! claim reaper, which ends a parked task whose lease lapsed (COR-08), can
+//! take the claim and read the task the lease names. Until 2026-11-26 it was
+//! the tenant alone, which named no claim scope once callers were isolated.
+//!
 //! A store that cannot be read counts as a live parent: an outage is not
 //! evidence that the parent died, and stopping every leased child for one
 //! would turn a database blip into lost work. The child then runs until the
@@ -83,7 +90,7 @@ impl RequestHandler {
         Ok(Some(lease))
     }
 
-    /// Stores `lease` for `task` in the current tenant and starts watching
+    /// Stores `lease` for `task` in the current partition and starts watching
     /// it for `turn`.
     ///
     /// # Errors
@@ -100,7 +107,7 @@ impl RequestHandler {
         let Some(leases) = &self.leases else {
             return Ok(());
         };
-        let tenant = TenantContext::current();
+        let tenant = TenantContext::partition();
         let ttl_ms = i64::try_from(lease.ttl_ms).unwrap_or(i64::MAX);
         leases
             .store
@@ -119,7 +126,7 @@ impl RequestHandler {
         Ok(())
     }
 
-    /// Renews the lease of `task` in the current tenant when `call` activates
+    /// Renews the lease of `task` in the current partition when `call` activates
     /// the lease extension. A failed renewal is logged, not returned: the
     /// read it rode on succeeded.
     ///
@@ -136,7 +143,7 @@ impl RequestHandler {
         }
         if let Err(_e) = leases
             .store
-            .renew(&TenantContext::current(), task, now_unix_ms())
+            .renew(&TenantContext::partition(), task, now_unix_ms())
             .await
         {
             trace_warn!(task, error = %_e, "lease renewal not stored");
@@ -166,6 +173,8 @@ mod watch;
 
 #[cfg(test)]
 mod cost_tests;
+#[cfg(test)]
+mod parked_tests;
 #[cfg(test)]
 mod renewal_only_tests;
 #[cfg(test)]

@@ -457,6 +457,8 @@ impl RequestHandler {
             push_sender: self.push_sender.clone(),
             push_lanes: self.push_lanes.clone(),
             leases: self.leases.as_ref().map(|l| Arc::clone(&l.store)),
+            executor: Arc::clone(&self.executor),
+            queues: self.event_queue_manager.clone(),
             limits: self.limits.clone(),
             metrics: Arc::clone(&self.metrics),
         };

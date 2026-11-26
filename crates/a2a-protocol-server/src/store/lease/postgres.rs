@@ -95,6 +95,14 @@ const SWEEP_SQL: &str = concat!(
     " - $1"
 );
 
+/// The leases whose deadline has passed on the database's clock, the most
+/// recently lapsed first (`LeaseStore::lapsed_leases`).
+const LAPSED_LEASES_SQL: &str = concat!(
+    "SELECT tenant, task_id FROM a2a_leases WHERE ",
+    now_ms!(),
+    " > deadline_ms ORDER BY deadline_ms DESC, tenant, task_id LIMIT $1"
+);
+
 /// Leases in a PostgreSQL table, `a2a_leases`, created if absent.
 #[derive(Debug, Clone)]
 pub struct PostgresLeaseStore {
@@ -264,6 +272,24 @@ impl LeaseStore for PostgresLeaseStore {
             .await
             .map_err(|e| failed("sweep", &e))?;
             Ok(done.rows_affected())
+        })
+    }
+
+    fn lapsed_leases(
+        &self,
+        _now_ms: i64,
+        limit: usize,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<super::LeaseKeys>> + Send + '_>> {
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        Box::pin(async move {
+            // Retried: a read.
+            crate::store::pg_retry::retry(&crate::metrics::NoopMetrics, || {
+                sqlx::query_as(LAPSED_LEASES_SQL)
+                    .bind(limit)
+                    .fetch_all(&self.pool)
+            })
+            .await
+            .map_err(|e| failed("read", &e))
         })
     }
 }

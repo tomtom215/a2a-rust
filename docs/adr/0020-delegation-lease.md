@@ -88,3 +88,43 @@ Option 3.
   malformed grant, no store, an unreadable store, a refused grant,
   release, the card), three client end-to-end tests, and the types
   round-trip.
+
+## Amendment, 2026-11-26: a parked child's lease is read by the reaper (COR-08)
+
+The decision's *Lapse* bullet let a turn that ends parked keep its lease for
+the turn that continues the task. Nothing then read that deadline: the watcher
+reads only the leases of running turns, so a child parked at `input-required`
+or `auth-required` whose parent died stayed parked until ADR 0056's opt-in
+expiry or for ever (E03 R8).
+
+- **Who acts.** The claim reaper, which already looks every claim time to
+  live on every replica with turn claims. No second timer. On each look it
+  lists the lapsed leases (`LeaseStore::lapsed_leases`, one statement on the
+  SQL stores, so an idle replica's look makes one more than before) and, for a
+  task no turn on that replica runs, takes the task's claim, reads the task
+  and the lease again under it, and, if the task is still parked behind a
+  lapsed lease, cancels it.
+- **How it ends.** As `CancelTask` ends a task no turn runs, which is what ADR
+  0056's *Alternatives* asked a handler-level cancel to write: the executor's
+  `cancel` hook (bounded by the claim's time to live; a hook that fails or
+  hangs does not keep the task parked, as a lapse stops a running turn
+  without asking), the status `canceled` with the cause `lease-lapsed`, the
+  ending in the log (and so the audit chain) and to the webhooks. Then the
+  lease and the claim are released.
+- **The key.** A lease is now kept under the task's partition (the tenant,
+  and the caller when callers are isolated), the scope of its turn claim, so
+  the reaper can take the claim and read the task a lease names. It was the
+  tenant alone.
+- **Left as they are.** A running task (its own watcher stops it), a task
+  another replica holds a claim on (a turn runs it or a send continues it),
+  and a live lease. A lapsed lease of a finished or missing task is left for
+  the sweep's margin; the list is the most recently lapsed first, so such rows
+  do not crowd out one that has just lapsed.
+- **Not covered.** A handler without turn claims has no reaper, and a parked
+  child there still waits for its parent, `CancelTask` or ADR 0056's expiry.
+  Root halts still pass parked tasks by (register X2-7).
+- **Tests.** `handler/claims/reaper/lapsed_tests.rs` (one look, in-memory:
+  what it ends, leaves and releases, a hook that fails or hangs, the idle
+  look's calls) and `handler/lease/parked_tests.rs` (end to end on the
+  in-memory, SQLite and PostgreSQL lease stores: a quiet parent's parked
+  child ends within three lease lifetimes; a renewing parent's stays).

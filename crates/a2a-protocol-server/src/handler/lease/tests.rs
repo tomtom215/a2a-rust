@@ -92,7 +92,7 @@ pub(super) async fn start(
 }
 
 /// Reads the task, activating the lease extension when `renew`.
-async fn read(h: &RequestHandler, id: &str, renew: bool) -> TaskState {
+pub(super) async fn read(h: &RequestHandler, id: &str, renew: bool) -> TaskState {
     let mut headers = HashMap::new();
     if renew {
         headers.insert("a2a-extensions".to_owned(), LEASE_EXTENSION_URI.to_owned());

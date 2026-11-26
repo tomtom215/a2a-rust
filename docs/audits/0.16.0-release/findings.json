@@ -1231,5 +1231,14 @@
   "blocker": "no",
   "basis": "reproduced",
   "evidence": "crates/a2a-protocol-client/src/delegation/continuation.rs, continue_handed_back(): every send error was logged and the loop went on, so a halt (final since COR-05, ClientError::is_halted) was answered with up to HandOffPolicy::continuations more requests. delegation/continuation_tests.rs a_halted_continuation_is_not_sent_again fails before the fix with 4 sends where 2 are due (policy of 3) and passes after; the outcome is Lost with no resume, not a made-up terminal state. A lost response (a transport error) is still sent again as the same request (a_continuation_sent_again_is_the_same_request)."
+ },
+ {
+  "id": "X2-7",
+  "source": "COR-08 (E03 R8), out of scope there, recorded 2026-11-26",
+  "status": "OPEN (recorded 2026-11-26)",
+  "finding": "A root halt does not stop a task of its job parked at input-required or auth-required: the parked child stays parked, and only a send that would continue it is refused",
+  "blocker": "no",
+  "basis": "read",
+  "evidence": "crates/a2a-protocol-server/src/handler/halt.rs, module documentation: 'A task parked at input-required or auth-required is not running and is not cancelled'. A halt fires the tokens of running turns only, so a parked task of the halted root keeps its state until a caller cancels it, its lease lapses (COR-08: the claim reaper then cancels it), or ADR 0056's expiry deletes it. Not reproduced by a test."
  }
 ]

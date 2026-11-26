@@ -54,6 +54,12 @@ impl PushSender for Recorder {
     }
 }
 
+/// The reaper's executor, whose `cancel` hook only a parked task with a
+/// lapsed lease runs.
+pub(super) fn idle() -> Arc<dyn crate::executor::AgentExecutor> {
+    Arc::new(Idle)
+}
+
 /// Counts the reaped-claim events the reaper reports.
 #[derive(Default)]
 struct Reaped(std::sync::atomic::AtomicUsize);
@@ -255,6 +261,8 @@ async fn the_reaper_ends_only_what_nobody_runs(store: Arc<dyn TaskStore>, scope:
         push_sender: Some(Arc::clone(&sender) as Arc<dyn PushSender>),
         push_lanes: crate::handler::PushLanes::default(),
         leases: Some(Arc::clone(&leases) as Arc<dyn LeaseStore>),
+        executor: idle(),
+        queues: crate::streaming::EventQueueManager::new(),
         limits: crate::handler::limits::HandlerLimits::default(),
         metrics: Arc::clone(&claim_events) as Arc<dyn crate::metrics::Metrics>,
     };
@@ -473,7 +481,5 @@ async fn tenant_aware_postgres_the_reaper_ends_only_what_nobody_runs() {
     the_reaper_ends_only_what_nobody_runs(store, "acme", pg_age(pool, "tenant_tasks")).await;
 }
 
-#[cfg(feature = "sqlite")]
 pub(super) struct Idle;
-#[cfg(feature = "sqlite")]
 crate::agent_executor!(Idle, |_ctx, _queue| async { Ok(()) });

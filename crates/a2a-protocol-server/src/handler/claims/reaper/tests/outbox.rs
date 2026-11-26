@@ -181,6 +181,17 @@ async fn rig(state: TaskState) -> Rig {
 }
 
 /// [`rig`], the orphaned task stored at log position `position`.
+/// The reaper's claim time to live, and how long to wait before it looks: a
+/// finished task's claim has to be older than the time to live.
+fn claim_timing(state: TaskState) -> (Duration, Duration) {
+    if state.is_terminal() {
+        let ttl = Duration::from_secs(1);
+        (ttl, ttl + Duration::from_millis(300))
+    } else {
+        (Duration::from_secs(600), Duration::from_millis(20))
+    }
+}
+
 async fn rig_with(state: TaskState, position: Option<u64>) -> Rig {
     let (url, path) = sqlite_url();
     let sqlite = Arc::new(SqliteTaskStore::new(&url).await.unwrap());
@@ -204,18 +215,8 @@ async fn rig_with(state: TaskState, position: Option<u64>) -> Rig {
             .await
             .unwrap()
     );
-    // A finished task's claim has to be older than the reaper's time to live.
-    let ttl = if state.is_terminal() {
-        Duration::from_secs(1)
-    } else {
-        Duration::from_secs(600)
-    };
-    tokio::time::sleep(if state.is_terminal() {
-        ttl + Duration::from_millis(300)
-    } else {
-        Duration::from_millis(20)
-    })
-    .await;
+    let (ttl, wait) = claim_timing(state);
+    tokio::time::sleep(wait).await;
 
     let (configs, sender, limits, lanes) = lanes(&id, &store).await;
     let claims = Arc::new(super::super::super::TurnClaims::new(
@@ -231,6 +232,8 @@ async fn rig_with(state: TaskState, position: Option<u64>) -> Rig {
         push_sender: Some(Arc::clone(&sender) as Arc<dyn PushSender>),
         push_lanes: lanes.clone(),
         leases: None,
+        executor: super::idle(),
+        queues: crate::streaming::EventQueueManager::new(),
         limits,
         metrics: Arc::new(crate::metrics::NoopMetrics),
     });

@@ -46,6 +46,13 @@
 //! the task's ending, appends the ending and sends it to the webhooks, once;
 //! when the log already ends the task it only releases the claim, because
 //! then the owner got at least that far and nothing provable is missing.
+//!
+//! # A parked task whose lease lapsed
+//!
+//! A task parked at `input-required` has no turn, so no watcher reads its
+//! lease. Each look also cancels such a task once its lease has lapsed, with
+//! the cause `lease-lapsed`, through the executor's `cancel` hook (`lapsed`,
+//! COR-08).
 
 use std::sync::{Arc, Weak};
 
@@ -55,11 +62,13 @@ use a2a_protocol_types::message::{Message, Part};
 use a2a_protocol_types::task::{TaskId, TaskState, TaskStatus};
 
 use super::TurnClaims;
+use crate::executor::AgentExecutor;
 use crate::handler::limits::HandlerLimits;
 use crate::metrics::Metrics;
 use crate::push::{PushConfigStore, PushSender};
 use crate::store::tenant::TenantContext;
 use crate::store::{LeaseStore, TaskStore};
+use crate::streaming::EventQueueManager;
 
 /// The tasks one look ends at most; the next look takes the rest.
 const BATCH: usize = 32;
@@ -93,6 +102,10 @@ pub struct Reaper {
     /// The handler's lease store, when it grants leases: a task ended here
     /// had a lease its dead replica's watcher would have released.
     pub leases: Option<Arc<dyn LeaseStore>>,
+    /// The handler's executor and queues: a parked task whose lease lapsed
+    /// is canceled through the executor's `cancel` hook (`lapsed`).
+    pub executor: Arc<dyn AgentExecutor>,
+    pub queues: EventQueueManager,
     pub limits: HandlerLimits,
     pub metrics: Arc<dyn Metrics>,
 }
@@ -150,6 +163,7 @@ impl Reaper {
             }
         }
         self.finish_ended(&claims).await;
+        self.end_lapsed_parked(&claims).await;
         self.sweep_leases().await;
         Some(ended)
     }
@@ -400,7 +414,7 @@ impl Reaper {
     /// extension went on renewing it (audit H3, part b).
     async fn release_lease(&self, task_id: &str) {
         let Some(leases) = &self.leases else { return };
-        if let Err(_e) = leases.release(&TenantContext::current(), task_id).await {
+        if let Err(_e) = leases.release(&TenantContext::partition(), task_id).await {
             trace_warn!(task_id, error = %_e, "the ended task's lease was not released");
         }
     }
@@ -428,6 +442,10 @@ impl Reaper {
     }
 }
 
+mod lapsed;
+
+#[cfg(test)]
+mod lapsed_tests;
 #[cfg(test)]
 mod start_tests;
 #[cfg(test)]

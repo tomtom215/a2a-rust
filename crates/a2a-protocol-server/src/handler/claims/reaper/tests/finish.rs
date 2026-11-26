@@ -216,6 +216,8 @@ pub(super) async fn the_reaper_completes_the_ending_of_a_finished_task(
         push_sender: Some(Arc::clone(&sender) as Arc<dyn PushSender>),
         push_lanes: crate::handler::PushLanes::default(),
         leases: None,
+        executor: super::idle(),
+        queues: crate::streaming::EventQueueManager::new(),
         limits: crate::handler::limits::HandlerLimits::default(),
         metrics: Arc::clone(&finished) as Arc<dyn crate::metrics::Metrics>,
     };

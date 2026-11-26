@@ -39,6 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`LeaseStore::lapsed_leases`** (COR-08): the leases whose deadline has
+  passed, in every tenant, the most recently lapsed first. The claim reaper asks it
+  on every look. The in-memory, SQLite and PostgreSQL stores implement it; a
+  store of your own that takes the default lists nothing, and a parked child
+  of a dead parent then stays parked, as before.
+
 - **`SqliteLeaseStore`** (feature `sqlite`, COR-09): leases of delegated tasks
   kept in a SQLite file, so the processes of one host can lease without
   PostgreSQL. Deadlines are the callers' times, read from that host's one clock;
@@ -69,6 +75,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its agent card, so a signed card keeps building.
 
 ### Changed
+
+- **A lease is kept under the task's partition** (COR-08): the tenant, and
+  the caller when callers are isolated (the default with an authenticator),
+  as the task's turn claim is. It was the tenant alone. A lease granted
+  before the upgrade by a handler that isolates callers is not found after
+  it: a renewal renews nothing, the sweep deletes the old row an hour after
+  it lapses, and its task is no longer leased (a parked one stays parked, as
+  before).
 
 - **A delegation always keys its message** (DEC-08, COR-06). `Delegation`
   starts gave a message a key only for an agent known to honour keys; now they
@@ -105,6 +119,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   2026-11-19 on that stale baseline (`docs/official-tck-findings.md` §27).
 
 ### Fixed
+
+- **A parked child of a dead parent is stopped by its lease** (COR-08, E03
+  R8). A leased task parked at `input-required` or `auth-required` kept its
+  lease, and nothing read the deadline of a task no turn runs, so a child
+  whose parent died while it waited stayed parked for good. The claim reaper
+  now cancels it once its lease has lapsed: it takes the task's claim, runs
+  the executor's `cancel` hook, stores `canceled` with the cause
+  `lease-lapsed`, writes the ending to the log and the webhooks, and releases
+  the lease. It needs turn claims (the SQL stores' own, or
+  `with_turn_claims`); an idle replica makes one statement more per look.
+  Root halts still pass parked tasks by (register X2-7).
 
 - **A halted agent is not sent a hand-off continuation again** (register X2-6).
   A `Delegation` whose handed-back child's continuation was refused because the
