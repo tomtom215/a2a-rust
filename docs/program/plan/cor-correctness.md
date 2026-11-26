@@ -297,6 +297,12 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
 - **Accept.** The lease contract tests pass on all three stores. `scripts/check_sql_driver_isolation.sh`
   exits 0. `python3 scripts/check_feature_tables.py` exits 0.
 - **Out of scope.** Lease groups (ADR 0044; needs SCL-06's measurement first).
+- **Done (2026-11-26).** `S/store/lease/sqlite.rs`, `SqliteLeaseStore`. Clock: the callers', which on one
+  host is one clock; a renewal saturates as the in-memory store's does (SQLite turns an overflowing sum into
+  a float). Accept: the lease tests pass on all three stores (12 with PostgreSQL 16, among them
+  `sqlite_keeps_the_contract` and `postgres_keeps_the_contract_on_the_database_clock`);
+  `scripts/check_sql_driver_isolation.sh` and `scripts/check_feature_tables.py` exit 0. The durable and
+  shared-store profiles accept it over a file and refuse it in memory (`S/builder/durable_sqlite_tests.rs`).
 
 ## COR-10: The 0.17 fleet rows the register already holds
 
@@ -350,3 +356,7 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
 - **Accept.** The row's status is `FIXED` with a cause and a test, or closed with the count and the query
   that produced it.
 - **Out of scope.** Rewriting the discovery tests.
+- **Done (2026-11-26).** Closed without a cause: CI1 did not recur. 12 `.github/workflows/ci.yml` push runs on `main` since
+  `7ac5b74e` (the first holding `7acfbe35`); their macOS test legs ran 22 times, 21 green; the red one failed
+  the CI2 test, not a discovery test. The query and the run ids are in the row
+  (`docs/audits/2026-11-13-adversarial-review/findings.json`, `CI1`, status `CLOSED`).

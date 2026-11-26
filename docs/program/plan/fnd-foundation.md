@@ -50,6 +50,12 @@ that touches a gate re-proves it with `scripts/prove_gates_fail.sh` or `scripts/
   script's self-test refuses a fragment that is missing and one that is ambiguous. The entry count the
   script prints is unchanged from before the change.
 - **Out of scope.** The other 3,750 citations (FND-07).
+- **Done (2026-11-26).** A Markdown file may be cited `path "fragment"` with no line
+  (`scripts/lib/spec_ledger/citations.py`); the fragment must be on exactly one line when the check runs.
+  The changelog citation is `CHANGELOG.md "## [0.5.0] - 2026-04-02"`. Accept: with a line added under
+  `[Unreleased]` the checker exits 0 (before: "line 13432 does not contain ... (it is on 13433)"); the
+  self-test's seven new cases include an absent fragment and one on two lines (30 of 30; 28 of 30 with
+  the uniqueness rule broken); the entry and status counts are unchanged (510; 32, 19, 4, 455).
 
 ## FND-03: Correct the claims that are stale at HEAD
 
@@ -110,6 +116,12 @@ that touches a gate re-proves it with `scripts/prove_gates_fail.sh` or `scripts/
   line inserted at the top of a file the RFC ledger cites, the quick tier exits non-zero and names the
   ledger.
 - **Out of scope.** Anything that needs a build.
+- **Done (2026-11-26).** `scripts/preflight.sh --quick`, nine commands named as `.github/workflows/ci.yml`
+  runs them (so the drift guard covers each), the default of `.githooks/pre-push`. Accept: on a fresh
+  worktree it exits 0 in 12 s and makes no `target/`; `--list` shows "--quick 9 command(s), none that
+  builds"; `scripts/check_gate_inventory.sh` exits 0; with a blank line at the top of
+  `crates/a2a-protocol-types/src/signing.rs`, which the RFC ledger cites, it exits 1 with
+  `check_rfc_ledger.py` failed. No new gate, so no new injection in `scripts/prove_gates_fail.sh`.
 
 ## FND-05: One register for what is open
 
@@ -148,7 +160,8 @@ that touches a gate re-proves it with `scripts/prove_gates_fail.sh` or `scripts/
 - **Goal.** "CI's stable is X" is a file, not a line read from a CI log.
 - **Evidence.** ROADMAP *Release engineering* item 8; E07 §A4.3 S12; `docs/handoff.md` *Environment facts*
   (1.97.0 in the image against 1.100.0 in CI; their clippy disagreed).
-- **Gates.** DEC-05. **Depends.** none. **Release.** internal.
+- **Gates.** DEC-05. **Depends.** FND-04 (corrected 2026-11-26: *Accept* runs `scripts/preflight.sh --quick`,
+  the tier FND-04 adds; `grep -c quick scripts/preflight.sh` was 0). **Release.** internal.
 - **Do.** Per E07 §A4.3 S12: a pin file under `.github/`, written when the pin is moved, read by `.github/workflows/ci.yml`
   and by `scripts/preflight.sh`; `scripts/preflight.sh` refuses a different `rustc -V` unless an override variable
   is set. The MSRV leg (1.94) is untouched.
@@ -212,6 +225,16 @@ that touches a gate re-proves it with `scripts/prove_gates_fail.sh` or `scripts/
   `cargo nextest run --stress-count 200 -E 'test(~crosses_the_same_proxy)'` passes 200 of 200 while another
   process stops the test binary for one second at random (say how the pause was injected).
 - **Out of scope.** The first publish of the SLIMRPC binding (ECO-01).
+- **What is left (2026-11-26).** Step 1, gated on E06 §6 row 12 (the maintainer's choice). Steps 2 to 5
+  are built, each in its own commit with its reproduction: step 2 `scripts/check_release_ci_env.py` in
+  `static-checks` (refuses the two workflows as they stood before `513acc10`; `prove_gates_fail.sh --only
+  release_ci_env` PROVEN); step 3 `statement_count` fails naming TLS against a server with `ssl = on`;
+  step 4 the CI2 test on tokio's paused clock (40 of 40 failed under a 1 s SIGSTOP before, 200 of 200
+  passed after, the stop sent by a second process scanning `/proc`); step 5 the cause found, `0b9f710e`'s
+  sign-off in `git`'s first write and `grep -q` under `pipefail`, fixed in `scripts/provenance_manifest.sh` and
+  `scripts/check_dco.sh`, with a self-test case. `scripts/prove_workflow_gates_fail.py` exits 0 (34 proven, 1 not
+  run here: `promtool` absent). The *Accept* asks for a new `scripts/ci_evidence.py` and `scripts/release_evidence.py`
+  self-test case "for what changed"; neither script changed, so neither has one; both belong to step 1.
 
 ## FND-10: Split the documents by rate of change
 

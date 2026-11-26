@@ -85,7 +85,7 @@
       "release": "0.16.x",
       "breaking": false,
       "status": "done",
-      "landed": null
+      "landed": 233
     },
     {
       "id": "COR-06",
@@ -99,7 +99,7 @@
       "release": "0.17",
       "breaking": false,
       "status": "done",
-      "landed": null
+      "landed": 233
     },
     {
       "id": "COR-07",
@@ -136,8 +136,8 @@
       "gates": [],
       "release": "0.17",
       "breaking": false,
-      "status": "todo",
-      "landed": null
+      "status": "done",
+      "landed": "branch claude/keen-volta-gl3nc2, 2026-11-26 (no pull request yet)"
     },
     {
       "id": "COR-10",
@@ -174,8 +174,8 @@
       "gates": [],
       "release": "none",
       "breaking": false,
-      "status": "todo",
-      "landed": null
+      "status": "done",
+      "landed": "branch claude/keen-volta-gl3nc2, 2026-11-26 (no pull request yet)"
     },
     {
       "id": "DVX-01",
@@ -423,7 +423,7 @@
       "release": "none",
       "breaking": false,
       "status": "done",
-      "landed": "branch claude/magical-ptolemy-sur0er, 2026-11-25 (no pull request yet)"
+      "landed": 228
     },
     {
       "id": "FND-02",
@@ -434,8 +434,8 @@
       "gates": [],
       "release": "0.16.x",
       "breaking": false,
-      "status": "todo",
-      "landed": null
+      "status": "done",
+      "landed": "branch claude/keen-volta-gl3nc2, 2026-11-26 (no pull request yet)"
     },
     {
       "id": "FND-03",
@@ -460,8 +460,8 @@
       "gates": [],
       "release": "none",
       "breaking": false,
-      "status": "todo",
-      "landed": null
+      "status": "done",
+      "landed": "branch claude/keen-volta-gl3nc2, 2026-11-26 (no pull request yet)"
     },
     {
       "id": "FND-05",
@@ -482,7 +482,9 @@
       "workstream": "foundation",
       "title": "Pin the toolchain a session and CI lint with",
       "file": "plan/fnd-foundation.md",
-      "deps": [],
+      "deps": [
+        "FND-04"
+      ],
       "gates": [
         "DEC-05"
       ],
@@ -526,8 +528,8 @@
       "gates": [],
       "release": "0.16.x",
       "breaking": false,
-      "status": "todo",
-      "landed": null
+      "status": "partial",
+      "landed": "branch claude/keen-volta-gl3nc2, 2026-11-26 (no pull request yet)"
     },
     {
       "id": "FND-10",
