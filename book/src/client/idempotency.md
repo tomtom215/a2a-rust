@@ -136,19 +136,24 @@ removes the advertisement in the same change.
 
 ## Delegation adds one
 
-`delegation::Delegation::start` (and `start_leased`, `start_budgeted`) gives
-the child's message a fresh key when the message has none and the client
-knows its agent honours keys (`A2aClient::honours_idempotency`, set by
-`ClientBuilder::from_card`). A key you set is kept, and
-`Delegation::idempotency_key` returns whichever the message carried. Nothing
-is added for an agent not known to honour keys, since this SDK's server
-refuses a key its store cannot honour.
+`delegation::Delegation::start` (and `start_with` and its shorthands) gives
+the child's message a fresh key when the message has none, whatever the
+client knows of its agent. A key you set is kept, and
+`Delegation::idempotency_key` returns whichever the message carried. A server
+of this SDK whose store cannot honour keys refuses a keyed send before it runs
+anything, with an `ErrorInfo` of reason `IDEMPOTENCY_KEYS_UNSUPPORTED`
+(`idempotency::refuses_keys`); a key the start added is then taken off and the
+message sent once more. A key you set is never taken off.
 
 What the key buys depends on what resends. A client with a retry policy
-retries a keyed send that failed ambiguously, and the agent answers the
-retry with the child the first attempt created. A parent that resends
-itself after `start` fails must set the key before calling `start`: a
-failed `start` returns no handle to read it from. ADR 0026 has the rest.
+retries a keyed send that failed ambiguously, but only to an agent it knows
+honours keys (`A2aClient::honours_idempotency`, set by
+`ClientBuilder::from_card`), and the agent answers the retry with the child
+the first attempt created. A parent that resends itself after `start` fails
+must set the key before calling `start`: a failed `start` returns no handle to
+read it from. With a journal, the record holds the key, and
+`DelegationOptions::resending` sends the message again under it
+([Delegation](delegation.md)). ADR 0026 has the rest.
 
 ## The three outcomes
 

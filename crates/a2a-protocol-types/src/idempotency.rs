@@ -208,6 +208,10 @@ pub fn set_key(message: &mut Message, key: &str) -> Result<(), KeyError> {
     Ok(())
 }
 
+#[path = "idempotency_refusal.rs"]
+mod refusal;
+pub use refusal::{KEYS_UNSUPPORTED_REASON, keys_unsupported, refuses_keys, remove_key};
+
 #[cfg(test)]
 mod tests {
 

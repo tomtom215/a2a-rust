@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:13407 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:13432 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -1606,7 +1606,7 @@
    "status": "TESTED",
    "severity": null,
    "impl_evidence": [
-    "crates/a2a-protocol-server/src/handler/messaging/idempotency.rs:80 RequestHandler::claim_send_key"
+    "crates/a2a-protocol-server/src/handler/messaging/idempotency.rs:81 RequestHandler::claim_send_key"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/messaging/idempotency_tests/mod.rs:36 a_retry_of_the_same_message_returns_the_first_task_and_runs_the_agent_once",

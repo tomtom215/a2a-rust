@@ -179,9 +179,11 @@ for record in journal.open("orchestrator-1").await? {
             Err(e) => eprintln!("record {} stays open: {e}", record.id),
         }
     }
-    // A record with no task id died before the child was named: send the same
-    // message again under `record.idempotency_key` to reach the child the
-    // first send created.
+    // A record with no task id died before the child was named. Send the
+    // same message (the journal keeps none) again under the record's key, to
+    // reach the child the first send created rather than start another:
+    //   Delegation::start_with(Arc::clone(&client), the_first_message,
+    //       DelegationOptions::new().resending(Arc::clone(&journal), record))
 }
 let mut waiting = tokio::task::JoinSet::new();
 for child in children {

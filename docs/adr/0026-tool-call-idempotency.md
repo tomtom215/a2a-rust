@@ -117,3 +117,24 @@ Alternatives not taken:
   server's own build, where `serde_json`'s map is sorted already; under
   `--features serde_json/preserve_order`, which `genai` 0.7 turns on in any
   build that includes it, it fails 2.
+
+## Amendment, 2026-11-26: a delegation always sends its key (DEC-08, COR-06)
+
+*Delegation keys its sends* above sent a key only to an agent whose card
+advertised the extension, because this SDK's server refuses a keyed send its
+store cannot honour. The maintainer decided on 2026-11-26 to send the key
+always, keeping that agent no worse off: the refusal is now typed (an
+`ErrorInfo` of reason `IDEMPOTENCY_KEYS_UNSUPPORTED` in the `a2a-rust.com`
+domain, `idempotency::keys_unsupported`), it comes before anything is claimed
+or run, and a `Delegation` start that added the key itself takes it off and
+sends the message once more. A key the caller set is never taken off. The retry
+rule is unchanged: a client retries a keyed send only to an agent known to
+honour keys. What the always-present key adds is recovery: a journal record
+holds the key, and `DelegationOptions::resending` sends the same message again
+under it, so an agent that honours keys answers with the child the first send
+created. An agent that ignores the extension ignores the key.
+
+Tests that must fail without the change: `delegation::keys` tests in
+`a2a-protocol-client`, and `delegation_journal` `resend.rs`
+`a_lost_start_is_resent_under_its_records_key_and_runs_once`.
+

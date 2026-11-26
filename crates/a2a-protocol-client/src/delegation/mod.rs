@@ -41,17 +41,17 @@
 //! that instead of the reservation; every other ending refunds nothing.
 //!
 //! Every `start` gives the child's message an idempotency key
-//! (`a2a_protocol_types::idempotency`, ADR 0026) when the message has none
-//! and the agent is known to honour one
-//! ([`A2aClient::honours_idempotency`]). A client with a retry policy then
-//! retries a send that failed ambiguously without starting a second child,
-//! and the same message sent again with the handle's
-//! [`idempotency_key`](Delegation::idempotency_key) reaches the child the
-//! first created (after [`Outcome::Lost`] with no task id, say). A parent
-//! that resends after `start` itself fails sets the key first, since a
-//! failed `start` returns no handle to read it from. To an agent not known
-//! to honour keys nothing is added: this SDK's server refuses a key its
-//! store cannot honour.
+//! (`a2a_protocol_types::idempotency`, ADR 0026) when the message has none,
+//! whatever the client believes of the agent (DEC-08). Against an agent known
+//! to honour keys ([`A2aClient::honours_idempotency`]) a client with a retry
+//! policy retries a send that failed ambiguously without starting a second
+//! child; against any agent that honours them, the same message sent again
+//! with the handle's [`idempotency_key`](Delegation::idempotency_key) reaches
+//! the child the first created (after [`Outcome::Lost`] with no task id, say),
+//! and a journal record's key does the same after a restart
+//! ([`DelegationOptions::resending`]). A server of this SDK whose store
+//! cannot honour keys refuses the key, typed, before it runs anything; a key
+//! the start added is then taken off and the message sent once more.
 //!
 //! ```rust,no_run
 //! use std::sync::Arc;
@@ -77,7 +77,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use a2a_protocol_types::budget::BudgetStatus;
-use a2a_protocol_types::idempotency;
 use a2a_protocol_types::{MessageSendParams, StreamResponse};
 
 use crate::client::A2aClient;
@@ -88,6 +87,7 @@ mod child_budget;
 mod continuation;
 mod drop;
 mod journal;
+mod keys;
 mod options;
 mod origin;
 mod outcome;
@@ -173,9 +173,8 @@ impl Delegation {
     /// Sends `params` as a streaming message and returns the handle following
     /// it. Nothing is cancelled until the handle is asked to, or dropped.
     ///
-    /// The message is given a fresh idempotency key when it has none and
-    /// the client knows its agent honours keys (see the [module docs](self));
-    /// a key already on the message is kept.
+    /// The message is given a fresh idempotency key when it has none (see
+    /// the [module docs](self)); a key already on the message is kept.
     ///
     /// # Errors
     ///
@@ -185,43 +184,8 @@ impl Delegation {
         client: Arc<A2aClient>,
         mut params: MessageSendParams,
     ) -> ClientResult<Self> {
-        if client.honours_idempotency() && matches!(idempotency::key_of(&params.message), Ok(None))
-        {
-            // A fresh key is 64 hex digits, always valid, so this cannot fail.
-            let _ = idempotency::set_key(&mut params.message, &fresh_key());
-        }
-        let idempotency_key = idempotency::key_of(&params.message)
-            .ok()
-            .flatten()
-            .map(str::to_owned);
-        let tenant = params.tenant.clone();
-        let message = params.message.clone();
-        let stream = client.stream_message(params).await?;
-        Ok(Self {
-            client,
-            tenant,
-            stream: Some(stream),
-            task_id: None,
-            settled: None,
-            armed: true,
-            id_wait: DEFAULT_ID_WAIT,
-            renewal: None,
-            budget: None,
-            idempotency_key,
-            origin: Origin::current(),
-            resume_policy: ResumePolicy::default(),
-            last_event_id: None,
-            streak: 0,
-            resumed_at: None,
-            opened_at: Some(tokio::time::Instant::now()),
-            events_since_open: 0,
-            message: Some(message),
-            context_id: None,
-            handed_back: false,
-            continued: 0,
-            hand_off_policy: HandOffPolicy::default(),
-            journal: None,
-        })
+        let added = keys::add_key(&mut params);
+        Self::start_keyed(client, params, added).await
     }
 
     /// The idempotency key the child's message carried: the caller's, or the
