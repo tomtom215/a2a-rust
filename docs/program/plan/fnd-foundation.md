@@ -121,7 +121,7 @@ that touches a gate re-proves it with `scripts/prove_gates_fail.sh` or `scripts/
   worktree it exits 0 in 12 s and makes no `target/`; `--list` shows "--quick 9 command(s), none that
   builds"; `scripts/check_gate_inventory.sh` exits 0; with a blank line at the top of
   `crates/a2a-protocol-types/src/signing.rs`, which the RFC ledger cites, it exits 1 with
-  `check_rfc_ledger.py` failed. No new gate, so no new injection in `scripts/prove_gates_fail.sh`.
+  `scripts/check_rfc_ledger.py` failed. No new gate, so no new injection in `scripts/prove_gates_fail.sh`.
 
 ## FND-05: One register for what is open
 
