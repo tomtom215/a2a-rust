@@ -396,6 +396,8 @@ injection_for() {
             echo "tck_untested_map" ;;
         *"check_package_excludes.py"*)
             echo "package_excludes" ;;
+        *"check_release_ci_env.py"*)
+            echo "release_ci_env" ;;
         *"check_no_model_artifacts.py"*)
             echo "no_model_artifacts" ;;
         *"check_net_copies.py"*)
@@ -606,6 +608,7 @@ expected_marker() {
         rfc_ledger)       echo "no \`fn alg_none_is_rejected\`" ;;
         tck_untested_map) echo "no \`fn card_sign_002_signatures_are_not_part_of_the_signed_payload\`" ;;
         package_excludes) echo "not excluded" ;;
+        release_ci_env)   echo "CARGO_PROFILE_DEV_DEBUG: ci.yml sets '0', release.yml does not set it" ;;
         no_model_artifacts) echo "a model-format file (.gguf)" ;;
         # The function's name and the verb, not the label that opens the line:
         # the label is the pair of paths, which any drift in that pair shares.
@@ -1417,6 +1420,12 @@ edit(
     exactly_one=False,
 )
 PY
+            ;;
+        release_ci_env)
+            # The v0.16.0 defect verbatim: release.yml without ci.yml's
+            # `CARGO_PROFILE_DEV_DEBUG: 0` (its first two runs ran out of disk).
+            note_touched ".github/workflows/release.yml"
+            sed -i '/^  CARGO_PROFILE_DEV_DEBUG: 0$/d' .github/workflows/release.yml
             ;;
         package_excludes)
             # Drop one `publish = false` member from ci.yml's exclude list.

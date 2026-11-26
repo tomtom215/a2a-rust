@@ -270,7 +270,10 @@ The qualification matrix's "Not covered" list is item 4.
     the build environment of the two files agrees, or have the release call
     `ci.yml`'s test job. The jobs after `ci` (package, publish dry run,
     GitHub release, CLI binaries, the image) run only on a tag, so a tag is
-    where a defect in them is first seen.
+    where a defect in them is first seen. (The environment half done
+    2026-11-26, FND-09 step 2: `scripts/check_release_ci_env.py`, in
+    `static-checks`, fails when the two files' `RUSTFLAGS`, `RUSTDOCFLAGS` or
+    `CARGO_*` differ. The jobs after `ci` are still first run at a tag.)
 11. `[0.16.x]` `crates/a2a-protocol-server/tests/statement_count.rs` counts
     0 statements when the server has SSL on (sqlx's `sslmode=prefer`
     encrypts what its counting proxy reads), and its message then says to

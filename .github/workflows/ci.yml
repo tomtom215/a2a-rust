@@ -286,6 +286,13 @@ jobs:
       - name: Packaging excludes every unpublishable member
         run: python3 scripts/check_package_excludes.py
 
+      # release.yml's `ci` job is a reduced copy of this file's build jobs,
+      # and the first two release runs of v0.16.0 ran out of disk because it
+      # lacked this file's `CARGO_PROFILE_DEV_DEBUG: 0`. The build variables
+      # (RUSTFLAGS, RUSTDOCFLAGS, CARGO_*) of the two must agree.
+      - name: The release builds under the environment CI builds under
+        run: python3 scripts/check_release_ci_env.py
+
       # `a2a-protocol-sdk = "0.7"` means `^0.7`, which resolves to nothing in
       # the 0.12 line — so a reader who copies it gets a five-minor-old SDK
       # and none of the fixes since. Nothing checked prose versions, and they
