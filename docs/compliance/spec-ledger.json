@@ -73,7 +73,7 @@
    "severity": null,
    "impl_evidence": [
     "book/src/reference/upgrading.md:4 \"# Upgrading Between Minor Versions\"",
-    "CHANGELOG.md:13336 \"## [0.5.0] - 2026-04-02\""
+    "CHANGELOG.md:13359 \"## [0.5.0] - 2026-04-02\""
    ],
    "test_evidence": [
     "book-tests/tests/upgrading_guide.rs:92 every_breaking_minor_has_a_section_in_the_upgrade_guide"
@@ -438,7 +438,7 @@
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:1549 InMemoryQueueReader::next_frame",
     "crates/a2a-protocol-server/src/streaming/event_queue/message_fold.rs:85 Turn::fold",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:741 InMemoryQueueWriter::write_in_order",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:597 process_folded_message",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:608 process_folded_message",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:968 SyncCollector::fold_message",
     "crates/a2a-protocol-server/src/handler/messaging/create.rs:83 continues",
     "crates/a2a-protocol-server/src/handler/messaging/terminal.rs:364 TerminalTracking::repark_if_silent"
@@ -493,7 +493,7 @@
     "crates/a2a-protocol-server/src/handler/messaging/respond.rs:74 RequestHandler::respond_replay",
     "crates/a2a-protocol-server/src/streaming/event_queue/message_fold.rs:85 Turn::fold",
     "crates/a2a-protocol-server/src/streaming/event_queue/in_memory.rs:741 InMemoryQueueWriter::write_in_order",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:597 process_folded_message",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:608 process_folded_message",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:968 SyncCollector::fold_message"
    ],
    "test_evidence": [
@@ -9542,7 +9542,7 @@
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/tests/executor_event_fields.rs:167 an_executor_event_missing_a_required_field_is_refused",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1773 an_artifact_update_with_no_parts_is_dropped_appended_or_not",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1784 an_artifact_update_with_no_parts_is_dropped_appended_or_not",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1618 an_appended_chunk_with_no_parts_is_dropped",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1567 artifact_with_empty_parts_is_dropped_when_not_appending",
     "crates/a2a-protocol-server/tests/artifact_parts.rs:57 an_artifact_with_no_parts_is_not_streamed",
@@ -9734,14 +9734,14 @@
    "severity": null,
    "impl_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:709 SyncCollector::process_event",
-    "crates/a2a-protocol-server/src/handler/event_processing/mod.rs:238 merge_append",
+    "crates/a2a-protocol-server/src/handler/event_processing/mod.rs:270 merge_append",
     "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:152 process_event_with"
    ],
    "test_evidence": [
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1666 artifact_append_merges_into_the_existing_artifact",
     "crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs:1791 artifact_append_targets_the_matching_id_not_another",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1834 append_merges_and_non_append_does_not",
-    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1901 append_merges_into_the_matching_artifact_not_another"
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1845 append_merges_and_non_append_does_not",
+    "crates/a2a-protocol-server/src/handler/event_processing/background/state_machine.rs:1912 append_merges_into_the_matching_artifact_not_another"
    ],
    "notes": "Parts extended and metadata merged into the artifact with matching id.",
    "auditor": "G",

@@ -71,7 +71,10 @@ The qualification matrix's "Not covered" list is item 4.
 
 1. `[0.16.x]` A store outage longer than `store_write_retry` loses the event
    being written and can leave a task unfinished (X-10). Until it is fixed it
-   is a Known Limitation of 0.16.0.
+   is a Known Limitation of 0.16.0. (Done 2026-11-26, COR-01: a task's ending
+   the store did not take is written again until it does, and a breaker keeps
+   an outage from costing every queued event the whole budget; an ordinary
+   event is still lost to an outage longer than the budget, by design.)
 2. `[0.16.x]` A `CancelTask` of a parked task writes a status with no event;
    announce it from `CancelTask` (E-F25, X-11; ADR 0057 names the step).
 3. `[0.16.x]` `CI1`, the two macOS discovery tests that failed on `main` once:
@@ -289,7 +292,8 @@ Seen while preparing 0.16.0; each is a class to remove, not one site.
 6. A limitation restated in an ADR, a doc comment and the changelog, so a fix
    corrects one and leaves two.
 7. A write that is retried, then logged and dropped, when what it carried was
-   a task's ending (X-10).
+   a task's ending (X-10). (Done 2026-11-26: see *Fleet and failure correctness*
+   item 1.)
 
 ## 0.8 — removals this repository committed to — **DONE 2026-08-13**
 

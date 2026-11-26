@@ -49,8 +49,8 @@ use crate::streaming::event_queue::applied::AppliedMark;
 use crate::streaming::event_queue::carries_terminal_state;
 use crate::streaming::event_queue::terminal_gate::TerminalGate;
 
+use super::Reservation;
 use super::state_machine::{BackgroundDeps, Outcome, process_queued_event};
-use super::{Reservation, record_event};
 
 /// The most reservations a processor holds unsettled at once. Past it an event
 /// is not reserved for, and its push is the lane's, after it is stored (the
@@ -91,10 +91,22 @@ pub(super) struct Processor<'a> {
     /// statement about that event if nothing later has moved the position
     /// (adversarial review R2, 2026-11-12).
     unsettled: Vec<Reservation>,
+    /// A terminal event the store did not confirm, written again by
+    /// [`close_out`](Self::close_out) until the store rules on it (COR-01).
+    pending_ending: Option<pending::PendingEnding>,
+    /// The breaker (COR-01): a write has just spent the whole
+    /// `store_write_retry` on an unavailable store, so the writes behind it
+    /// are tried once each, not each for the whole budget, until one lands.
+    store_down: bool,
+    /// The limits the folds run under while the breaker is open: the
+    /// handler's, with no write retried.
+    down_limits: Option<&'a crate::handler::HandlerLimits>,
+    /// Fired when the handler begins to shut down.
+    shutdown: CancellationToken,
 }
 
 impl<'a> Processor<'a> {
-    pub(super) const fn new(
+    pub(super) fn new(
         task_id: &'a TaskId,
         deps: BackgroundDeps<'a>,
         last_task: Task,
@@ -113,6 +125,10 @@ impl<'a> Processor<'a> {
             pushed_terminal: false,
             ended: false,
             unsettled: Vec::new(),
+            pending_ending: None,
+            store_down: false,
+            down_limits: None,
+            shutdown: CancellationToken::new(),
         }
     }
 
@@ -124,6 +140,7 @@ impl<'a> Processor<'a> {
     /// Its webhooks have not heard, and its log has no ending.
     pub(super) async fn close_out(&mut self) {
         self.settle_unsettled().await;
+        self.write_pending_ending().await;
         if self.ended {
             return;
         }
@@ -222,23 +239,19 @@ impl<'a> Processor<'a> {
         // the event is written, so a stop at any later point leaves rows the
         // worker settles from the store, rather than a stored event with no
         // delivery (audit H14).
-        let reservation = match (&event, seq) {
-            (Ok(queued), Some(_)) if self.unsettled.len() < MAX_UNSETTLED => {
-                self.deps
-                    .push
-                    .reserve(self.task_id, seq, &queued.event)
-                    .await
-            }
-            _ => None,
-        };
+        let reservation = self.reserve(&event, seq).await;
 
         // A terminal event is recorded *after* the store rules on it, so the
         // log holds the verdict; everything else is recorded first, as it
         // always was (see `record_event`).
-        if terminal.is_none() {
-            self.log(&event).await;
+        if terminal.is_none() && !self.log(&event).await {
+            self.store_down = true;
         }
         let pushes_terminal = matches!(&terminal, Some(StreamResponse::StatusUpdate(_)));
+        // Kept to be written again should the store not confirm it.
+        let replay = terminal
+            .as_ref()
+            .map(|ending| pending::PendingEnding::of(ending, seq, &event));
 
         let gate = self.gate;
         let release = |verdict: &StreamResponse| {
@@ -254,11 +267,12 @@ impl<'a> Processor<'a> {
                 release(event);
             }
         };
+        let deps = self.fold_deps();
         let fold = process_queued_event(
             event,
             self.task_id,
             &mut self.last_task,
-            self.deps,
+            deps,
             Some(&on_persisted),
         );
         // The store records `seq` with each write the fold makes, so a
@@ -267,28 +281,43 @@ impl<'a> Processor<'a> {
         // reservation is unsettled (see `unsettled`).
         let position = if self.unsettled.is_empty() { seq } else { None };
         let folded = crate::store::applied::scope_if(position, fold);
-        let outcome = match &reservation {
-            // Boxed: the scope would otherwise hold the whole fold inline, in
-            // a future that is moved at every poll wrapper above it.
-            Some(reservation) => Box::pin(reservation.scope(folded)).await,
-            None => folded.await,
-        };
+        let (outcome, unavailable) = pending::fold_noting(folded, reservation.as_ref()).await;
+        // The breaker opens on a store that stayed unavailable, not on one
+        // that refused the write: that one is up, and has ruled.
+        self.store_down |= unavailable;
 
-        self.finish(outcome, seq, terminal, reservation, pushes_terminal)
+        let unconfirmed = self
+            .finish(outcome, seq, terminal, reservation, pushes_terminal)
             .await;
+        // Written again only when the store could not be reached: an ending it
+        // refused is not one it will take later.
+        if unconfirmed && unavailable {
+            self.pending_ending = replay;
+        }
     }
 
     /// What the fold's outcome means for the run: another writer's verdict,
     /// a lost claim, or an event stored (or not) and, if terminal, ended.
+    /// Whether a terminal event went unconfirmed (COR-01).
     async fn conclude(
         &mut self,
         outcome: Outcome,
         seq: Option<u64>,
         terminal: Option<StreamResponse>,
         pushes_terminal: bool,
-    ) {
+    ) -> bool {
+        // The breaker (opened in `handle`, on a store that stayed unavailable)
+        // closes on any write the store answered.
+        if matches!(
+            outcome,
+            Outcome::Persisted | Outcome::Refused(_) | Outcome::ClaimLost
+        ) {
+            self.store_down = false;
+        }
         match outcome {
-            Outcome::Refused(conflict) => self.supersede(&conflict, seq, terminal.is_some()).await,
+            Outcome::Refused(conflict) => {
+                self.supersede(&conflict, seq, terminal.is_some()).await;
+            }
             Outcome::ClaimLost => self.lose_claim(seq, terminal.is_some()).await,
             Outcome::StoreFailed => {
                 // The store does not hold the ending, or cannot say: the
@@ -297,6 +326,7 @@ impl<'a> Processor<'a> {
                 // `close_out` announces the ending if the store comes to hold it.
                 if terminal.is_some() {
                     self.unconfirm(seq);
+                    return true;
                 }
             }
             Outcome::Persisted | Outcome::NotPersisted => {
@@ -311,6 +341,25 @@ impl<'a> Processor<'a> {
                     self.ended = true;
                 }
             }
+        }
+        false
+    }
+
+    /// Reserves `event`'s push rows in the outbox, unless it has no position
+    /// or too many reservations are unsettled already.
+    async fn reserve(
+        &self,
+        event: &A2aResult<StreamEvent>,
+        seq: Option<u64>,
+    ) -> Option<Reservation> {
+        match (event, seq) {
+            (Ok(queued), Some(_)) if self.unsettled.len() < MAX_UNSETTLED => {
+                self.deps
+                    .push
+                    .reserve(self.task_id, seq, &queued.event)
+                    .await
+            }
+            _ => None,
         }
     }
 
@@ -416,28 +465,10 @@ impl<'a> Processor<'a> {
             gate.resolve(seq, verdict);
         }
     }
-
-    /// Records `event` in the log at `seq`.
-    async fn record(&self, seq: Option<u64>, event: StreamResponse) {
-        if let Some(seq) = seq {
-            self.log(&Ok(StreamEvent::at(seq, event))).await;
-        }
-    }
-
-    /// Records `event` in the log at the position it carries, if any.
-    async fn log(&self, event: &A2aResult<StreamEvent>) {
-        record_event(
-            self.deps.task_store,
-            self.task_id,
-            event,
-            self.deps.metrics,
-            self.deps.limits.store_write_retry,
-        )
-        .await;
-    }
 }
 
 mod endings;
+mod pending;
 mod reconcile;
 
 #[cfg(test)]
@@ -451,3 +482,7 @@ mod close_out_tests;
 #[cfg(test)]
 #[path = "processor_reserve_tests.rs"]
 mod reserve_tests;
+
+#[cfg(test)]
+#[path = "outage_tests.rs"]
+mod outage_tests;

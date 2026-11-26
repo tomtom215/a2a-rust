@@ -64,6 +64,11 @@ impl RequestHandler {
         let task_store = Arc::clone(&self.task_store);
         let push = self.push_lanes.clone();
         let limits = self.limits.clone();
+        // What the processor's writes run under while its breaker is open
+        // (COR-01): the same limits, with no write retried.
+        let mut down_limits = limits.clone();
+        down_limits.store_write_retry = std::time::Duration::ZERO;
+        let shutdown = self.in_flight.shutdown_token();
         // Carried into the spawned task so failures here are reportable. The
         // trace macros below compile to nothing without the (non-default)
         // `tracing` feature, which used to make every failure in this task
@@ -180,7 +185,8 @@ impl RequestHandler {
                     cancel,
                     gate.as_deref(),
                     applied.as_deref(),
-                );
+                )
+                .watching(shutdown, &down_limits);
                 let mut executor_done = false;
                 let mut handle_fuse =
                     crate::handler::messaging::WatchedExecutor::Spawned(Some(executor_handle));
@@ -258,6 +264,10 @@ impl RequestHandler {
 ///
 /// [`HandlerLimits::store_write_retry`]: crate::handler::HandlerLimits::store_write_retry
 ///
+/// Returns `false` when the store was unavailable for the whole of `retry`,
+/// which a processor takes as "the store is down" (its breaker, COR-01), and
+/// `true` otherwise, including when there was nothing to record.
+///
 /// The position is not chosen here. It was assigned by
 /// [`InMemoryQueueWriter::write`](crate::streaming::InMemoryQueueWriter) and
 /// travelled with the event, so the number written to the log is the same one
@@ -270,20 +280,20 @@ pub(in crate::handler::event_processing) async fn record_event(
     event: &a2a_protocol_types::error::A2aResult<crate::streaming::StreamEvent>,
     metrics: &dyn crate::metrics::Metrics,
     retry: std::time::Duration,
-) {
+) -> bool {
     if !task_store.supports_event_log() {
-        return;
+        return true;
     }
     let Ok(event) = event else {
         // An error in the stream is the queue reporting lag, not something
         // the agent emitted, so there is nothing to record.
-        return;
+        return true;
     };
     let Some(seq) = event.seq else {
         // Server-synthesized: the subscribe snapshot, or the terminal frame
         // the reattach hook builds from stored state. Neither is something
         // the agent emitted, so neither belongs in the record of what it did.
-        return;
+        return true;
     };
     let appended = super::persisting(
         retry,
@@ -302,5 +312,7 @@ pub(in crate::handler::event_processing) async fn record_event(
             crate::metrics::persistence_operation::EVENT_APPEND,
             e.metric_label(),
         );
+        return !e.is_unavailable();
     }
+    true
 }

@@ -372,14 +372,25 @@ pub(super) async fn process_event_with(
             }
             artifacts.push(update.artifact.clone());
             let pushed_index = artifacts.len() - 1;
-            if let Err(e) = task_store
-                .save_artifact_delta(
-                    last_task,
-                    ArtifactDelta::Pushed {
-                        index: pushed_index,
-                    },
-                )
-                .await
+            // Retried like every other write of the fold: until 2026-11-26 a new
+            // artifact was written once, so a store unavailable for a moment
+            // lost it. A push run again is safe: it is compare-and-append, so
+            // one that landed before its answer was lost does not match again
+            // and the store falls back to the caller's upsert.
+            if let Err(e) = crate::handler::event_processing::persisting(
+                retry,
+                metrics,
+                persistence_operation::ARTIFACT_PUSH,
+                || {
+                    task_store.save_artifact_delta(
+                        last_task,
+                        ArtifactDelta::Pushed {
+                            index: pushed_index,
+                        },
+                    )
+                },
+            )
+            .await
             {
                 if let Some(refused) = refusal(&e) {
                     return refused;

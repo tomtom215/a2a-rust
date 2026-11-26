@@ -137,11 +137,11 @@
  {
   "id": "X-10",
   "source": "docs/audits/2026-11-11-external-review/findings.json",
-  "status": "CONFIRMED, OPEN",
+  "status": "fixed (COR-01; recorded 2026-11-26)",
   "finding": "an outage longer than the write retry loses the event and can drop the failed status",
   "blocker": "no",
   "basis": "read",
-  "evidence": "A data-loss path in a failure mode: an outage longer than HandlerLimits::store_write_retry (30 s, crates/a2a-protocol-server/src/handler/limits/mod.rs:48) loses the event being written (book/src/reference/configuration.md:76 says so). It was not in the release notes before this pull request, which would have made it a blocker by the rule; this pull request discloses it in Known Limitations, \"A store outage longer than store_write_retry\", with the workaround. No fix was attempted on 2026-11-18: a fix is a library change. Planned: ROADMAP.md, After 0.16.0, Fleet and failure correctness, item 1. The notes: named in Known Limitations (CHANGELOG.md:3259)."
+  "evidence": "A data-loss path in a failure mode: an outage longer than HandlerLimits::store_write_retry (30 s, crates/a2a-protocol-server/src/handler/limits/mod.rs:48) loses the event being written (book/src/reference/configuration.md:76 says so). It was not in the release notes before this pull request, which would have made it a blocker by the rule; this pull request discloses it in Known Limitations, \"A store outage longer than store_write_retry\", with the workaround. No fix was attempted on 2026-11-18: a fix is a library change. Planned: ROADMAP.md, After 0.16.0, Fleet and failure correctness, item 1. The notes: named in Known Limitations (CHANGELOG.md:3259). Fixed 2026-11-26 (COR-01): an ending the store did not confirm is kept and written again by the processor's close-out (crates/a2a-protocol-server/src/handler/event_processing/background/processor/pending.rs, write_pending_ending); a breaker tries the writes behind an outage once each (processor.rs, store_down). Tests: background/outage_tests.rs, an_ending_written_during_a_long_outage_is_stored_when_the_store_returns (left: Working, right: Completed before the fix) and five more. An ordinary event is still lost to an outage longer than the budget."
  },
  {
   "id": "X-11",

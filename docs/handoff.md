@@ -650,14 +650,11 @@ against the 0.16.0 work: check `CHANGELOG.md`'s `### Fixed` and the register's s
   timeout, a lock, a deadlock) and outages past the acquire timeout. An
   executor that fills its queue meanwhile waits as long as that retry
   (`HandlerLimits::store_write_retry` says how long one write can take, about
-  a minute with the defaults). Not solved: an outage longer than the retry
-  loses the event being written and then spends the whole retry again on
-  each event behind it, so a queue of N events drains in N × 30 s while the
-  store is down, and the executor's `Failed` status, if its own write gave
-  up, can be dropped, leaving the task unfinished in the store with nothing
-  to finish it (`write_failure_event` logs and moves on). A breaker that
-  stops retrying once one write has used the whole budget, and a direct
-  store write of the failure, are the candidates; neither is built. The
+  a minute with the defaults). An outage longer than the retry still loses
+  an ordinary event being written; since COR-01 (2026-11-26) a task's ending
+  is kept and written again until the store takes it, and a breaker tries the
+  events behind a spent budget once each, so the queue no longer drains in
+  N times the retry. The
   live scripts behind these figures (round trips, outages, partitions, the
   upgrade, the soak matrix) are in `scripts/live/`, with a README saying what
   each needs; `tests/transient_store_errors` holds the CI-sized outage
