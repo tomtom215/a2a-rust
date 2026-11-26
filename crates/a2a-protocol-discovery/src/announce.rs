@@ -320,7 +320,7 @@ mod tests {
             .status()
             .ok()
             .and_then(|r| r.recv_timeout(std::time::Duration::from_secs(2)).ok());
-        !matches!(status, Some(mdns_sd::DaemonStatus::Running))
+        !matches!(status, Some(mdns_sd::DaemonStatus::Running(_)))
     }
 
     /// Dropped without [`Announcer::shutdown`], an announcer still withdraws

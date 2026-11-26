@@ -19,111 +19,51 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-**2026-11-25: the plan for the work after 0.16.0 is written and approved, and its decisions are made.**
+**2026-11-26: an external review was triaged, and the first batch of work from it is in review.**
 Start a session at [`CLAUDE.md`](../CLAUDE.md), then [`docs/program/README.md`](program/README.md) §6.
 
-- **What exists.** `docs/program/`: the findings of a deep dive (the SDK, the swarm features, A2A 1.1, the
-  peer SDKs, observability, performance, scale, the engineering system); the work packages by workstream
-  under `plan/`; their status in `status.json`; the target sheet; the seven audits behind them, frozen under
-  `evidence/`; and `tools/plan_check.py`, which checks all of it. Count the packages and what is done with
-  the tool, not from this file.
-- **What is decided.** All fourteen decisions of the plan's §4, each as recommended, on 2026-11-25; they
-  are under *Decisions the maintainer made* below and in `status.json`. No package waits on the maintainer.
-- **What is built.** One package: FND-01, the `CLAUDE.md` at the repository root. Everything else is
-  `todo`. The audits built and measured nothing; every anchor in the plan is of `2058058d`.
-- **What to do first.** `python3 docs/program/tools/plan_check.py . --next` lists every package that is
-  ready. The plan's §5, *Order of work*, says how to choose among them. Nothing there is a quota: take a
-  ready package, finish it to its Accept checks, record it, take the next; independent packages can run in
-  parallel worktrees.
-- **Where it is.** On `main`: pull request #228 merged it on 2026-11-25 (`git log --oneline -1 origin/main
-  -- docs/program/README.md`). A package branches from `main`.
-- **Stale below.** Pull requests #220, #221 and #222 are merged (`git log --oneline -3 origin/main`), so
-  item 1 of *First, next* is done. The rest of this section is as the session of 2026-11-22 left it;
-  package FND-03 lists what in it and in other documents is stale and corrects it.
+- **The external review of 2026-11-25** (an outside reviewer, no build or run: source, CI logs, documents) was checked row by
+  row against `92593fc9`: [`docs/program/evidence/08-external-review-triage.md`](program/evidence/08-external-review-triage.md).
+  Its defects are real and, but for three, already in the plan; its 24 proposed packages (EXT-01 to EXT-24) are mapped there onto
+  the plan's packages. **Six decisions it raises are the maintainer's and are open** (its §8, D-1 to D-6): no package that
+  depends on one is started. D-1 (whether a bare 503 is safe to re-send for a non-idempotent call) changes COR-05's Accept; until
+  it is decided COR-05 is built as written.
+- **In review, branch `claude/lucid-shannon-y7kvu8`:** the triage; floors for what the published crates reach through other
+  crates (`scripts/check_advisory_floors.py` now walks the whole graph); the four Dependabot updates of 2026-11-23 to 25 folded in
+  (#223, #224, #225, #227, which the maintainer closes once this merges); `mdns-sd` 0.22.0 reviewed (ADR 0029); FND-03; the
+  gate-reachability check reading tracked manifests only.
+- **Next, built on a local branch:** COR-01 (an ending the store did not take is written again; a breaker for the events behind
+  an outage), with paused-clock tests. Then COR-02.
+- **What is built of the plan:** count with `python3 docs/program/tools/plan_check.py . --next`, not from this file.
 
-State on 2026-11-22 (Europe/Berlin evening), the first session after 0.16.0 shipped. Re-run every command named; copy no figure.
+Small defects found and not yet fixed (each low):
 
-- **Released.** `v0.16.0` points at `334fa45c`, the merge of #219 (`git rev-parse v0.16.0^{commit}`), which is also `main`
-  (`git rev-parse origin/main`). The GitHub release is published (2026-11-19). crates.io serves 0.16.0 of
-  `a2a-protocol-types`, `-client`, `-server` and `-sdk`; `a2a-protocol-slimrpc` has never been published (the crates.io API answers
-  "does not exist"). No issue is open.
-- **CI on `main` since the tag.** Every scheduled workflow (Fuzz, Soak, ITK, ITK nightly, OSV-Scanner) is green on `334fa45c` except
-  `Official TCK`, red every night from 2026-11-19 to 2026-11-22. Cause, read in run 44981785033: the nightly grades upstream a2a-tck
-  `main` (`5e6f37c`), where a2aproject/a2a-tck#276 fixed the suite's two defects this repository had baselined, so the four
-  baselined pairs passed and the gate failed on a stale baseline. **Fixed on this branch** (`claude/admiring-sagan-2yed5v`): the
-  pin moved to `5e6f37c`, the baseline is empty, and the documents that said "2 fail" say 87 of 115 MUSTs pass and none fails
-  (`docs/official-tck-findings.md` §27 has the measurement). The whole `official-tck` job passed here at the new pin with
-  `scripts/run_workflow_job.py`. Since a2a-tck `104a7b4` the suite needs Python >= 3.15, which uv downloads by itself.
-- **Dependabot #213, #216, #217.** The maintainer chose on 2026-11-22 to take all three into a pull request of ours:
-  #221, **merged 2026-11-23** (`2504ff25`). #216 could not merge as it was: it moved Alertmanager to 0.35.0 in the compose file and
-  not in `deploy/observability/scripts/install_tools.sh`, which `check_stack.py` refuses; #221 moves both. The three Dependabot pull
-  requests are superseded and the maintainer closes them.
-- **A2A v1.1 exists as a release candidate.** Upstream `a2aproject/A2A` tagged `v1.1.0-rc` on 2026-10-29 (commit `78e1d6a1`, on
-  the `dev-1.1` line; not in `main`). Its `specification/a2a.proto` differs from v1.0.1 by 208 added and 18 removed lines
-  (`git diff --stat v1.0.1 v1.1.0-rc -- specification/`): a bidirectional `SendLiveMessage` RPC with `StreamRequest`/`StreamError`,
-  a task timeline (`TimelineEntry`, `timeline_length`) with `generation` counters, `TaskMessageUpdateEvent`, and `history_length`
-  and `history` marked deprecated. `scripts/check_a2a_proto_upstream.sh` excludes pre-releases by design, so nothing here reported
-  it; upstream `main`'s proto differs from v1.0.1 only in one comment (5 lines). **Nothing is built against it**: that needs the
-  maintainer's decision (Phase 1 of the program; see *First, next*).
-- **Counts that differ from the session prompt of 2026-11-22.** `find crates/*/src -name '*.rs' | wc -l` gives 1,036 files and
-  302,309 lines (the prompt said 927 and about 264,000); `ls scripts | wc -l` gives 84 (the prompt said 85). ADRs (58), workflows
-  (22) and the register (130 rows: 92 `read`, 38 `summary`) match.
-- **Register rows re-opened this session** (Phase 1 step 5): `X-10` and `E-F25` were confirmed by reading the code, not by a test.
-  `X-10`: when `persisting` gives up after `store_write_retry` (30 s, `handler/limits/mod.rs:48`), a status update is reverted in
-  memory and logged (`handler/event_processing/background/state_machine.rs:197-215`); nothing re-queues it. `E-F25`: a
-  `CancelTask` of a task with no live queue sends the executor's cancel to a throwaway writer and then writes `Canceled` with
-  `save_status_delta` and no event (`handler/lifecycle/cancel_task.rs:112-163`). The other 128 rows were not re-opened.
-- **RUSTSEC-2026-0592, found 2026-11-22 by CI on #220.** `url` 2.5.8 and earlier overflows the stack in `Url::origin()` on nested
-  `blob:` URLs, which aborts the process. `main`'s lockfiles held 2.5.8, so `cargo-deny`, OSV-Scanner's `Rust lockfiles` and the
-  SLIMRPC binding's own `cargo-deny` step failed on every pull request. Fixed by #221 (merged 2026-11-23, `2504ff25`): `url` 2.5.9 and
-  `form_urlencoded` 1.2.3 in the five lockfiles that held 2.5.8. In the published crates `url` comes only through `sqlx` (the server's
-  `sqlite` and `postgres` features). No code here calls `Url::origin()`; whether `sqlx` calls it on untrusted input was **not
-  checked**, so whether 0.16.0's users are exposed is not known. Library users choose their own `url`:
-  `CHANGELOG.md` `[Unreleased]`, *Security*, tells them to run `cargo update -p url`.
-- **Smaller defects found, not fixed:** `docs/readiness-bar.md` says "**F1 is measured**" (its 2026-11-11 section) while its
-  2026-11-12 section and the machine-readable block list F1 as not measured (low; documents disagree).
-  `book/src/reference/conformance-history/suppressions.md` W9 said "7 requirements, 9 pairs" since 2026-11-06 when the baseline held
-  2 and 4 (fixed on this branch, with the row retired).
-- **Baseline of 2026-11-22** (Phase 1 step 4), with `scripts/run_workflow_job.py` and Rust 1.100.0, on `main`'s code plus this
-  branch's documents and workflow comments (no Rust change): `ci.yml` `static-checks` PASS (47 steps; the first run failed
-  `check_doc_versions.py` on this branch's README wording, fixed), `doc` PASS, `clippy --matrix os=ubuntu-latest` PASS (14 steps),
-  `features` PASS (911 s), `test-postgres --services-ready` PASS (6 steps) on PostgreSQL 16.15 **with `PGSSLMODE=disable`**, and the
-  same job PASS on 18.7 and 19.0 (Docker images, SSL off). `official-tck` PASS at the new pin. `test --matrix rust=stable
-  --matrix os=ubuntu-latest`: steps 4 to 18 passed (the default-features run: 3,378 tests passed, 16 skipped); step 19,
-  `Test (all features)`, failed while `rustc` compiled the `multi_lang_team` example, with the message cut from the log, in the
-  window where the session's disk allowance ran out. Re-run alone on an emptied `target/`
-  (`cargo nextest run --profile ci --workspace --all-features`): 8,000 tests passed, 271 skipped, 0 failed. Step 20, `--no-default-features`, the same way: 7,968 passed, 271
-  skipped, 0 failed. The doctest steps (21 to 23) were not run. Not run: the readiness benchmark
-  (`docs/readiness-bar.md`), whose numbers need an idle machine; the 1.94 and macOS/Windows legs; mutation testing (no Rust change).
-- **`statement_count` counts nothing over TLS** (low; a test-harness defect, found by the baseline). On a PostgreSQL with `ssl = on`
-  (Ubuntu's package default; CI's `postgres` image has it off) sqlx's default `sslmode=prefer` encrypts the session, the test's
-  counting proxy sees no plaintext frame, every count is 0, and the failure says to "update the constants", which would be wrong.
-  `PGSSLMODE=disable` makes both its tests pass with (8, 11). Fix: refuse, in the test, a server that answers the SSLRequest `S`.
-- **PostgreSQL versions.** postgresql.org (`versions.json`, read 2026-11-22): 19.0 released 2026-11-19; supported majors 15 to 19.
-  CI ran only 16. The maintainer chose on 2026-11-22: 18 in every job, and `test-postgres` on 16, 18 and 19. Branch
-  `claude/admiring-sagan-2yed5v-pg`.
+- `statement_count` counts nothing over TLS: with a PostgreSQL whose `ssl = on`, sqlx's `prefer` encrypts the session, the test's
+  counting proxy sees no plaintext, every count is 0, and the failure says to "update the constants", which would be wrong. Run
+  with `PGSSLMODE=disable`. Fix: refuse, in the test, a server that answers the SSLRequest with `S`.
+- `cargo-deny` 0.22.1 (local) reports the `RUSTSEC-2026-0543` ignore in `deny.toml` as "advisory not encountered", on `main` as
+  well; the entry was added under 0.20.2, which found the advisory. Which version CI's `cargo-deny-action` runs, and what it
+  reports, is read from the next CI log before the entry is touched.
+- Whether the nightly `Official TCK` has been green since #220 merged was not checked.
 
 ### First, next
 
-1. Read CI on #220 (TCK pin) and #222 (PostgreSQL versions), each with #221 merged in, and close anything red; after #220 merges,
-   the next nightly `Official TCK` run should be green against upstream `main`.
-2. Phase 2 of the program: **done 2026-11-25.** The plan (`docs/program/README.md`) and the target sheet
-   (`docs/program/target-sheet.md`) are written and approved. The next step is the first ready package:
-   `python3 docs/program/tools/plan_check.py . --next`.
-3. A2A 1.1: **decided 2026-11-25, track it now** (DEC-02). The delta is larger than this file's summary above
-   and upstream has moved since the rc: `docs/program/evidence/01-spec-v1.1-delta.md`; the packages are in
-   `docs/program/plan/spc-spec.md`.
+1. Read CI on this branch's pull request; close anything red in one push.
+2. COR-01, then COR-02 (`docs/program/plan/cor-correctness.md`).
+3. The maintainer's decisions D-1 to D-6 (triage §8), and the open E06 §6 row 12, which EXT-02 and EXT-13 need.
 
 ### Environment facts that still hold
 
-The session image's `stable` was Rust 1.97.0; CI's is 1.100.0 (read from the 2026-11-22 Official TCK log). Install it with
+The session image's `stable` is Rust 1.97.0; CI's is 1.100.0 (read from the 2026-11-22 Official TCK log, and still 1.100.0 on
+2026-11-25 by `channel-rust-stable.toml`). Install it with
 `rustup toolchain install 1.100.0 --profile minimal -c clippy -c rustfmt` and run with `RUSTUP_TOOLCHAIN=1.100.0`. `static-checks`
 needs `ssh-keygen` (`apt-get install -y openssh-client`). The clone is shallow: `git fetch --unshallow --tags origin` first.
 PostgreSQL 16 starts with `pg_ctlcluster 16 main start`. Build with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0
 CARGO_PROFILE_TEST_DEBUG=0`. `docs/compliance/spec-ledger.json` cites `CHANGELOG.md` by line: any line added above the 0.5.0 heading
 fails `check_spec_ledger.py` until the citation moves (it moved from 13290 to 13299 on this branch).
 The disk allowance ended this session once (2026-11-22, during a full workspace `test` job after the other jobs' builds): delete
-`target/debug/{deps,build,incremental}` between big jobs, and never build two worktrees at once. A local PostgreSQL with SSL on
+`target/debug/{deps,build,incremental}` between big jobs, and never build two worktrees at once. Keep a session's own worktree outside the checkout: one under `.claude/worktrees/`
+is ignored by git but was read by gates that walk the directory. A local PostgreSQL with SSL on
 needs `PGSSLMODE=disable` for `statement_count`. `scripts/check_doc_versions.py` requires the README's TCK sentence to read "**N of M MUST requirements pass and F fail**" and to
 agree with the badge.
 
@@ -471,7 +411,11 @@ session start.
    three gates exit 0. Re-run after any further wire change.
 6. **After 0.15.0:** `benches/sdk-comparison/harness/agent-a2a-rust` is pinned
    `=0.14.1` and the results under `benches/sdk-comparison/results/` were
-   measured at 0.14.1, so moving the pin means re-measuring
+   measured at 0.14.1, so moving the pin means re-measuring *(superseded
+   2026-11-25: since `e089619c`, 2026-11-11, the harness is a path dependency
+   on this tree's `a2a-protocol-sdk`, and this tree's figures in
+   `docs/sdk-comparison-2026-11-11.md` were measured with it, 0.14.1 being
+   run there as a separate control)*
    (`benches/sdk-comparison/README.md`); decide whether to publish the SLIMRPC
    binding (it is not on crates.io, and `book/src/bindings/slimrpc.md` shows a
    path dependency until it is). Then debt, starting with the changelog's size
@@ -746,8 +690,11 @@ against the 0.16.0 work: check `CHANGELOG.md`'s `### Fixed` and the register's s
   caller left in a tenant's shared partition. `EncryptedTaskStore` leaves
   ids, states, timestamps, `metadata` and order unprotected, and its seal
   limit is per process while the true budget is per key across processes.
-- **Measurement:** `docs/readiness-bar.md` records no measurement of its rows
-  R1 to R7, C1 to C5 and F1 to F5 (WS3, WS4, WS5: each unmet, not assumed);
+- **Measurement:** `docs/readiness-bar.md` records R1 to R4 and C1 to C5 as
+  measured on 2026-11-12 (over HTTP JSON-RPC, under L1, L3 and L4) and the
+  first half of F1 on 2026-11-11; R5 to R7, F2 to F5 and F1's second half are not measured
+  (each unmet, not assumed; corrected 2026-11-25: this said none of R1 to R7,
+  C1 to C5 and F1 to F5 was measured);
   the 0.9–1.8 µs `ListTasks` gap at 10K tasks is unmeasured. The send
   slowdown is measured (2026-10-24, pinned core, interleaved rounds, five
   runs; the section "the CPU cost of a blocking send"): not slower than
@@ -816,8 +763,9 @@ against the 0.16.0 work: check `CHANGELOG.md`'s `### Fixed` and the register's s
   it was added). The CI run of the pull request is the check of those.
 - **Gates:** a mutation shard that starts after its PR merges grades
   nothing (low); the Windows stress-test connect failure, cause unknown; the
-  benchmark comparison harness pins `=0.14.1`, the newest release on
-  crates.io (checked 2026-10-20), and moves when 0.15.0 is published;
+  benchmark comparison harness pinned `=0.14.1`, the newest release on
+  crates.io (checked 2026-10-20); since 2026-11-11 (`e089619c`) it is a path
+  dependency on this tree (corrected 2026-11-25);
   `prove_workflow_gates_fail.py` needs `ssh-keygen`: a fresh cloud container
   has none, and `apt-get install openssh-client` finds no candidate until
   `apt-get update` has run (it installed 1:9.6p1 after one, 2026-10-24).

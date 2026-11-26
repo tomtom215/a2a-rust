@@ -693,6 +693,10 @@ numbers are at `09b2403`.
   - (d) Admission is per replica: two replicas both accept a continuation of
     the same task and run two executors
     (`tests/multi_replica.rs:556`, `the_single_writer_refusal_does_not_cross_replicas`).
+    *(Superseded, noted 2026-11-25: turn claims in a shared store (2026-10-28) make the refusal cross
+    replicas; that test is gone, and its successor,
+    `the_single_writer_refusal_crosses_replicas` in `crates/a2a-protocol-server/tests/multi_replica.rs`,
+    asserts the opposite on PostgreSQL.)*
     Only the terminal state is protected; earlier writes are last-writer-wins.
 - **Where:**
   - `handler/lifecycle/cancel_task.rs`: :57–61 cancels the local token only;

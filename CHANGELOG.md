@@ -17,12 +17,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   URL overflows the stack and aborts the process. This repository's lockfiles
   now hold 2.5.9 (#221). Among the published crates, `url` is reached only
   through `sqlx`, so only by `a2a-protocol-server` (and `a2a-protocol-sdk`)
-  built with the `sqlite` or `postgres` feature (`cargo tree -i url`). An
-  application resolves its own copy: run `cargo update -p url` and check that
-  its `Cargo.lock` holds 2.5.9 or later. No code in this repository calls
-  `Url::origin()`; whether `sqlx` calls it on untrusted input was not checked.
+  built with the `sqlite` or `postgres` feature (`cargo tree -i url`). Those
+  features now require `url` 2.5.9 or later (next entry), so an application's
+  cargo cannot keep an affected copy. No code in this repository calls
+  `Url::origin()`, and a search of the `sqlx-core`, `sqlx-sqlite` and
+  `sqlx-postgres` 0.9.0 sources finds no call either.
+- **A consumer can no longer resolve a dependency of a dependency inside a
+  RustSec advisory.** The published crates' manifests required non-affected
+  versions of what they name directly, but not of what those crates bring in:
+  through `sqlx`, `a2a-protocol-server` admitted `url` down to 2.2.2, inside
+  RUSTSEC-2026-0592, while every gate was green. `a2a-protocol-types`,
+  `a2a-protocol-client` and `a2a-protocol-server` now set a floor at the first
+  unaffected version of each such crate (among them RUSTSEC-2026-0382 in
+  `rustls-webpki`, RUSTSEC-2026-0258 in `h2` and RUSTSEC-2026-0459 in
+  `libsqlite3-sys`; the manifests name each advisory), each switched on only by the
+  features that bring the crate in: no build gains a crate.
+  `scripts/check_advisory_floors.py` now walks the whole graph the published
+  crates reach and fails on any requirement a consumer could resolve into an
+  advisory. The `RUSTSEC-2026-0459` exception in `deny.toml` is removed:
+  `sqlx` 0.9.1 allows `libsqlite3-sys` 0.40.
 
 ### Changed
+
+- **`a2a-protocol-discovery` uses `mdns-sd` 0.22.0** (was 0.21.7). Since 0.22.0
+  `mdns-sd` keeps the escapes in a full name it reads from the network, so an
+  agent announced as `team.echo` would have been reported with the instance
+  `team\.echo`; `DiscoveredAgent::instance` is now the name as announced,
+  and `fullname` the escaped DNS-SD name (`team\.echo._a2a._tcp.local.`).
+  Other updates: `sqlx` 0.9.1, `uuid` 1.29.3, `bytes` 1.12.2, `zeroize` 1.9.2,
+  `pin-project-lite` 0.2.18 and `clap` 4.6.9 in the lockfiles, and
+  `cargo-deny-action`, `setup-go`, `codeql-action` and `scorecard-action` to
+  their current releases.
 
 - **The official TCK is pinned at `a2a-tck@5e6f37c`, and its baseline of known
   failures is empty.** No MUST requirement the suite grades fails: 87 of 115

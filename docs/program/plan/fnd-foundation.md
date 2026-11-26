@@ -83,6 +83,11 @@ that touches a gate re-proves it with `scripts/prove_gates_fail.sh` or `scripts/
   left with the reason.
 - **Out of scope.** The 41 unmarked rows of `docs/adopter-audit-2026-09-22.md` (FND-05). Restructuring any
   document (FND-05, FND-10).
+- **Done (2026-11-26).** Every row of E06 §5 and E03 §7 has a disposition, listed in the pull request that
+  landed it, and the four commands of *Accept* exit 0. Left by design, each with its owning package: C-03 (a
+  decision, SPC-07), E03 D6 (COR-05), D7 (SWM-01 step 4), D10 (SWM-01 step 3). Found while doing this and
+  corrected in the same pull request: `docs/readiness-bar.md` said the one-core gap "was 4 to 12%", which
+  mixed a throughput gap (6% and 4%) with a CPU gap (12% and 4%) from table 3 of the comparison.
 
 ## FND-04: One build-free pre-commit command
 

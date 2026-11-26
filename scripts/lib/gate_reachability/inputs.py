@@ -20,6 +20,7 @@ make another gate look covered.
 from __future__ import annotations
 
 import re
+import subprocess
 import tomllib
 
 from gate_reachability.model import REPO
@@ -120,12 +121,22 @@ CARGO_GATES = ("fmt", "clippy", "test", "build", "doc", "package", "hack", "run"
 # ── Inputs ───────────────────────────────────────────────────────────────────
 
 
+def tracked_manifests() -> list:
+    """Every Cargo.toml git tracks. Not a walk of the directory: an agent's
+    worktree under `.claude/worktrees/`, a build tree or a scratch copy holds
+    manifests too, and their packages shadowed this repository's own (a
+    worktree's `benches/` was read as this one's, 2026-11-25)."""
+    listed = subprocess.run(
+        ["git", "ls-files", "-z", "--", ":(glob)**/Cargo.toml"],
+        cwd=REPO, check=True, capture_output=True,
+    ).stdout.decode()
+    return [REPO / rel for rel in listed.split("\0") if rel]
+
+
 def package_dirs() -> dict[str, str]:
     """`[package] name` -> directory, from every tracked Cargo.toml."""
     out: dict[str, str] = {}
-    for toml in REPO.rglob("Cargo.toml"):
-        if "target" in toml.parts or "node_modules" in toml.parts:
-            continue
+    for toml in tracked_manifests():
         try:
             data = tomllib.loads(toml.read_text(encoding="utf-8"))
         except (tomllib.TOMLDecodeError, OSError):

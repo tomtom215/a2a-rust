@@ -116,7 +116,7 @@ mod tests {
             .status()
             .ok()
             .and_then(|r| r.recv_timeout(std::time::Duration::from_secs(2)).ok());
-        !matches!(status, Some(mdns_sd::DaemonStatus::Running))
+        !matches!(status, Some(mdns_sd::DaemonStatus::Running(_)))
     }
 
     /// A dropped browser stops its daemon; its `Debug` says what it is.

@@ -121,6 +121,59 @@ def requirements(root: pathlib.Path) -> dict[str, set[tuple[str, str]]]:
     return found
 
 
+CONSUMED_KINDS = {None, "build"}
+
+
+def transitive_requirements(metadata: dict) -> dict[str, tuple[str, str, set[tuple[str, str]]]]:
+    """What a consumer's cargo may choose for each package the published
+    crates reach through normal and build edges, on any platform.
+
+    Keyed by package id: `(name, our locked version, {(dependent, req)})`,
+    the requirements every dependent in that closure declares on it. A
+    consumer may hold any version that satisfies all of them. Direct
+    dependencies of the published crates are left out: `requirements` reads
+    those from the manifests. Approximation, stated: the dependents are taken
+    at the versions our lockfile holds; a consumer holding another version of
+    an intermediate crate sees that version's requirement instead.
+    """
+    packages = {p["id"]: p for p in metadata["packages"]}
+    nodes = {n["id"]: n for n in metadata["resolve"]["nodes"]}
+    members = set(metadata["workspace_members"])
+    start = [i for i in members if packages[i]["name"] in PUBLISHED]
+    seen, queue = set(start), list(start)
+    found: dict[str, tuple[str, str, set[tuple[str, str]]]] = {}
+    while queue:
+        parent = queue.pop()
+        declared = [d for d in packages[parent]["dependencies"] if d["kind"] in CONSUMED_KINDS]
+        for edge in nodes[parent]["deps"]:
+            if not {k["kind"] for k in edge["dep_kinds"]} & CONSUMED_KINDS:
+                continue
+            child = packages[edge["pkg"]]
+            if edge["pkg"] not in members:
+                version = parse_version(child["version"])
+                reqs = {d["req"] for d in declared
+                        if d["name"] == child["name"] and matches(version, d["req"])}
+                entry = found.setdefault(edge["pkg"], (child["name"], child["version"], set()))
+                entry[2].update((packages[parent]["name"], r) for r in reqs)
+            if edge["pkg"] not in seen:
+                seen.add(edge["pkg"])
+                queue.append(edge["pkg"])
+    # A package a published crate also names directly is checked from the
+    # manifest; its requirement still narrows what the transitive edges admit.
+    for pid, (name, version, reqs) in list(found.items()):
+        direct = {(p["name"], d["req"]) for p in (packages[i] for i in start)
+                  for d in p["dependencies"]
+                  if d["kind"] in CONSUMED_KINDS and d["name"] == name
+                  and matches(parse_version(version), d["req"])}
+        if direct:
+            del found[pid]
+    return found
+
+
+def admitted_by_all(versions: list[str], reqs: set[tuple[str, str]]) -> list[str]:
+    return [v for v in versions if all(matches(parse_version(v), r) for _, r in reqs)]
+
+
 def advisories(db: pathlib.Path) -> dict[str, list[dict]]:
     by_crate: dict[str, list[dict]] = {}
     files = list((db / "crates").glob("*/*.md"))
@@ -213,9 +266,69 @@ def self_test() -> int:
     if [type(e) for e in raised] != [urllib.error.HTTPError, urllib.error.URLError]:
         failed += 1
         print(f"self-test FAIL: raised {[type(e).__name__ for e in raised]}, want HTTPError, URLError")
-    total = len(cases) + 2
+    failed += transitive_self_test()
+    total = len(cases) + 2 + len(TRANSITIVE_CASES) + 1
     print(f"check_advisory_floors self-test: {total - failed} of {total} passed")
     return 1 if failed else 0
+
+
+def _graph(direct_on_c: bool) -> dict:
+    """a2a-protocol-server -> b -> c, server -dev-> e, d -> c; the server
+    names c itself when `direct_on_c`."""
+    def dep(name, req, kind=None):
+        return {"name": name, "req": req, "kind": kind}
+
+    def node(pid, *edges):
+        return {"id": pid, "deps": [{"pkg": p, "dep_kinds": [{"kind": k, "target": None}]}
+                                    for p, k in edges]}
+
+    server_deps = [dep("b", "^1"), dep("d", "^1"), dep("e", "^1", "dev")]
+    server_edges = [("b 1.0.0", None), ("d 1.0.0", None), ("e 1.0.0", "dev")]
+    if direct_on_c:
+        server_deps.append(dep("c", ">=2.5.9"))
+        server_edges.append(("c 2.5.9", None))
+    return {
+        "workspace_members": ["srv"],
+        "packages": [
+            {"id": "srv", "name": "a2a-protocol-server", "version": "0.16.0", "dependencies": server_deps},
+            {"id": "b 1.0.0", "name": "b", "version": "1.0.0", "dependencies": [dep("c", "^2.2")]},
+            {"id": "d 1.0.0", "name": "d", "version": "1.0.0",
+             "dependencies": [dep("c", ">=2.4"), dep("f", "^1", "dev")]},
+            {"id": "c 2.5.9", "name": "c", "version": "2.5.9", "dependencies": []},
+            {"id": "e 1.0.0", "name": "e", "version": "1.0.0", "dependencies": [dep("c", "^2")]},
+        ],
+        "resolve": {"nodes": [
+            node("srv", *server_edges),
+            node("b 1.0.0", ("c 2.5.9", None)),
+            node("d 1.0.0", ("c 2.5.9", None)),
+            node("c 2.5.9"),
+            node("e 1.0.0", ("c 2.5.9", None)),
+        ]},
+    }
+
+
+TRANSITIVE_CASES = [
+    ("a crate reached only through others carries every dependent's requirement",
+     False, {"c 2.5.9": ("c", "2.5.9", {("b", "^2.2"), ("d", ">=2.4")})}),
+    ("a crate the published crate names itself is left to the manifest check",
+     True, {}),
+]
+
+
+def transitive_self_test() -> int:
+    failed = 0
+    for label, direct, want in TRANSITIVE_CASES:
+        got = transitive_requirements(_graph(direct))
+        if got != want:
+            failed += 1
+            print(f"self-test FAIL: {label}: got {got}, want {want}")
+    # The intersection, not any one requirement, is what a consumer may hold.
+    versions = ["2.2.0", "2.3.9", "2.4.0", "2.5.8", "3.0.0"]
+    reqs = {("b", "^2.2"), ("d", ">=2.4")}
+    if admitted_by_all(versions, reqs) != ["2.4.0", "2.5.8"]:
+        failed += 1
+        print(f"self-test FAIL: intersection admitted {admitted_by_all(versions, reqs)}")
+    return failed
 
 
 def published_versions(name: str) -> list[str]:
@@ -229,6 +342,33 @@ def published_versions(name: str) -> list[str]:
     if not out:
         sys.exit(f"check_advisory_floors: crates.io lists no versions of {name}")
     return out
+
+
+def affected(admitted: list[str], advisories_for: list[dict]) -> list[str]:
+    """One line per advisory some admitted version falls under."""
+    lines = []
+    for advisory in advisories_for:
+        ranges = advisory.get("versions", {})
+        safe = ranges.get("patched", []) + ranges.get("unaffected", [])
+        bad = sorted(
+            (v for v in admitted if not any(matches(parse_version(v), r) for r in safe)),
+            key=parse_version,
+        )
+        if bad:
+            kind = advisory["advisory"].get("informational", "vulnerability")
+            lines.append(
+                f"{len(bad)} version(s) under {advisory['advisory']['id']} ({kind}), "
+                f"{bad[0]} to {bad[-1]}; patched: {', '.join(ranges.get('patched', [])) or 'none'}"
+            )
+    return lines
+
+
+def cargo_metadata(root: pathlib.Path) -> dict:
+    out = subprocess.run(
+        ["cargo", "metadata", "--format-version", "1", "--all-features", "--locked"],
+        cwd=root, check=True, capture_output=True, text=True,
+    )
+    return json.loads(out.stdout)
 
 
 def main() -> int:
@@ -267,24 +407,27 @@ def main() -> int:
             for crate, req in sorted(reqs[name]):
                 admitted = [v for v in versions if matches(parse_version(v), req)]
                 checked += 1
-                for advisory in known[name]:
-                    ranges = advisory.get("versions", {})
-                    safe = ranges.get("patched", []) + ranges.get("unaffected", [])
-                    bad = sorted(
-                        (v for v in admitted if not any(matches(parse_version(v), r) for r in safe)),
-                        key=parse_version,
-                    )
-                    if bad:
-                        failures += 1
-                        kind = advisory["advisory"].get("informational", "vulnerability")
-                        print(
-                            f"{crate}: `{name} = {req!r}` admits {len(bad)} version(s) under "
-                            f"{advisory['advisory']['id']} ({kind}), {bad[0]} to {bad[-1]}; "
-                            f"patched: {', '.join(ranges.get('patched', [])) or 'none'}"
-                        )
+                for line in affected(admitted, known[name]):
+                    failures += 1
+                    print(f"{crate}: `{name} = {req!r}` admits {line}")
+        # The same for what the published crates reach through other crates:
+        # a consumer resolves those too, against requirements we never wrote
+        # (RUSTSEC-2026-0592: `url` came only through sqlx, which admits 2.2.2,
+        # while this gate, reading direct requirements alone, was green).
+        transitive = transitive_requirements(cargo_metadata(args.root))
+        for pid in sorted(transitive, key=lambda i: transitive[i][:2]):
+            name, version, chain = transitive[pid]
+            if name not in known:
+                continue
+            checked += 1
+            for line in affected(admitted_by_all(published_versions(name), chain), known[name]):
+                failures += 1
+                via = "; ".join(f"{dep} `{req}`" for dep, req in sorted(chain))
+                print(f"{name} {version} (reached through {via}) admits {line}")
         print(
             f"{sum(len(u) for u in reqs.values())} requirement(s) on {len(reqs)} crate(s); "
-            f"{checked} have advisories on file; {failures} requirement/advisory pair(s) admit an affected version"
+            f"{len(transitive)} reached through other crates; {checked} have advisories on file; "
+            f"{failures} requirement/advisory pair(s) admit an affected version"
         )
         return 1 if failures else 0
 

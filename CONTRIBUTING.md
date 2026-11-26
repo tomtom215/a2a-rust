@@ -456,10 +456,11 @@ scripts/install_cargo_mutants.sh
 export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres
 
 # What CI runs, per crate. Match it before drawing conclusions —
-# a narrower invocation measures a smaller feature set.
+# a narrower invocation measures a smaller feature set. The filter's source
+# is .github/workflows/mutants.yml; this copy was matched to it on 2026-11-25.
 cargo mutants -p a2a-protocol-server --test-tool=nextest --profile=mutants \
   --all-features -- --run-ignored all \
-     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))'
+     -E 'not (binary(soak) or binary(soak_multi_replica) or binary(swarm_scale) or binary(readiness_bar) or binary(tool_loop_strict_live) or binary(terminal_truth_live) or binary(tool_loop_journal_live) or binary(tool_loop_review_live) or binary(tool_loop_audit_live) or test(=audit::privacy::tests::cost::what_protection_costs_an_append))'
 
 # Run on a specific file
 cargo mutants --file crates/a2a-protocol-types/src/task.rs \
@@ -633,7 +634,7 @@ silently; see `SKIP_STEPS` in that script.
 Every gate runs even after one fails, so a single run tells you everything that
 is broken rather than only the first thing.
 
-`preflight.sh` reads `ci.yml` only; the other 18 workflows carry jobs that block
+`preflight.sh` reads `ci.yml` only; the other workflows (`ls .github/workflows`) carry jobs that block
 a merge too. One command runs both and prints each gate's own exit code:
 
 ```bash
@@ -906,9 +907,10 @@ Two rules while it runs, both learned the expensive way:
 - [ ] `scripts/check_file_lengths.sh` passes — no **new** file exceeds 500
       lines and no file you touched crosses it, or the PR says why splitting
       would harm cohesion (see
-      [500-line maximum](#500-line-maximum-per-file); 81 of 333 tracked
-      `.rs`/`.sh`/`.py` sources already exceed it as of 2026-08-11, so this is
-      a rule for new work, not a claim about the tree)
+      [500-line maximum](#500-line-maximum-per-file); the tracked
+      `.rs`/`.sh`/`.py` sources that already exceed it are listed in
+      `.file-length-baseline`, so this is a rule for new work, not a claim
+      about the tree)
 - [ ] `cargo fmt --all` passes
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes
 - [ ] `cargo test --workspace` passes

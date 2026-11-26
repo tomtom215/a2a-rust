@@ -18,18 +18,23 @@ cut-off-reply rules of audit M-1 on both real models and all three bindings, the
 calls, steering against both models, idempotency of a repeated side effect with a model that asked four times, the
 budget and the deadline, and every provider misbehaviour I could script (24 of 24 held after the fixes).
 
+*Since this was written (note added 2026-11-25): W2-LIVE-3, -5 and -10 were fixed and W2-LIVE-4's trace line bounded
+by `17e124fb` (2026-11-08), as the table's State column now says; the sections below are kept as written.
+`CHANGELOG.md`, release 0.16.0, Known Limitations, "Tool-loop and model-provider edges", lists W2-LIVE-8 and -11 to
+-14 as open; W2-LIVE-4's remainder (a tool result goes whole to the model) is not listed there.*
+
 | ID | Severity | What | State |
 |---|---|---|---|
 | W2-LIVE-1 | **high** | A provider's (or a delegated child's) `u64::MAX` of usage/spend leaves the task `working` for ever | PROVEN, **fixed** `581db065` |
 | W2-LIVE-2 | medium | `grant` of a meter the parent does not name at `u64::MAX` (live-model's coordinator) cannot be sent | PROVEN, **fixed** `0f98f194` |
-| W2-LIVE-3 | medium | A failed tool-using run carries no tool trace: the side effects ran and the caller cannot see it (11 of 20 runs, Gemma) | PROVEN, not fixed (design) |
-| W2-LIVE-4 | medium | A tool result is unbounded: over 16 MiB the finished run fails opaque, below it all of it goes to the model and every caller | PROVEN, not fixed (design) |
-| W2-LIVE-5 | medium | The number of tool calls in one reply is bounded only by the 8 MiB response cap: 1.4 GB of RSS from a 7.6 MB reply stream | PROVEN, not fixed (design) |
+| W2-LIVE-3 | medium | A failed tool-using run carries no tool trace: the side effects ran and the caller cannot see it (11 of 20 runs, Gemma) | PROVEN; FIXED 2026-11-08 (`17e124fb`): a failed run sends its trace first |
+| W2-LIVE-4 | medium | A tool result is unbounded: over 16 MiB the finished run fails opaque, below it all of it goes to the model and every caller | PROVEN; trace line BOUNDED 2026-11-08 (`17e124fb`, `TRACE_LINE_LIMIT`); the result still goes whole to the model |
+| W2-LIVE-5 | medium | The number of tool calls in one reply is bounded only by the 8 MiB response cap: 1.4 GB of RSS from a 7.6 MB reply stream | PROVEN; FIXED 2026-11-08 (`17e124fb`): `ToolLoop::with_max_calls_per_turn` |
 | W2-LIVE-6 | low | `activate_skill` listed the files of a directory outside the skill when `references/` was a link | PROVEN, **fixed** `3a0f6587` |
 | W2-LIVE-7 | low | A provider's error body forged operator log lines and sent ANSI raw | PROVEN, **fixed** `c4bcab03` |
 | W2-LIVE-8 | low | The provider's error body is on the `invoke_agent` span (two span events) and in log records | PROVEN, not fixed (doc or design) |
 | W2-LIVE-9 | low | `gen_ai.response.model`, chosen by the provider, labels five metrics: 200 names, 1,000 series | PROVEN; FIXED 2026-11-14 (`5250527c`): 16 names, then `_OTHER` |
-| W2-LIVE-10 | low | A `usage` of a float, a negative or a string rejects a whole good completion | PROVEN, not fixed |
+| W2-LIVE-10 | low | A `usage` of a float, a negative or a string rejects a whole good completion | PROVEN; FIXED 2026-11-08 (`17e124fb`): an odd count is read as none |
 | W2-LIVE-11 | low | A trusted project skill can take an operator's name with a look-alike (Cyrillic а) | PROVEN, not fixed (documented limit, in part) |
 | W2-LIVE-12 | polish | `finish_reason: content_filter` with partial text completes the task unmarked | PROVEN (scripted), not fixed |
 | W2-LIVE-13 | polish | A truncated tool call is an `internal` "provider answered HTTP 500", not an output-limit failure | VALIDATED (llama-server 500), not fixed |

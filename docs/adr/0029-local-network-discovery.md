@@ -73,3 +73,9 @@ four crates are a protocol implementation, not a runtime.
 The decision above names `mdns-sd` 0.21.6. `crates/a2a-protocol-discovery/Cargo.toml` pins `=0.21.7`. The
 rule is unchanged (an exact pin, an upgrade is a reviewed change); the number in the decision was not updated
 when the pin moved.
+
+Reviewed upgrade to 0.22.0 (2026-11-25). Its breaking changes, read in its `CHANGELOG.md`: `DaemonStatus::Running`
+carries a `RunningState` (two test helpers match `Running(_)`); `ServiceDaemon::new` fails when neither multicast
+socket binds, which `Announcer::new` and `Browser::new` already return as an error; and a full name read from the
+network keeps its escapes, so `DiscoveredAgent::instance` now comes from `mdns_sd::instance_name_unescaped`
+(test `an_instance_name_with_a_dot_is_reported_unescaped`, which fails on the old code with `team\.echo`).

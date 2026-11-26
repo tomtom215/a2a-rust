@@ -46,38 +46,22 @@ yanked    = "deny"
 #
 # History: empty from 2026-10-20 (its one entry, RUSTSEC-2024-0436, `paste`,
 # reached the graph only through `genai` 0.6; genai 0.7.0 moved to the `pastey`
-# fork and `cargo tree -i paste --workspace` matched no package).
-#
-# One entry since 2026-11-11, RUSTSEC-2026-0459 (CVE-2026-119375):
-#   `libsqlite3-sys` 0.6.0 to 0.38.2 bundle SQLite before 3.54.0, which can
-#   return uninitialised page-cache memory when a process opens a database file
-#   together with a sibling `-wal` file whose page size differs. Local attack: a
-#   party who can write those two files and gets the victim process to open them.
-#   Here it comes in only through `sqlx-sqlite` 0.9.0, which requires
-#   `libsqlite3-sys` 0.37. `cargo update` cannot move it: checked 2026-11-14
-#   against crates.io, sqlx and sqlx-sqlite 0.9.0 (released 2026-05-21) are the
-#   latest of each (the only other 0.9 release is 0.9.0-alpha.1, from 2025-10),
-#   and the fix is `libsqlite3-sys` 0.39.0 or newer. Exposure: only builds that
-#   enable the opt-in `sqlite` feature of `a2a-protocol-server` (it is not a
-#   default feature), and only where the database file and its `-wal` are not
-#   the operator's own: SqliteTaskStore, TenantAwareSqliteTaskStore and
-#   SqlitePushOutbox open the path the operator configures.
-#   Remove this entry when a sqlx release allows `libsqlite3-sys` 0.39 or newer
-#   (`cargo update -p sqlx`, then check it with `cargo tree -i libsqlite3-sys`),
-#   or when the stores stop using the bundled copy. cargo-deny 0.20 reports a
-#   stale entry as "advisory not detected", so the fix cannot be missed.
+# fork and `cargo tree -i paste --workspace` matched no package). From
+# 2026-11-11 to 2026-11-25, RUSTSEC-2026-0459 (`libsqlite3-sys` before 0.39,
+# reached through `sqlx-sqlite` 0.9.0, which allowed only 0.37): sqlx 0.9.1
+# allows 0.40, and the server's `sqlite` feature now floors it at 0.39 so a
+# consumer cannot keep an affected one (`scripts/check_advisory_floors.py`).
 #
 # Since 2026-11-17, RUSTSEC-2026-0543 (`chrono` unmaintained; no fixed version,
 #   no affected function: an "unmaintained" notice, not a vulnerability;
 #   upstream discussion chronotope/chrono#1768). No published crate of this
 #   repository depends on chrono (`cargo tree -i chrono --workspace -e
 #   normal,build,dev` reaches only examples/mcp-agent, examples/mcp-bridge and
-#   examples/rig-agent, through `rmcp` 3.10.0 and `schemars` 1.2.3, both the
-#   latest on 2026-11-17). Remove when those move to `jiff` or `time`, or the
+#   examples/rig-agent, through `rmcp` 3.11.0 and `schemars` 1.2.3, both the
+#   latest on 2026-11-25). Remove when those move to `jiff` or `time`, or the
 #   advisory is withdrawn (cargo-deny reports the entry as not detected).
 ignore    = [
-    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained (no fix, not a vulnerability); reached only by the examples through rmcp 3.10.0 and schemars 1.2.3, the latest (checked 2026-11-17); no published crate depends on it" },
-    { id = "RUSTSEC-2026-0459", reason = "libsqlite3-sys 0.37 is pinned by sqlx-sqlite 0.9.0, the latest sqlx (checked 2026-11-14); local attack through a crafted database and -wal pair; opt-in `sqlite` feature only; remove when sqlx allows libsqlite3-sys >= 0.39" },
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained (no fix, not a vulnerability); reached only by the examples through rmcp 3.11.0 and schemars 1.2.3, the latest (checked 2026-11-25); no published crate depends on it" },
 ]
 
 # ---------------------------------------------------------------------------

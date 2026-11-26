@@ -20,6 +20,12 @@
 #
 # `upstream` says why the suite does not grade it; `scope` says exactly what
 # the cited tests show and, where it applies, what they do not.
+#
+# Re-read at later pins (noted 2026-11-25): at a2a-tck `5e6f37c`, the pin
+# since 2026-11-22, the suite reports 16 MUST requirements not tested, 7
+# manual and 5 skipped, and every entry of this file is among them, so the
+# entries need no change (docs/official-tck-findings.md §26 and §27). The
+# "21 of them" above is the count at `263b9cf`.
 
 [[requirement]]
 id = "CARD-SIGN-001"

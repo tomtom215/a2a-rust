@@ -67,4 +67,9 @@ Three limits of the method:
 
 ## Where the work goes
 
-Every row that needs work is in `ROADMAP.md`, section *After 0.16.0*, in the group its evidence names.
+Every row that needs work is in `ROADMAP.md`, section *After 0.16.0*, in the group its evidence names. *(Corrected 2026-11-25: not every
+row. These ids, listed here as open or `fixed (part)`, are named nowhere in that section: `X-21`, `NEW-a-l-4a`, `B-13`, `B-18`,
+`B-23`, `B-27`, `B-30`, `NEW-b-2`, `D-22`, `G-18`, `NEW-g-api-1`, `NEW-g-api-4`, `G/D-02`, `G/C-02`, `NEW-g-docs-3`, `NEW-g-docs-6`,
+`NEW-g-docs-7` and `H6` (found by matching each id, with the ranges the section writes expanded, against it;
+`docs/program/evidence/06-open-items.md` §5, C-07). Some may need no work; none says so. `NEW-g-docs-4`, also on that list, is
+fixed.)*

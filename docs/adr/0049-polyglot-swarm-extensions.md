@@ -187,6 +187,15 @@ where `RestDispatcher` had none; it now reads the body as a value, as
   shares no halt store it travels as the cascade's cancels.
 * `scripts/check_extension_vectors.py` as a CI gate: it needs `jsonschema`,
   which CI's script gates do not install.
+* (Added 2026-11-25.) A schema and vectors for steering (ADR 0036). The
+  amendment of 2026-11-05 says "every extension"; steering has neither, and
+  its wire shape is held only by
+  `crates/a2a-protocol-types/tests/golden/uri_contracts/steering.json`.
+* (Added 2026-11-25.) Decision 4's "stop on a `HALTED` refusal" in this SDK's
+  own client: it has no `HALTED` handling (`grep -rn HALTED
+  crates/a2a-protocol-client/src` prints nothing), so a halt refusal, a `503`
+  on HTTP+JSON, is classified by its status like any other error, and a `503`
+  is retryable (`ClientError::is_retryable`).
 
 ## Consequences
 

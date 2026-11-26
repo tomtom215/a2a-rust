@@ -50,9 +50,9 @@ tracing = ["dep:tracing"]
 ## (`Server::with_tls`, `Server::with_tls_pem`; spec §14), and
 ## `auth::MutualTlsAuthInterceptor`, which names a caller from its client
 ## certificate (`ring`, already in the graph through rustls).
-tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots", "dep:ring"]
+tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots", "dep:ring", "dep:rustls-webpki"]
 ## Enable SQLite-backed task and push config stores via `sqlx`.
-sqlite = ["dep:sqlx", "sqlx/sqlite"]
+sqlite = ["dep:sqlx", "sqlx/sqlite", "dep:event-listener", "dep:libsqlite3-sys", "dep:url"]
 ## Enable PostgreSQL-backed task and push config stores via `sqlx` with PostgreSQL driver.
 ##
 ## TLS to the database is always compiled in (rustls with `ring`, Mozilla's
@@ -60,12 +60,12 @@ sqlite = ["dep:sqlx", "sqlx/sqlite"]
 ## or `verify-full`, which hosted PostgreSQL documents, refused to start, and
 ## the default `prefer` connected in plaintext with no warning (found live,
 ## 2026-10-29).
-postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/json", "sqlx/tls-rustls-ring-webpki"]
+postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/json", "sqlx/tls-rustls-ring-webpki", "dep:ctutils", "dep:event-listener", "dep:rustls-webpki", "dep:url"]
 ## Enable WebSocket transport via `tokio-tungstenite`.
 websocket = ["dep:tokio-tungstenite"]
 ## Enable gRPC transport via `tonic`. Serves the canonical `lf.a2a.v1.A2AService`
 ## (protobuf-native, wire-compatible with the official Go/Python/Java A2A SDKs).
-grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:tonic-types", "dep:tonic-prost-build", "dep:protoc-bin-vendored", "a2a-protocol-types/proto"]
+grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:tonic-types", "dep:tonic-prost-build", "dep:protoc-bin-vendored", "a2a-protocol-types/proto", "dep:anyhow", "dep:hashbrown", "dep:pulldown-cmark", "dep:rustix"]
 ## TLS on the server's own gRPC listener. `GrpcDispatcher::with_tls` takes a
 ## `tonic::transport::ServerTlsConfig` — the server certificate and key, and
 ## optionally a client CA for mutual TLS — re-exported from `dispatch::grpc`
@@ -76,13 +76,13 @@ grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:to
 ## installed as the default (an application that wants `aws-lc-rs` installs
 ## it first). Without this feature the listener is plaintext and TLS is
 ## terminated in front of it.
-grpc-tls = ["grpc", "tonic?/tls-ring", "dep:rustls", "dep:ring"]
+grpc-tls = ["grpc", "tonic?/tls-ring", "dep:rustls", "dep:ring", "dep:rustls-webpki"]
 ## OpenTelemetry instrumentation, on by default: `OtelMetrics`, and the bridge
 ## that gives each call's span the caller's `traceparent` as its parent. The
 ## OpenTelemetry API only (`opentelemetry`, `tracing-opentelemetry`): what is
 ## recorded goes to whatever provider the process installs, and to nothing
 ## when it installs none.
-otel = ["tracing", "dep:opentelemetry", "dep:tracing-opentelemetry"]
+otel = ["tracing", "dep:opentelemetry", "dep:tracing-opentelemetry", "dep:bumpalo"]
 ## OTLP export: `Telemetry` — one entry point that exports traces, metrics and
 ## logs over OTLP/gRPC or OTLP/HTTP (protobuf), configured from the standard
 ## `OTEL_*` environment — the `Langfuse` preset, and `init_otlp_pipeline`.
@@ -95,6 +95,7 @@ otlp = [
     "dep:opentelemetry-http", "dep:opentelemetry-appender-tracing", "dep:tracing-subscriber", "dep:async-trait",
     "dep:tonic",
     "dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots",
+    "dep:anyhow", "dep:rand", "dep:rustls-webpki",
 ]
 ## `OTEL_METRICS_EXPORTER=prometheus`: serve the metrics at `/metrics` in the
 ## Prometheus text format, for a Prometheus that scrapes and no collector in
@@ -261,9 +262,31 @@ async-trait = { version = ">=0.1.80, <0.2", optional = true }
 http = { version = ">=1.1, <2" }
 axum = { version = "0.8", optional = true, default-features = false, features = ["json", "query", "tokio"] }
 
+# Floors, not dependencies: nothing here is used by this crate's code. Each names
+# a crate that a dependency of ours brings in, at the first version outside a RustSec
+# advisory, so a consumer's cargo cannot keep an affected one (`scripts/check_advisory_floors.py`
+# names the advisory and the path). Each is switched on only by the features that
+# bring the crate in, and adds no crate to any build.
+h2 = { version = ">=0.4.16, <0.5", default-features = false }  # RUSTSEC-2026-0258
+anyhow = { version = ">=1.0.103, <2", default-features = false, optional = true }  # RUSTSEC-2026-0190
+ctutils = { version = ">=0.4.4, <0.5", default-features = false, optional = true }  # RUSTSEC-2026-0385
+event-listener = { version = ">=5.4.2, <6", default-features = false, optional = true }  # RUSTSEC-2026-0221
+libsqlite3-sys = { version = ">=0.39", default-features = false, optional = true }  # RUSTSEC-2026-0459
+rand = { version = ">=0.9.3, <0.10", default-features = false, optional = true }  # RUSTSEC-2026-0097
+rustls-webpki = { version = ">=0.103.16, <0.104", default-features = false, optional = true }  # RUSTSEC-2026-0382
+url = { version = ">=2.5.9, <3", default-features = false, optional = true }  # RUSTSEC-2026-0592
+
 [build-dependencies]
 tonic-prost-build   = { workspace = true, optional = true }
 protoc-bin-vendored = { workspace = true, optional = true }
+# Floors (see the block above `[build-dependencies]`): build scripts only.
+hashbrown = { version = ">=0.15.1, <0.16", default-features = false, optional = true }  # RUSTSEC-2024-0402
+pulldown-cmark = { version = ">=0.13.6, <0.14", default-features = false, optional = true }  # RUSTSEC-2026-0414, RUSTSEC-2026-0433
+rustix = { version = ">=1.1.6, <2", default-features = false, optional = true }  # RUSTSEC-2026-0486
+
+# Floors for a wasm32 target only, where `wasm-bindgen` brings the crate in.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+bumpalo = { version = ">=3.11.1, <4", default-features = false, optional = true }  # RUSTSEC-2022-0078
 
 [package.metadata.docs.rs]
 all-features = true

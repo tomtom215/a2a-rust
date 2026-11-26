@@ -55,12 +55,9 @@ impl DiscoveredAgent {
             .map(mdns_sd::ScopedIp::to_ip_addr)
             .collect();
         addresses.sort_by_key(|a| (a.is_ipv6(), *a));
-        let suffix = format!(".{}", crate::SERVICE_TYPE);
-        let instance = service
-            .get_fullname()
-            .strip_suffix(&suffix)
-            .unwrap_or_else(|| service.get_fullname())
-            .to_owned();
+        // A fullname keeps its escapes (`a\.b._a2a._tcp.local.`, mdns-sd 0.22):
+        // the instance is its first label as announced, with them removed.
+        let instance = mdns_sd::instance_name_unescaped(service.get_fullname());
         Some(Self {
             instance,
             fullname: service.get_fullname().to_owned(),
@@ -200,9 +197,13 @@ mod tests {
     }
 
     fn resolved(path: &str) -> mdns_sd::ResolvedService {
+        resolved_as("echo", path)
+    }
+
+    fn resolved_as(instance: &str, path: &str) -> mdns_sd::ResolvedService {
         mdns_sd::ServiceInfo::new(
             crate::SERVICE_TYPE,
-            "echo",
+            instance,
             "echo-a2a.local.",
             "192.0.2.7",
             8080,
@@ -219,5 +220,15 @@ mod tests {
         assert!(DiscoveredAgent::from_resolved(&resolved("/card.json")).is_some());
         assert!(DiscoveredAgent::from_resolved(&resolved("card.json")).is_none());
         assert!(DiscoveredAgent::from_resolved(&resolved("/a b")).is_none());
+    }
+
+    /// An instance with a dot in its name is reported as announced, not with
+    /// the escape its full name carries.
+    #[test]
+    fn an_instance_name_with_a_dot_is_reported_unescaped() {
+        let agent = DiscoveredAgent::from_resolved(&resolved_as("team.echo", "/card.json"))
+            .expect("a valid record");
+        assert_eq!(agent.fullname, r"team\.echo._a2a._tcp.local.");
+        assert_eq!(agent.instance, "team.echo");
     }
 }

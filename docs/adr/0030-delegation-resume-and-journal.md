@@ -11,6 +11,9 @@ defaults) are this ADR's and are open to change while 0.16.0 is unreleased.
 Built: points 1 to 3 (resume, reattach, the trait and the in-memory
 journal) and, of point 4, the PostgreSQL journal and, since 2026-11-04, the
 SQLite journal (audit NEW-h-s0-4).
+(Amended 2026-11-25: 0.16.0 was released on 2026-11-19 with all of the above,
+so "open to change while 0.16.0 is unreleased" has lapsed; a change is now an
+amendment. Whether the status word becomes Accepted is the maintainer's.)
 **Author:** Tom F.
 
 ---
@@ -109,6 +112,10 @@ are tested against this repository's server, and `PostgresDelegationJournal`
 runs the journal contract on PostgreSQL 16.15. The SQL has not been run on
 PostgreSQL 17, under concurrent replicas, or after a connection loss
 mid-statement (it uses the crate's `pg_retry`, which is tested elsewhere).
+(Amended 2026-11-25: the SQLite journal, built after this section was
+written, runs the same journal contract and a restart from its file:
+`sqlite_keeps_the_contract` and `a_sqlite_journal_survives_a_restart` in
+`crates/a2a-protocol-server/src/store/delegation_journal/tests.rs`.)
 
 ## Amendment, 2026-11-03 (audit H4, H18, NEW-h-s0-2, NEW-h-s0-3, NEW-h-designs-2, NEW-h-designs-5; fork F5)
 
