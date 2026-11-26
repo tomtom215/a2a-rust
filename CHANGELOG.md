@@ -58,6 +58,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SDK changed. The nightly run, which grades upstream `main`, had been red since
   2026-11-19 on that stale baseline (`docs/official-tck-findings.md` §27).
 
+### Fixed
+
+- **A store outage longer than `store_write_retry` no longer leaves a task
+  unfinished** (Known Limitation of 0.16.0, register X-10). The ending a turn
+  wrote during the outage was reverted in memory and forgotten, so the task
+  stayed `working` in the store: behind turn claims the reaper ended it
+  `failed` a claim time to live later, and without them nothing did. The
+  background processor now keeps that ending and writes it again, backing off
+  up to 30 s, until the store takes it or another writer's ending wins (an
+  ending the store refused outright, rather than could not take, is not
+  written again); once the handler begins to shut down it tries for one more
+  `store_write_retry` and then leaves the turn's claim for the reaper. And
+  once one write has spent the whole budget, the writes behind it are tried
+  once each until one lands: with a 1 s budget, ten events queued behind an
+  outage took 7.5 s before and now take at most one budget (paused clock,
+  `outage_tests.rs`; the 7.5 s with the breaker taken out). An ordinary event
+  is still lost to an outage longer than the budget, and the log skips its
+  position, as before.
+- **A new artifact is written again while the store is unavailable**, as every
+  other write of a turn is. It was written once, so a store unavailable for
+  any moment lost it; appending parts to an artifact and replacing one were
+  already retried. A push written twice is safe: it is compare-and-append.
+- **A cancel of a task no turn is running is told to its webhooks and its
+  log** (register E-F25, X-11). `CancelTask` of a task parked between turns
+  stored `canceled` and wrote no event, so a stream subscribed on another
+  replica learned of it only at its next poll (up to the reattach ceiling,
+  4 s by default), and its webhooks were not told. It now records the ending
+  in the outbox and appends it to the log, as the claim reaper does, and the
+  append wakes such a stream at once. A task whose turn may be running on
+  another replica is left to that turn, which tells them itself.
+
 ## [0.16.0] - 2026-11-19
 
 Several replicas can now share one PostgreSQL database (or several processes

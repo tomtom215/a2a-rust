@@ -271,33 +271,19 @@ impl Reaper {
     /// told. So a recording that is not durable (the configs unread, the
     /// outbox refusing) is not followed by the log's append (N06).
     async fn announce(&self, id: &TaskId, event: &StreamResponse) -> bool {
-        let recorded = self.push_lanes.record_now(id, event).await;
-        if recorded.is_some_and(|r| !r.is_durable()) {
-            return false;
-        }
-        if !crate::handler::event_processing::append_ending(
-            &*self.task_store,
+        crate::handler::event_processing::ending::announce_ending(
+            crate::handler::event_processing::ending::EndingSinks {
+                task_store: &*self.task_store,
+                push_config_store: &*self.push_config_store,
+                push_sender: self.push_sender.as_deref(),
+                push_lanes: &self.push_lanes,
+                limits: &self.limits,
+                metrics: &*self.metrics,
+            },
             id,
             event,
-            &*self.metrics,
-            self.limits.store_write_retry,
         )
         .await
-        {
-            return false;
-        }
-        if recorded.is_none() {
-            crate::handler::event_processing::deliver_push_bg(
-                id,
-                event,
-                &*self.push_config_store,
-                self.push_sender.as_deref(),
-                &self.limits,
-                &*self.metrics,
-            )
-            .await;
-        }
-        true
     }
 
     /// Whether the task's log ends with a status update to `state`; `None`

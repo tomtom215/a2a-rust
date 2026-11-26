@@ -47,6 +47,17 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
   `scripts/live/README.md`) reports no unfinished task after a PostgreSQL restart longer than the retry;
   paste its summary. The incremental mutation gate on the diff has no survivor.
 - **Out of scope.** A durable audit spool (X-19). Changing `store_write_retry`'s default.
+- **Done (2026-11-26).** Built as a pending terminal state written again until the store rules on it,
+  with the breaker beside it (`S/handler/event_processing/background/processor/pending.rs`); only an
+  ending whose write gave up on an unavailable store is kept, since one the store refused has been ruled
+  on (found when the first version hung two `terminal_truth` tests). Found while testing it and fixed:
+  a new artifact was the one fold write not retried. Accept: the tests in `background/outage_tests.rs`
+  fail with the fix taken out and pass with it (outputs in the commit message); the mutation gate on
+  the diff, 61 mutants in three shards, left none missed or timed out. Correction to this Accept,
+  measured: `restart_live.py`'s 4 s outage, and a 40 s one, never reach X-10. sqlx waits in `acquire`
+  (30 s) through the short one, and the executor itself failed in the long one, so the run passes before
+  the fix as after (both builds run, a local variant stopping PostgreSQL with `pg_ctlcluster`, since
+  the script needs a Docker daemon). The unit tests are the reproduction.
 
 ## COR-02: Cancelling a parked task announces it (E-F25, X-11)
 
@@ -66,6 +77,13 @@ Abbreviations: `S/` is `crates/a2a-protocol-server/src/`, `C/` is `crates/a2a-pr
   the change is stated with the new count. Audit records for the cancel are unchanged (name the test that
   says so).
 - **Out of scope.** Parked-task expiry (ADR 0056).
+- **Done (2026-11-26).** The cancel announces the ending through the claim reaper's sequence
+  (`S/handler/event_processing/ending.rs`) when no turn runs the task: no live claim, or, without a
+  claim store, the task interrupted when the cancel came. Accept: `log_wake_e2e.rs`
+  `a_cancel_of_a_parked_task_ends_a_long_wait_on_the_other_replica` fails without the change and ends
+  the stream 253 ms after the cancel with it (8 s ceiling, PostgreSQL 16); `statement_count` passes
+  with its constants unchanged (2 of 2, run directly); the audit record of a cancel is unchanged
+  (`tests/audit_trail.rs` `a_cancel_request_names_who_asked`, passed in the all-features run).
 
 ## COR-03: A handed-off child does not get its budget again (E03 R1)
 

@@ -11,6 +11,7 @@
 
 mod background;
 pub use background::deliver_push_bg;
+pub mod ending;
 pub use background::{PushLanes, ends_turn};
 #[cfg(test)]
 mod stale_reads;
@@ -114,9 +115,41 @@ where
                 tokio::time::sleep(wait).await;
                 wait = (wait * 2).min(std::time::Duration::from_secs(1));
             }
-            done => return done,
+            done => {
+                if let Err(e) = &done
+                    && e.is_unavailable()
+                {
+                    note_gave_up_unavailable();
+                }
+                return done;
+            }
         }
     }
+}
+
+tokio::task_local! {
+    /// Set when a write in this task gave up with the store still
+    /// unavailable, as against one the store answered with a refusal.
+    static GAVE_UP_UNAVAILABLE: std::cell::Cell<bool>;
+}
+
+/// Notes, for the work running in [`noting_unavailable`], that a write gave
+/// up because the store stayed unavailable for its whole budget. Outside it,
+/// nothing.
+fn note_gave_up_unavailable() {
+    let _ = GAVE_UP_UNAVAILABLE.try_with(|gave_up| gave_up.set(true));
+}
+
+/// Runs `work`, and returns with its output whether a write in it gave up on
+/// a store that stayed unavailable: the difference, for a processor, between
+/// an outage it waits out (COR-01) and a refusal it accepts.
+pub async fn noting_unavailable<F: std::future::Future>(work: F) -> (F::Output, bool) {
+    GAVE_UP_UNAVAILABLE
+        .scope(std::cell::Cell::new(false), async {
+            let out = work.await;
+            (out, GAVE_UP_UNAVAILABLE.with(std::cell::Cell::get))
+        })
+        .await
 }
 
 tokio::task_local! {

@@ -429,7 +429,9 @@ pub struct HandlerLimits {
     /// log keeps their order. Until 2026-10-28 one failed write lost its
     /// event: logged and counted, absent from the log and the task. An
     /// outage longer than this still loses the event it was writing, so set
-    /// it past the longest failover the database is expected to take.
+    /// it past the longest failover the database is expected to take. A
+    /// task's ending is kept and written again until the store takes it; a
+    /// spent budget makes the writes behind it try once each (COR-01).
     ///
     /// Every write the consumer makes leaves the store as one would when
     /// made again (an upsert, a compare-and-set, an append keyed by

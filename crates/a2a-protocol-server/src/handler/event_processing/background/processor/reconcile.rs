@@ -31,7 +31,7 @@ impl Processor<'_> {
         terminal: Option<StreamResponse>,
         reservation: Option<Reservation>,
         pushes_terminal: bool,
-    ) {
+    ) -> bool {
         let (outcome, fate) = self
             .reconciled(
                 outcome,
@@ -45,7 +45,7 @@ impl Processor<'_> {
         {
             self.unsettled.push(left);
         }
-        self.conclude(outcome, seq, terminal, pushes_terminal).await;
+        self.conclude(outcome, seq, terminal, pushes_terminal).await
     }
 
     /// Settles the reservations an earlier event left, from what the store

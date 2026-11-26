@@ -271,25 +271,27 @@ async fn an_event_on_one_replica_ends_a_long_wait_on_the_other() {
     db.drop_db().await;
 }
 
-// ── A status written with no event is learned at the poll ────────────────────
+// ── A cancel of a parked task ends a long wait on the other replica ─────────
 
-/// A `CancelTask` of a parked task on replica A writes `canceled` and no event
-/// to the log, so nothing is announced: a stream on replica B learns of it at
-/// its next poll, the ceiling away at most (here 2 s), and ends with the
-/// terminal state. The wake is for appends; this is the limit ADR 0057 records.
+/// A `CancelTask` of a parked task on replica A writes `canceled` and, since
+/// COR-02, the event to the log, whose append wakes a stream on replica B: it
+/// ends within a second, with the terminal state, though its nap would have
+/// lasted the ceiling (here 8 s). Before COR-02 the cancel wrote no event, and
+/// the stream learned of it only at its next poll (ADR 0057 measured 2.01 s
+/// with a 2 s ceiling).
 #[tokio::test]
 #[ignore = "needs a live PostgreSQL (see the module docs)"]
-async fn a_cancel_of_a_parked_task_is_learned_at_the_next_poll() {
+async fn a_cancel_of_a_parked_task_ends_a_long_wait_on_the_other_replica() {
     let db = TestDb::create("cancel").await;
     let (gate, wakes) = (Arc::new(Notify::new()), Arc::new(Wakes::default()));
     let a = replica(
         &db.url(),
         &gate,
         &Arc::new(Wakes::default()),
-        Duration::from_secs(2),
+        Duration::from_secs(8),
     )
     .await;
-    let b = replica(&db.url(), &gate, &wakes, Duration::from_secs(2)).await;
+    let b = replica(&db.url(), &gate, &wakes, Duration::from_secs(8)).await;
 
     let SendMessageResponse::Task(parked) = (match a
         .on_send_message(message("m-park", "park"), false, None)
@@ -322,12 +324,12 @@ async fn a_cancel_of_a_parked_task_is_learned_at_the_next_poll() {
     a.on_cancel_task(CancelTaskParams::new(parked.id.0.clone()), None)
         .await
         .unwrap();
-    let last = tokio::time::timeout(Duration::from_secs(10), reader)
+    let last = tokio::time::timeout(Duration::from_secs(1), reader)
         .await
-        .expect("the stream learns of the cancel at its next poll")
+        .expect("the stream ends within a second of the cancel, not at its next poll")
         .unwrap();
     println!(
-        "cancel of a parked task to stream end across replicas: {:?} (ceiling 2 s)",
+        "cancel of a parked task to stream end across replicas: {:?} (ceiling 8 s)",
         cancelled.elapsed()
     );
     assert_eq!(last, Some(TaskState::Canceled));

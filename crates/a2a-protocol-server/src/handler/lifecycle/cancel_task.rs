@@ -15,6 +15,7 @@ use crate::error::{ServerError, ServerResult};
 use crate::request_context::RequestContext;
 
 use super::super::RequestHandler;
+use super::super::claims::RemoteTurn;
 use super::super::helpers::{build_call_context, task_id_param};
 use super::super::messaging::terminal::TerminalTracking;
 
@@ -161,16 +162,36 @@ impl RequestHandler {
                             None => e.into(),
                         });
                     }
-                    if !runs_here {
+                    let remote = if runs_here {
+                        None
+                    } else {
                         self.publish_cancel(&task_id).await;
-                        self.request_remote_cancel(&task_id).await;
-                    }
+                        Some(self.request_remote_cancel(&task_id).await)
+                    };
                     // Re-read to return the authoritative final state.
                     let final_task = self
                         .task_store
                         .get(&task_id)
                         .await?
                         .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
+
+                    // No turn runs the task anywhere (it was parked, or its
+                    // replica is gone), so no processor will tell its webhooks
+                    // or its log that it ended: this cancel does, so a
+                    // subscriber on another replica wakes at the append instead
+                    // of at its next poll (COR-02, E-F25). Without a claim
+                    // store only a task parked between turns is known to be
+                    // unattended. A turn running elsewhere tells them itself.
+                    let unattended = match remote {
+                        Some(RemoteTurn::None) => true,
+                        Some(RemoteTurn::Unknown) => {
+                            self.turn_claims.is_none() && task.status.state.is_interrupted()
+                        }
+                        Some(RemoteTurn::Running) | None => false,
+                    };
+                    if unattended && final_task.status.state == TaskState::Canceled {
+                        self.announce_cancel(&final_task).await;
+                    }
 
                     Ok(final_task)
                 }
@@ -203,6 +224,38 @@ impl RequestHandler {
             }
         }
         result
+    }
+
+    /// Tells the webhooks and the log of a task this cancel ended, when no
+    /// turn will (COR-02). A failure is logged: the task is canceled in the
+    /// store, which is what `GetTask` and a polling subscriber read.
+    async fn announce_cancel(&self, task: &Task) {
+        let event = a2a_protocol_types::events::StreamResponse::StatusUpdate(
+            a2a_protocol_types::events::TaskStatusUpdateEvent::new(
+                task.id.clone(),
+                task.context_id.clone(),
+                task.status.clone(),
+            ),
+        );
+        let told = crate::handler::event_processing::ending::announce_ending(
+            crate::handler::event_processing::ending::EndingSinks {
+                task_store: &*self.task_store,
+                push_config_store: &*self.push_config_store,
+                push_sender: self.push_sender.as_deref(),
+                push_lanes: &self.push_lanes,
+                limits: &self.limits,
+                metrics: &*self.metrics,
+            },
+            &task.id,
+            &event,
+        )
+        .await;
+        if !told {
+            trace_warn!(
+                task_id = %task.id,
+                "cancel of a task no turn runs: its ending was not durably told to its webhooks and log"
+            );
+        }
     }
 }
 
@@ -427,3 +480,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "cancel_announce_tests.rs"]
+mod announce_tests;

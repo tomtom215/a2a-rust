@@ -48,13 +48,15 @@ Features:
 
 ## Open only database files you own
 
-The SQLite that the `sqlite` feature builds in is older than 3.54.0 (`libsqlite3-sys`
-0.37, pinned by `sqlx` 0.9.0, the latest `sqlx`): RUSTSEC-2026-0459 /
-CVE-2026-119375. A process that opens a database file together with a sibling
-`-wal` file whose page size differs from the database's can be made to return
+Release 0.16.0 and earlier build in a SQLite older than 3.54.0 (`libsqlite3-sys`
+0.37, pinned by `sqlx` 0.9.0): RUSTSEC-2026-0459 / CVE-2026-119375. From the
+release after 0.16.0, the `sqlite` feature requires `libsqlite3-sys` 0.39 or
+later, which `sqlx` 0.9.1 allows and which fixes it. On an affected build, a
+process that opens a database file together with a sibling `-wal` file whose page size differs from the database's can be made to return
 stale bytes from its own memory. The attack is local and needs a file pair that
 someone else wrote, so open only paths the process's own user controls (the
 store's path is one you configure; keep the directory writable by that user
-alone). The fix is a `sqlx` release that allows `libsqlite3-sys` 0.39; until
-then `deny.toml` records the advisory as ignored with this reason.
+alone). The advice holds on any build: SQLite trusts the database file and
+its `-wal` as it reads them, so they should be files only the process's own
+user can write.
 
