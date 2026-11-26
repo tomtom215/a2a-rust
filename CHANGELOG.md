@@ -99,6 +99,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A delegation start that may have reached the agent keeps its budget and
+  its journal record** (register X2-4, X2-5). `Delegation::start_with` took
+  any unexpected HTTP status as a refusal: on a bare `503`, a `500`, or a
+  gateway's `502` or `504`, any of which can come after the agent made the
+  child, it returned the budget grant to the parent and settled the journal
+  record `not_started`, so the child's spend was refunded and a restarted
+  supervisor never looked for it. Only an A2A error, a `4xx` or a `503`
+  naming a delay (decision D-1) is now a refusal; any other `5xx` keeps the
+  grant reserved and the record open, as a lost response does. The
+  `not_started` write after a refusal is now bounded by the journal's write
+  bound (5 s), as every other journal write is: a journal that stopped
+  answering held the start for ever.
+
 - **A halt is final on every binding** (COR-05, E03 R2). Over gRPC a halted
   server's `UNAVAILABLE` was read as a dropped connection and retried; over
   HTTP+JSON the `HALTED` detail was dropped and the refusal read as a bare 503.

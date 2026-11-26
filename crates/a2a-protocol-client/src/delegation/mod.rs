@@ -444,14 +444,24 @@ impl Delegation {
 
 /// Whether `e` shows the agent answered and refused, so that no child was
 /// created. Anything else may have reached the agent.
+///
+/// A `4xx` status is a refusal, and so is a `503` that names a delay: it was
+/// raised before the request was processed (decision D-1, the rule
+/// `retry.rs` applies to a non-idempotent call). Any other `5xx` is
+/// ambiguous: a bare `503`, a `500`, or a gateway's `502` or `504` may come
+/// after the agent made the child.
 const fn refused(e: &ClientError) -> bool {
-    matches!(
-        e,
+    match e {
+        ClientError::UnexpectedStatus {
+            status,
+            retry_after,
+            ..
+        } => matches!(*status, 400..=499) || (*status == 503 && retry_after.is_some()),
         ClientError::Protocol(_)
-            | ClientError::UnexpectedStatus { .. }
-            | ClientError::AuthRequired { .. }
-            | ClientError::InvalidEndpoint(_)
-    )
+        | ClientError::AuthRequired { .. }
+        | ClientError::InvalidEndpoint(_) => true,
+        _ => false,
+    }
 }
 
 /// The task id an event names, if it names one.

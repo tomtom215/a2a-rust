@@ -202,9 +202,12 @@ impl Delegation {
     /// existing journal record, which only
     /// [`reattach_with`](Self::reattach_with) can keep, or resends for a
     /// record whose child was named, or that has no key to resend under. When
-    /// the agent refuses the request, a budget reservation is returned and a
-    /// new record is settled `not_started`: no child exists. A resent
-    /// record's is left open: an earlier send may have made a child.
+    /// the agent refuses the request (an A2A error, a `4xx`, or a `503`
+    /// naming a delay), a budget reservation is returned and a new record is
+    /// settled `not_started`: no child exists. A resent record's is left
+    /// open: an earlier send may have made a child. Any other `5xx` may come
+    /// after the agent made the child, so the reservation is kept and the
+    /// record left open, as for a lost response.
     pub async fn start_with(
         client: Arc<A2aClient>,
         mut params: MessageSendParams,
@@ -249,7 +252,7 @@ impl Delegation {
                         grant.release();
                     }
                     if let (true, Some((journal, id))) = (fresh, &record) {
-                        let _ = journal.settle(id, "not_started", journal::now_ms()).await;
+                        journal::settle_not_started(&**journal, id).await;
                     }
                 }
                 return Err(e);
@@ -475,3 +478,7 @@ async fn begin_record(
     journal::begin(&*journal, &record).await?;
     Ok(Some((journal, record.id)))
 }
+
+#[cfg(test)]
+#[path = "start_tests.rs"]
+mod start_tests;

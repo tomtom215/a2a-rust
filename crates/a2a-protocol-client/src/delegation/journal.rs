@@ -84,6 +84,22 @@ pub(super) async fn begin(
         )
 }
 
+/// Settles a record `not_started` after the agent refused its start. A
+/// journal that does not answer within [`WRITE_BOUND`] is given up on and
+/// logged, as one that fails is: the refusal is still returned, and the
+/// record stays open for the supervisor's next `open` to find.
+pub(super) async fn settle_not_started(journal: &dyn DelegationJournal, id: &str) {
+    match tokio::time::timeout(WRITE_BOUND, journal.settle(id, "not_started", now_ms())).await {
+        Ok(Ok(())) => {}
+        Ok(Err(_e)) => {
+            trace_warn!(record = %id, error = %_e, "delegation journal: refusal not recorded");
+        }
+        Err(_) => {
+            trace_warn!(record = %id, "delegation journal: refusal not recorded in time");
+        }
+    }
+}
+
 /// Unix milliseconds now; `0` if the clock is before the epoch.
 pub(super) fn now_ms() -> i64 {
     SystemTime::now()

@@ -1204,5 +1204,23 @@
   "blocker": "no",
   "basis": "read",
   "evidence": "crates/a2a-protocol-client/src/call_span.rs, Status::failed: (E::Protocol(e), Some(\"jsonrpc\")) => e.code.as_i32().to_string(). Not measured. Belongs in OBS-01's hostile arm beside server.address."
+ },
+ {
+  "id": "X2-4",
+  "source": "external review execution packet of 2026-11-26 (N26-01, N26-04)",
+  "status": "fixed (recorded 2026-11-26)",
+  "finding": "A delegation start that failed with a bare 503, a 500, 502 or 504 returned the budget grant and settled the journal record not_started, though the agent may have made the child",
+  "blocker": "no",
+  "basis": "reproduced",
+  "evidence": "crates/a2a-protocol-client/src/delegation/mod.rs, refused(): every ClientError::UnexpectedStatus counted as a refusal, contradicting D-1, which calls a bare 503 ambiguous. tests/delegation_journal/substituted_503.rs answers the client with a bare 503 after the child ran (RUNS = 1): before the fix the parent's meter read 100 (the 40 granted refunded) where 60 was due. delegation/start_tests.rs a_bare_503_keeps_the_grant_and_leaves_the_record_open and a_500_and_a_gateways_502_and_504_are_ambiguous fail the same way before. Fixed: a 4xx, a 503 with Retry-After, an A2A error, AuthRequired or InvalidEndpoint is a refusal; any other 5xx is ambiguous. Mutation gate on the client diff: 9 mutants, 8 caught, 1 unviable, none missed."
+ },
+ {
+  "id": "X2-5",
+  "source": "external review execution packet of 2026-11-26 (N26-01, N26-04)",
+  "status": "fixed (recorded 2026-11-26)",
+  "finding": "The journal write that settles a refused start not_started had no bound, so a journal that stopped answering held Delegation::start_with for ever",
+  "blocker": "no",
+  "basis": "reproduced",
+  "evidence": "crates/a2a-protocol-client/src/delegation/options.rs, start_with: journal.settle(id, \"not_started\", ..).await with no timeout, where begin and every later write are bounded by journal::WRITE_BOUND (5 s). delegation/start_tests.rs a_settle_that_never_answers_is_given_up_at_the_bound fails before the fix at its one-hour guard (paused clock) and passes after at exactly WRITE_BOUND, returning the refusal with the record left open. Fixed by journal::settle_not_started."
  }
 ]
