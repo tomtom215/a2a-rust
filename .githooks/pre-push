@@ -2,15 +2,18 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 #
-# Blocks a push whose tree would fail CI's cheapest gate.
+# Blocks a push whose tree would fail CI's build-free gates.
 #
 # Enable once per clone:
 #     git config core.hooksPath .githooks
 #
-# Runs the formatting tier by default — roughly a second, and it is the gate
-# that has actually reached this repository's CI red. Opt into more:
+# Runs the quick tier by default (FND-04): formatting, both ledgers, the
+# compliance map, file lengths, panic paths, doc versions, feature tables and
+# lockfiles, the gates that fail on a file other than the one edited. Seconds,
+# and nothing compiles. Narrow or widen it:
 #
-#     PREFLIGHT_TIER=default git push     # + clippy and the all-features tests
+#     PREFLIGHT_TIER=fmt     git push     # formatting alone
+#     PREFLIGHT_TIER=default git push     # fmt, clippy and the all-features tests
 #     PREFLIGHT_TIER=full    git push     # every gate ci.yml runs
 #
 # Escape hatch for a genuine emergency, used knowingly:
@@ -31,12 +34,13 @@ if [ ! -x "$PREFLIGHT" ]; then
     exit 0
 fi
 
-case "${PREFLIGHT_TIER:-fmt}" in
+case "${PREFLIGHT_TIER:-quick}" in
+    quick)   ARGS=(--quick) ;;
     fmt)     ARGS=(--fmt) ;;
     default) ARGS=() ;;
     full)    ARGS=(--full) ;;
     *)
-        printf 'pre-push: unknown PREFLIGHT_TIER=%s (fmt|default|full)\n' \
+        printf 'pre-push: unknown PREFLIGHT_TIER=%s (quick|fmt|default|full)\n' \
             "${PREFLIGHT_TIER}" >&2
         exit 2
         ;;

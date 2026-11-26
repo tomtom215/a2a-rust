@@ -45,9 +45,11 @@
 ADVISE_GB_full=24
 ADVISE_GB_default=10
 ADVISE_GB_fmt=0
+ADVISE_GB_quick=0
 FLOOR_GB_full=8
 FLOOR_GB_default=4
 FLOOR_GB_fmt=0
+FLOOR_GB_quick=0
 
 check_free_disk() {
     [ "$FORCE" -eq 1 ] && return 0

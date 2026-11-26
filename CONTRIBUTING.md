@@ -672,10 +672,14 @@ Have git run it for you, once per clone:
 git config core.hooksPath .githooks
 ```
 
-`pre-push` then blocks a push whose tree fails the formatting gate — about a
-second, and it is the gate that has actually reached this repository's CI red.
-`PREFLIGHT_TIER=default` or `=full` widens it; `SKIP_PREFLIGHT=1 git push` is
-the escape hatch when you need one.
+`pre-push` then blocks a push whose tree fails a gate of the quick tier
+(`scripts/preflight.sh --quick`): formatting, both ledger checkers, the
+compliance map, file lengths, panic paths, doc versions, feature tables and
+lockfiles, the gates that fail on a file other than the one edited. None
+compiles Rust; it takes seconds and makes no `target/`. Run it yourself before
+each commit, after the last `CHANGELOG.md` edit. `PREFLIGHT_TIER=fmt` narrows
+the hook to formatting, `=default` or `=full` widens it; `SKIP_PREFLIGHT=1 git
+push` is the escape hatch when you need one.
 
 ### Mutation testing
 

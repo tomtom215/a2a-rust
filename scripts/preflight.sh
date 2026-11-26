@@ -19,7 +19,9 @@
 #
 # Usage:
 #   scripts/preflight.sh              # default tier: fmt + clippy + tests
-#   scripts/preflight.sh --fmt        # formatting only (seconds; used by the hook)
+#   scripts/preflight.sh --quick      # the gates that fail on a file other than the
+#                                     # one edited; no build, no target/ (the hook's)
+#   scripts/preflight.sh --fmt        # formatting only (seconds)
 #   scripts/preflight.sh --full       # every gate in the fmt/clippy/test/doc jobs
 #   scripts/preflight.sh --full --jobs static-checks,doc   # only those jobs' gates
 #   scripts/preflight.sh --list       # show the CI gate inventory and exit
@@ -336,6 +338,23 @@ tier_fmt() {
     require_ci_gate 'cargo fmt --all -- --check'
 }
 
+# The gates that fail on a file other than the one edited, and none that
+# compiles Rust (FND-04): a CHANGELOG line moves a ledger citation, moved code
+# moves the compliance map's, a new file crosses the length ratchet. Each was
+# forgotten before a push often enough to have its own line in the handoff's
+# lessons. Seconds, and no target/.
+tier_quick() {
+    tier_fmt
+    require_ci_gate 'python3 scripts/check_spec_ledger.py'
+    require_ci_gate 'python3 scripts/check_rfc_ledger.py'
+    require_ci_gate 'python3 scripts/check_compliance_map.py --check'
+    require_ci_gate './scripts/check_file_lengths.sh'
+    require_ci_gate 'python3 scripts/check_panic_paths.py'
+    require_ci_gate 'python3 scripts/check_doc_versions.py --self-test && python3 scripts/check_doc_versions.py'
+    require_ci_gate 'python3 scripts/check_feature_tables.py'
+    require_ci_gate './scripts/check_lockfiles.sh'
+}
+
 tier_default() {
     tier_fmt
     require_ci_gate 'cargo clippy --workspace --all-targets -- -D warnings'
@@ -379,6 +398,7 @@ tier_full() {
 while [ $# -gt 0 ]; do
     case "$1" in
         --fmt)       TIER=fmt ;;
+        --quick)     TIER=quick ;;
         --full)      TIER=full ;;
         --jobs)      shift; JOBS_ONLY=${1:-}; [ -n "$JOBS_ONLY" ] || { printf 'preflight: --jobs needs a comma-separated list\n' >&2; exit 2; } ;;
         --fail-fast) FAIL_FAST=1 ;;
@@ -398,6 +418,7 @@ while [ $# -gt 0 ]; do
             printf '%s\n' "$ALL_GATES" | sed 's/^/  /'
             printf '\nTiers:\n'
             printf '  --fmt      %s command(s)\n'  "$(tier_fmt | grep -c . || true)"
+            printf '  --quick    %s command(s), none that builds\n' "$(tier_quick | grep -c . || true)"
             printf '  (default)  %s command(s)\n'  "$(tier_default | grep -c . || true)"
             printf '  --full     %s command(s)\n'  "$(tier_full | grep -c . || true)"
             exit 0
