@@ -9,7 +9,9 @@ use std::time::Duration;
 use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 
-use super::{Check, Served, bind, plain_card, serve};
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+use super::Served;
+use super::{Check, bind, plain_card, serve};
 use crate::agents::LogSearchExecutor;
 use crate::{send_params, user_message};
 
