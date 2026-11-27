@@ -231,6 +231,16 @@ pub trait LeaseStore: Send + Sync + 'static {
     /// # Errors
     ///
     /// When the store cannot be read.
+    // Equivalent mutant: the default body is a future that is ready with an
+    // empty list, and cargo-mutants' replacement,
+    // `Box::pin(async move { Ok(Default::default()) })`, is the same future:
+    // `<Vec<_> as Default>::default()` is `Vec::new()`, and the block captures
+    // nothing, so `move` changes nothing. No test can distinguish the two
+    // (ADR 0006). Writing the body as the replacement text would remove the
+    // mutant, but `clippy::default_trait_access` refuses that text. The
+    // stores this crate ships override the method, and each override is
+    // tested.
+    #[mutants::skip]
     fn lapsed_leases(
         &self,
         _now_ms: i64,
