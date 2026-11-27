@@ -19,8 +19,8 @@ only: when something here is done, delete it rather than annotating it.
 
 ## Now
 
-**2026-11-26, evening: branch `claude/keen-volta-gl3nc2` on `main` `f3d2c420`, pushed, no pull request (the maintainer did not
-ask for one).** Start a session at [`CLAUDE.md`](../CLAUDE.md), then [`docs/program/README.md`](program/README.md) §6.
+**2026-11-27: branch `claude/keen-volta-gl3nc2` on `main` `f3d2c420`, pushed, no pull request (the maintainer did not ask
+for one).** Start a session at [`CLAUDE.md`](../CLAUDE.md), then [`docs/program/README.md`](program/README.md) §6.
 
 - **Source of this branch's work:** a second packet from the outside reviewer (an execution supplement to the 2026-11-25
   review: 17 work packets, N26-01 to N26-17, with a local slice queue). Its anchor was `f3d2c420`, this branch's base, so nothing
@@ -37,6 +37,15 @@ ask for one).** Start a session at [`CLAUDE.md`](../CLAUDE.md), then [`docs/prog
   run; `scripts/check_pg_retry.py` took a comment naming `Postgres` for PostgreSQL code; `plan_check.py`'s 63 unresolved
   citations are 24, every one a file a package will create or a path in another repository; `incident-response`'s hardening
   checks no longer serve for ever (see below).
+- **Local evidence for the branch's last push** (2026-11-27, Rust 1.100.0, PostgreSQL 16; no workflow has run on the branch,
+  because CI runs on pull requests): `cargo nextest run --profile ci --workspace` passed 8067 of 8067 with `--all-features` and
+  8035 of 8035 with `--no-default-features`; the three doc-test legs and the six PostgreSQL steps of `ci.yml` each exit 0
+  (turn claims 29 tests, `rate_limit::shared` 10); `cargo semver-checks` 0.51.0 with all features reads "no semver update
+  required" for types, client, server and sdk against 0.16.0. A local `cargo mutants --in-diff` run over COR-09 and COR-08
+  (server, all features) graded 38: 35 caught, 2 unviable, 1 missed, an equivalent mutant of the default
+  `LeaseStore::lapsed_leases`, now skipped with its proof and registered in `ROADMAP.md`. The per-feature legs of the `test` job
+  (`ci.yml`, signing to `auth-jwt,tls-rustls`) were not run locally. The `--no-default-features` leg found that `d865be6e` (the
+  `incident-response` guard below) broke that build with an unused import; fixed in `730c26bf`.
 - **Reconciled:** COR-05 and COR-06 landed in #233, FND-01 in #228 (`status.json` had `null` and a branch name).
 - **Read from GitHub on 2026-11-26, read-only:** the nightly Official TCK has passed 3 of 3 scheduled runs since #220 merged;
   #233's merge commit had one red check, `TCK cross-language (java-sdk)`, a Maven Central `429` while resolving the Quarkus BOM
